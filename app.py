@@ -17,6 +17,121 @@ st.title("Advanced Tools")
   
 UPDATE_INTERVAL = 15
 
+
+@st.cache_data
+def analyze_advanced_potential_profit(strikes_data, current_price, time_to_expiration):
+    advanced_contracts = []
+    if not strikes_data:  # Verifica si los datos están vacíos
+        return pd.DataFrame(columns=["Type", "Strike", "Volume", "OI", "Potential Profit (%)", "Advanced Score (%)"])
+
+    for strike, data in strikes_data.items():
+        for option_type in ["CALL", "PUT"]:
+            # Extraer datos básicos
+            volume = data[option_type].get("VOLUME", 0)
+            oi = data[option_type].get("OI", 0)
+            delta = abs(data[option_type].get("DELTA", 0))  # Delta absoluto
+            iv = data[option_type].get("IV", 0)  # Volatilidad implícita
+            theta = abs(data[option_type].get("THETA", 0))  # Theta absoluto
+
+            # Calcular la ganancia potencial estándar
+            if option_type == "CALL" and strike > current_price:
+                potential_profit = ((strike - current_price) / current_price) * 100
+            elif option_type == "PUT" and strike < current_price:
+                potential_profit = ((current_price - strike) / current_price) * 100
+            else:
+                continue  # Omitir opciones irrelevantes
+
+            # Calcular puntaje avanzado
+            if time_to_expiration > 0:
+                time_factor = 1 + (time_to_expiration / (time_to_expiration + 10))  # Factor de tiempo ajustado
+            else:
+                time_factor = 1
+
+            advanced_score = potential_profit * (1 + (delta * 0.4) - (iv * 0.3) + (time_factor * 0.3))
+
+            # Filtrar contratos con alta ganancia potencial (>60%) y un buen puntaje avanzado
+            if potential_profit > 60 or advanced_score > 60:
+                advanced_contracts.append({
+                    "Type": option_type,
+                    "Strike": strike,
+                    "Volume": volume,
+                    "OI": oi,
+                    "Potential Profit (%)": potential_profit,
+                    "Advanced Score (%)": advanced_score
+                })
+
+    return pd.DataFrame(advanced_contracts) if advanced_contracts else pd.DataFrame(columns=["Type", "Strike", "Volume", "OI", "Potential Profit (%)", "Advanced Score (%)"])
+
+
+# Gráfico avanzado para el puntaje
+def plot_advanced_scores(contracts_df):
+    if contracts_df.empty:
+        return go.Figure()
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=contracts_df["Strike"],
+        y=contracts_df["Advanced Score (%)"],
+        name="Advanced Score (%)",
+        marker_color="green"
+    ))
+    fig.update_layout(
+        title="Advanced Score by Strike",
+        xaxis_title="Strike Price",
+        yaxis_title="Advanced Score (%)",
+        template="plotly_white"
+    )
+    return fig
+
+
+
+
+
+
+
+
+
+
+# Función para calcular ganancias potenciales de contratos
+def analyze_potential_profit(strikes_data, current_price):
+    potential_contracts = []
+
+    for strike, data in strikes_data.items():
+        # Calcular la ganancia potencial para CALL
+        if strike > current_price and "CALL" in data:
+            potential_profit = ((strike - current_price) / current_price) * 100
+            if potential_profit > 60:
+                potential_contracts.append({
+                    "Type": "CALL",
+                    "Strike": strike,
+                    "Volume": data["CALL"].get("VOLUME", 0),
+                    "OI": data["CALL"].get("OI", 0),
+                    "Potential Profit (%)": round(potential_profit, 2)
+                })
+
+        # Calcular la ganancia potencial para PUT
+        if strike < current_price and "PUT" in data:
+            potential_profit = ((current_price - strike) / current_price) * 100
+            if potential_profit > 60:
+                potential_contracts.append({
+                    "Type": "PUT",
+                    "Strike": strike,
+                    "Volume": data["PUT"].get("VOLUME", 0),
+                    "OI": data["PUT"].get("OI", 0),
+                    "Potential Profit (%)": round(potential_profit, 2)
+                })
+
+    # Convertir a DataFrame
+    return pd.DataFrame(potential_contracts) if potential_contracts else pd.DataFrame(columns=["Type", "Strike", "Volume", "OI", "Potential Profit (%)"])
+
+
+
+
+
+
+
+
+
 # Ignorar advertencias deprecadas
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 @st.cache_data
@@ -629,3 +744,69 @@ if ticker:
             st.plotly_chart(create_eps_chart(eps_data), use_container_width=True)
         else:
             st.warning(f"No EPS data available for {ticker}.")
+
+
+
+
+# Integrar análisis de contratos con más del 60% de ganancia
+with st.expander("Analyze Profitable Contracts"):
+    st.subheader("Identify contracts with over 60% potential profit.")
+    
+    if strikes_data and price_data:
+        # Obtener el precio actual
+        current_price = price_data["last"]
+
+        # Realizar el análisis
+        profitable_contracts = analyze_potential_profit(strikes_data, current_price)
+
+        if not profitable_contracts.empty:
+            st.write("### Contracts with Over 60% Potential Profit")
+            st.dataframe(profitable_contracts)
+
+            # Opcional: Crear un gráfico
+            fig = go.Figure(data=[
+                go.Bar(
+                    x=profitable_contracts["Strike"],
+                    y=profitable_contracts["Potential Profit (%)"],
+                    name="Potential Profit (%)"
+                )
+            ])
+            fig.update_layout(
+                title="Potential Profit by Strike",
+                xaxis_title="Strike Price",
+                yaxis_title="Potential Profit (%)",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.write("No contracts found with more than 60% potential profit.")
+    else:
+        st.warning("Options data is not available for this ticker.")
+
+
+
+
+
+
+
+# Sección en Streamlit para contratos avanzados
+with st.expander("Analyze Advanced Profitable Contracts"):
+    st.subheader("Identify contracts with advanced scoring for high potential profit.")
+    
+    if strikes_data and expiration_date:
+        # Calcular días hasta la expiración
+        time_to_expiration = max(1, (pd.to_datetime(expiration_date) - pd.Timestamp.today()).days)
+
+        # Calcular contratos con la fórmula avanzada
+        advanced_results = analyze_advanced_potential_profit(strikes_data, price_data['last'], time_to_expiration)
+
+        if not advanced_results.empty:
+            st.write("### Contracts with High Advanced Score")
+            st.dataframe(advanced_results)
+
+            # Mostrar el gráfico
+            st.plotly_chart(plot_advanced_scores(advanced_results), use_container_width=True)
+        else:
+            st.write("No contracts with significant advanced score found.")
+    else:
+        st.warning("Options data or expiration date is not available.")
