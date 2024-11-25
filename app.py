@@ -5,6 +5,111 @@ import pandas as pd
 import time
 import yfinance as yf
 import warnings
+import bcrypt
+import streamlit_authenticator as stauth
+import csv
+
+
+st.set_page_config(page_title="Ozy Target", layout="wide")
+
+
+
+# Función para cargar usuarios desde un archivo CSV
+def load_users():
+    users = {}
+    try:
+        with open("users.csv", mode="r") as file:
+            reader = csv.reader(file)
+            for row in reader:
+                email, hashed_password = row
+                users[email] = {"password": hashed_password}
+    except FileNotFoundError:
+        # Crear el archivo si no existe
+        with open("users.csv", mode="w", newline="") as file:
+            pass
+    return users
+
+# Función para registrar un usuario
+def register_user(email, password):
+    try:
+        hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        with open("users.csv", mode="a", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow([email, hashed_password])
+        return "Registro exitoso"
+    except Exception as e:
+        return f"Error al registrar el usuario: {e}"
+
+# Función para autenticar al usuario
+def authenticate_user(email, password):
+    if email in users:
+        hashed_password = users[email]["password"]
+        return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
+    return False
+
+# Cargar usuarios al iniciar la app
+users = load_users()
+
+# Inicializar el estado de sesión si no existe
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if "user_email" not in st.session_state:
+    st.session_state["user_email"] = None
+
+# Función para recargar la página
+def reload_page():
+    st.session_state["reload"] = True
+
+# Mostrar contenido basado en autenticación
+if not st.session_state["authenticated"]:
+    # Mostrar opciones de registro e inicio de sesión
+    with st.sidebar.expander("Registro"):
+        email_register = st.text_input("Correo electrónico", key="register_email")
+        password_register = st.text_input("Contraseña", type="password", key="register_password")
+        if st.button("Registrar"):
+            if email_register and password_register:
+                if email_register in users:
+                    st.error("El correo ya está registrado.")
+                else:
+                    message = register_user(email_register, password_register)
+                    users = load_users()  # Recargar usuarios
+                    st.success(message)
+            else:
+                st.error("Por favor, completa ambos campos.")
+
+    with st.sidebar.expander("Inicio de Sesión"):
+        login_email = st.text_input("Correo electrónico", key="login_email")
+        login_password = st.text_input("Contraseña", type="password", key="login_password")
+        if st.button("Iniciar Sesión"):
+            if login_email and login_password:
+                if authenticate_user(login_email, login_password):
+                    st.session_state["authenticated"] = True
+                    st.session_state["user_email"] = login_email
+                    reload_page()  # Recargar página
+                else:
+                    st.sidebar.error("Credenciales incorrectas.")
+            else:
+                st.sidebar.error("Por favor, completa ambos campos.")
+else:
+    # Si está autenticado, ocultar registro e inicio de sesión y mostrar bienvenida
+    st.sidebar.success(f"Bienvenido, {st.session_state['user_email']}!")
+
+    # Botón para cerrar sesión
+    if st.sidebar.button("Cerrar Sesión"):
+        st.session_state["authenticated"] = False
+        st.session_state["user_email"] = None
+        reload_page()  # Recargar página
+
+# Proteger el contenido principal
+if not st.session_state["authenticated"]:
+    st.warning("Por favor, inicia sesión para acceder a las herramientas.")
+    st.stop()
+
+
+
+#AQUI COMIENZA LA APP>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
 
 
 # Configuración de la API Tradier
@@ -12,10 +117,17 @@ API_KEY = "U1iAJk1HhOCfHxULqzo2ywM2jUAX"
 BASE_URL = "https://api.tradier.com/v1"
 
 # Configuración de la página
-st.set_page_config(page_title="Ozy Target", layout="wide")
+
 st.title("Advanced Tools")
   
 UPDATE_INTERVAL = 15
+
+
+
+
+
+
+
 
 
 @st.cache_data
@@ -810,3 +922,12 @@ with st.expander("Analyze Advanced Profitable Contracts"):
             st.write("No contracts with significant advanced score found.")
     else:
         st.warning("Options data or expiration date is not available.")
+
+
+
+
+
+
+
+
+
