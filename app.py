@@ -922,15 +922,3 @@ with st.expander("Analyze Advanced Profitable Contracts"):
             st.write("No contracts with significant advanced score found.")
     else:
         st.warning("Options data or expiration date is not available.")
-
-
-
-
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> f17d185a70cb5dc72b97b508219e5ac9b824adc9
