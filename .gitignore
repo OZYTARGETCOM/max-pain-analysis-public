@@ -1,10 +1,4 @@
-<<<<<<< HEAD
-# Ignorar archivos sensibles
 users.csv  # Archivo que contiene contraseñas encriptadas
-
-# Ignorar datos temporales
 *.pyc
 __pycache__/
-=======
 users.csv
->>>>>>> f17d185a70cb5dc72b97b508219e5ac9b824adc9
