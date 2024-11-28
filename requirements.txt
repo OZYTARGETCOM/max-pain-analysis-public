@@ -5,8 +5,5 @@ plotly==5.24.1
 openpyxl
 requests==2.32.3
 streamlit-authenticator
-<<<<<<< HEAD
 bcrypt
-=======
 bcrypt
->>>>>>> f17d185a70cb5dc72b97b508219e5ac9b824adc9
