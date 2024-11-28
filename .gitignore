@@ -1,0 +1,6 @@
+# Ignorar archivos sensibles
+users.csv  # Archivo que contiene contraseñas encriptadas
+
+# Ignorar datos temporales
+*.pyc
+__pycache__/
