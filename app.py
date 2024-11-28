@@ -126,6 +126,99 @@ UPDATE_INTERVAL = 15
 
 
 
+# Función para obtener datos de opciones
+@st.cache_data
+def get_options_data(ticker, expiration_date):
+    url = f"{BASE_URL}/markets/options/chains"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        options = response.json().get("options", {}).get("option", [])
+        strikes_data = {}
+        for option in options:
+            strike = option["strike"]
+            option_type = option["option_type"]
+            open_interest = option.get("open_interest", 0)
+            volume = option.get("volume", 0)
+            if strike not in strikes_data:
+                strikes_data[strike] = {"CALL": {"OI": 0, "VOLUME": 0}, "PUT": {"OI": 0, "VOLUME": 0}}
+            if option_type == "call":
+                strikes_data[strike]["CALL"]["OI"] += open_interest
+                strikes_data[strike]["CALL"]["VOLUME"] += volume
+            elif option_type == "put":
+                strikes_data[strike]["PUT"]["OI"] += open_interest
+                strikes_data[strike]["PUT"]["VOLUME"] += volume
+        return strikes_data
+    else:
+        st.error("Error fetching options data")
+        return {}
+
+# Función para calcular Max Pain
+def calculate_max_pain(strikes_data):
+    pain_points = {}
+    for target_strike in strikes_data:
+        total_pain = 0
+        for strike, data in strikes_data.items():
+            call_pain = data["CALL"]["OI"] * abs(target_strike - strike)
+            put_pain = data["PUT"]["OI"] * abs(target_strike - strike)
+            total_pain += call_pain + put_pain
+        pain_points[target_strike] = total_pain
+    return min(pain_points, key=pain_points.get)
+
+# Función para encontrar los mejores contratos
+def find_best_options(strikes_data, max_pain_strike, current_price):
+    best_options = []
+    for strike, data in strikes_data.items():
+        call_oi = data["CALL"]["OI"]
+        put_oi = data["PUT"]["OI"]
+        activity_score = call_oi + put_oi
+        if activity_score > 0:  # Filtrar opciones sin actividad
+            best_options.append({
+                "Type": "CALL" if strike > current_price else "PUT",
+                "Strike": strike,
+                "Open Interest": call_oi + put_oi,
+                "Volume": data["CALL"]["VOLUME"] + data["PUT"]["VOLUME"],
+                "Activity Score": activity_score,
+                "Proximity to Max Pain": abs(strike - max_pain_strike)
+            })
+    df = pd.DataFrame(best_options).sort_values(by="Activity Score", ascending=False)
+    return df
+
+# Función para graficar los contratos generados
+def plot_generated_options(contracts_df):
+    if contracts_df.empty or "Activity Score" not in contracts_df.columns:
+        return go.Figure()
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=contracts_df["Strike"],
+        y=contracts_df["Activity Score"],
+        name="Activity Score",
+        marker_color="blue"
+    ))
+    fig.update_layout(
+        title="Generated Options Activity Score",
+        xaxis_title="Strike Price",
+        yaxis_title="Activity Score",
+        template="plotly_white"
+    )
+    return fig
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -922,3 +1015,33 @@ with st.expander("Analyze Advanced Profitable Contracts"):
             st.write("No contracts with significant advanced score found.")
     else:
         st.warning("Options data or expiration date is not available.")
+
+
+
+
+
+# Procesar datos si hay ticker y expiración
+if ticker and expiration_dates:
+    
+    st.write(f"Fetching data for **{ticker}**, Expiration: **{expiration_date}**")
+    strikes_data = get_options_data(ticker, expiration_date)
+
+    if strikes_data:
+        current_price = 420  # Simulado; reemplaza con datos dinámicos si es necesario
+        max_pain_strike = calculate_max_pain(strikes_data)
+        st.write(f"**Max Pain Strike:** {max_pain_strike}")
+
+        # Encontrar los mejores contratos
+        top_contracts = find_best_options(strikes_data, max_pain_strike, current_price)
+        if not top_contracts.empty:
+            st.write("### Top Contracts")
+            st.dataframe(top_contracts)
+
+            # Gráfico de contratos generados
+            st.plotly_chart(plot_generated_options(top_contracts), use_container_width=True)
+        else:
+            st.warning("No significant contracts found.")
+    else:
+        st.warning("No data available for the selected ticker and expiration.")
+else:
+    st.warning("Please enter a valid ticker and expiration date.")
