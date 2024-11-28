@@ -1,2 +1,7 @@
+<<<<<<< HEAD
 email	password
 sample_user@example.com	sample_hashed_password
+=======
+email,password
+sample_user@example.com,sample_hashed_password
+>>>>>>> f17d185a70cb5dc72b97b508219e5ac9b824adc9
