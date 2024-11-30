@@ -13,12 +13,9 @@ import streamlit_authenticator as stauth
 import csv
 
 # Configuración inicial de la página
-st.set_page_config(page_title="Analyst & AI Signals", layout="wide")
+st.set_page_config(page_title="SCANNER OPTIONS", layout="wide")
 
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>seguridad
-
-
-
 
 
 
@@ -72,8 +69,12 @@ def reload_page():
 
 # Mostrar contenido basado en autenticación
 if not st.session_state["authenticated"]:
-    # Mostrar opciones de registro e inicio de sesión
-    with st.sidebar.expander("Registro"):
+    # Mostrar opciones de registro e inicio de sesión en la pantalla principal
+    st.header("🔑 Ingreso y Registro")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Registro")
         email_register = st.text_input("Correo electrónico", key="register_email")
         password_register = st.text_input("Contraseña", type="password", key="register_password")
         if st.button("Registrar"):
@@ -87,7 +88,8 @@ if not st.session_state["authenticated"]:
             else:
                 st.error("Por favor, completa ambos campos.")
 
-    with st.sidebar.expander("Inicio de Sesión"):
+    with col2:
+        st.subheader("Inicio de Sesión")
         login_email = st.text_input("Correo electrónico", key="login_email")
         login_password = st.text_input("Contraseña", type="password", key="login_password")
         if st.button("Iniciar Sesión"):
@@ -97,15 +99,15 @@ if not st.session_state["authenticated"]:
                     st.session_state["user_email"] = login_email
                     reload_page()  # Recargar página
                 else:
-                    st.sidebar.error("Credenciales incorrectas.")
+                    st.error("Credenciales incorrectas.")
             else:
-                st.sidebar.error("Por favor, completa ambos campos.")
+                st.error("Por favor, completa ambos campos.")
 else:
-    # Si está autenticado, ocultar registro e inicio de sesión y mostrar bienvenida
-    st.sidebar.success(f"Bienvenido, {st.session_state['user_email']}!")
+    # Si está autenticado, mostrar bienvenida en la pantalla principal
+    st.success(f"Bienvenido, {st.session_state['user_email']}!")
 
-    # Botón para cerrar sesión
-    if st.sidebar.button("Cerrar Sesión"):
+    # Botón para cerrar sesión en la pantalla principal
+    if st.button("Cerrar Sesión"):
         st.session_state["authenticated"] = False
         st.session_state["user_email"] = None
         reload_page()  # Recargar página
@@ -115,11 +117,8 @@ if not st.session_state["authenticated"]:
     st.warning("Por favor, inicia sesión para acceder a las herramientas.")
     st.stop()
 
-
-
-
-
-
+    
+#BUENOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
 
 
 
