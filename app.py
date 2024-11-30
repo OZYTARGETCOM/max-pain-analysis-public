@@ -20,124 +20,6 @@ st.set_page_config(page_title="SCANNER OPTIONS", layout="wide")
 
 
 
-# Función para cargar usuarios desde un archivo CSV
-def load_users():
-    users = {}
-    try:
-        with open("users.csv", mode="r") as file:
-            reader = csv.reader(file)
-            for row in reader:
-                email, hashed_password = row
-                users[email] = {"password": hashed_password}
-    except FileNotFoundError:
-        # Crear el archivo si no existe
-        with open("users.csv", mode="w", newline="") as file:
-            pass
-    return users
-
-# Función para registrar un usuario
-def register_user(email, password):
-    try:
-        hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        with open("users.csv", mode="a", newline="") as file:
-            writer = csv.writer(file)
-            writer.writerow([email, hashed_password])
-        return "Registro exitoso"
-    except Exception as e:
-        return f"Error al registrar el usuario: {e}"
-
-# Función para autenticar al usuario
-def authenticate_user(email, password):
-    if email in users:
-        hashed_password = users[email]["password"]
-        return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
-    return False
-
-# Cargar usuarios al iniciar la app
-users = load_users()
-
-# Inicializar el estado de sesión si no existe
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-if "user_email" not in st.session_state:
-    st.session_state["user_email"] = None
-
-# Función para recargar la página
-def reload_page():
-    st.session_state["reload"] = True
-
-# Mostrar contenido basado en autenticación
-if not st.session_state["authenticated"]:
-    # Mostrar opciones de registro e inicio de sesión en la pantalla principal
-    st.header("🔑 Ingreso y Registro")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Registro")
-        email_register = st.text_input("Correo electrónico", key="register_email")
-        password_register = st.text_input("Contraseña", type="password", key="register_password")
-        if st.button("Registrar"):
-            if email_register and password_register:
-                if email_register in users:
-                    st.error("El correo ya está registrado.")
-                else:
-                    message = register_user(email_register, password_register)
-                    users = load_users()  # Recargar usuarios
-                    st.success(message)
-            else:
-                st.error("Por favor, completa ambos campos.")
-
-    with col2:
-        st.subheader("Inicio de Sesión")
-        login_email = st.text_input("Correo electrónico", key="login_email")
-        login_password = st.text_input("Contraseña", type="password", key="login_password")
-        if st.button("Iniciar Sesión"):
-            if login_email and login_password:
-                if authenticate_user(login_email, login_password):
-                    st.session_state["authenticated"] = True
-                    st.session_state["user_email"] = login_email
-                    reload_page()  # Recargar página
-                else:
-                    st.error("Credenciales incorrectas.")
-            else:
-                st.error("Por favor, completa ambos campos.")
-else:
-    # Si está autenticado, mostrar bienvenida en la pantalla principal
-    st.success(f"Bienvenido, {st.session_state['user_email']}!")
-
-    # Botón para cerrar sesión en la pantalla principal
-    if st.button("Cerrar Sesión"):
-        st.session_state["authenticated"] = False
-        st.session_state["user_email"] = None
-        reload_page()  # Recargar página
-
-# Proteger el contenido principal
-if not st.session_state["authenticated"]:
-    st.warning("Por favor, inicia sesión para acceder a las herramientas.")
-    st.stop()
-
-    
-#BUENOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>end seguridad    
-
 
 
 
@@ -526,11 +408,11 @@ def format_option_data(option, expiration_date, ticker, current_price):
     }
 
 # Interfaz de usuario
-st.title("📊 Analyst & AI Signals")
+st.title("SCANNER")
 
 
 
-ticker = st.text_input("Enter Ticker", value="SPY").upper()
+ticker = st.text_input("Enter Ticker", value="NVDA").upper()
 expiration_dates = get_expiration_dates(ticker)
 if expiration_dates:
     expiration_date = st.selectbox("Select Expiration Date", expiration_dates)
