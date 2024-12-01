@@ -11,6 +11,8 @@ import warnings
 import bcrypt
 import streamlit_authenticator as stauth
 import csv
+import requests
+from bs4 import BeautifulSoup
 
 # Configuración inicial de la página
 st.set_page_config(page_title="SCANNER OPTIONS", layout="wide")
@@ -19,23 +21,12 @@ st.set_page_config(page_title="SCANNER OPTIONS", layout="wide")
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # Configuración de la API Tradier
 API_KEY = "U1iAJk1HhOCfHxULqzo2ywM2jUAX"
 BASE_URL = "https://api.tradier.com/v1"
+NEWS_API_KEY = "dc681719f9854b148abf6fc1c94fdb33"  # API KEY para NewsAPI
+NEWS_BASE_URL = "https://newsapi.org/v2/everything"  # Endpoint de NewsAPI
+
 
 # Función para obtener datos de opciones
 @st.cache_data
@@ -437,6 +428,27 @@ def recommend_trades_based_on_iv_hv(options_data, historical_volatility):
     return recommendations
 
 
+#>>>>>>>>>>>>>>>>>>>>>>>>NEWS
+
+
+
+
+
+# Función para obtener noticias relacionadas con el ticker
+def get_news(query, top_n=3, from_time=None):
+    url = f"{NEWS_BASE_URL}?q={query}&apiKey={NEWS_API_KEY}&pageSize={top_n}&sortBy=publishedAt"
+    if from_time:
+        url += f"&from={from_time}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        news_data = response.json()
+        return news_data['articles']
+    else:
+        st.error("Error al obtener noticias.")
+        return []
+
+
+
 
 
 
@@ -672,3 +684,63 @@ st.plotly_chart(gamma_fig, use_container_width=True)
 st.subheader("")
 heatmap_fig = create_heatmap(processed_data)
 st.plotly_chart(heatmap_fig, use_container_width=True)
+
+
+
+
+
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>NEWS
+
+
+
+# Mostrar noticias de acuerdo al ticker (la más reciente y las 2 últimas de la última hora)
+st.subheader(f"News For {ticker}")
+current_time = datetime.now().isoformat()  # Establecemos la hora actual en formato ISO
+
+# Obtener la noticia más top
+top_news = get_news(ticker, top_n=1)
+if top_news:
+    st.markdown(f"**Top news for {ticker}:**")
+    st.markdown(f"**{top_news[0]['title']}**")
+    st.markdown(f"[Read More]({top_news[0]['url']})")
+else:
+    st.write("No news found for this ticker.")
+
+# Obtener las noticias más recientes de la última hora
+recent_news = get_news(ticker, top_n=2, from_time=current_time)
+if recent_news:
+    st.markdown("**Top 2 Recent News** (last hour):")
+    for article in recent_news:
+        st.markdown(f"**{article['title']}**")
+        st.markdown(f"[Read More]({article['url']})")
+else:
+    st.write("No recent news found for this ticker in the last hour.")
+
+# Lista de tickers o palabras clave para obtener noticias de Trump, TSLA, NIO, MARA, BTC
+tickers_to_check = ["Trump", "TSLA","BTC"]
+
+# Mostrar noticias de múltiples tickers (Trump, TSLA, NIO, MARA, BTC)
+st.subheader("News")
+
+for ticker in tickers_to_check:
+    st.markdown(f"**News for {ticker}:**")
+    top_ticker_news = get_news(ticker, top_n=1)
+    if top_ticker_news:
+        st.markdown(f"**Top news for {ticker}:**")
+        st.markdown(f"**{top_ticker_news[0]['title']}**")
+        st.markdown(f"[Read More]({top_ticker_news[0]['url']})")
+    else:
+        st.write(f"No news found for {ticker}.")
+
+    recent_ticker_news = get_news(ticker, top_n=2, from_time=current_time)
+    if recent_ticker_news:
+        st.markdown(f"**Top 2 Recent News for {ticker} (last hour):**")
+        for article in recent_ticker_news:
+            st.markdown(f"**{article['title']}**")
+            st.markdown(f"[Read More]({article['url']})")
+    else:
+        st.write(f"No recent news found for {ticker} in the last hour.")
+
+
+
+
