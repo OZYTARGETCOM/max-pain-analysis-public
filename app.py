@@ -119,7 +119,7 @@ def select_best_contracts(options_data, current_price):
             best_contracts.append(option)
 
     # Ordenar por puntuación y seleccionar los top 6
-    best_contracts = sorted(best_contracts, key=lambda x: x["score"], reverse=True)[:6]
+    best_contracts = sorted(best_contracts, key=lambda x: x["score"], reverse=True)[:8]
     return best_contracts
 
 
