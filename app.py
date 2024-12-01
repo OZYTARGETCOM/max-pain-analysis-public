@@ -125,18 +125,69 @@ def select_best_contracts(options_data, current_price):
 
 import plotly.graph_objects as go
 
-def gamma_exposure_chart(strikes_data, current_price):
-    # Ordenar los strikes
+# Función para obtener datos de opciones
+@st.cache_data
+def get_options_data(ticker, expiration_date):
+    url = f"{BASE_URL}/markets/options/chains"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}  # Activar Greeks
+    response = requests.get(url, headers=headers, params=params)
+
+    if response.status_code == 200:
+        return response.json().get("options", {}).get("option", [])
+    else:
+        st.error("Error fetching options data.")
+        return []
+
+# Función para obtener el precio actual
+@st.cache_data
+def get_current_price(ticker):
+    url = f"{BASE_URL}/markets/quotes"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbols": ticker}
+    response = requests.get(url, headers=headers, params=params)
+
+    if response.status_code == 200:
+        quote = response.json().get("quotes", {}).get("quote", {})
+        return quote.get("last", 0)
+    else:
+        st.error("Error fetching current price.")
+        return 0
+
+# Función para obtener fechas de expiración
+@st.cache_data
+def get_expiration_dates(ticker):
+    url = f"{BASE_URL}/markets/options/expirations"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker}
+    response = requests.get(url, headers=headers, params=params)
+
+    if response.status_code == 200:
+        return response.json().get("expirations", {}).get("date", [])
+    else:
+        st.error("Error fetching expiration dates.")
+        return []
+
+# Función para calcular Max Pain (ajustado)
+def calculate_adjusted_max_pain(options_data):
+    strikes = {}
+    for option in options_data:
+        strike = option["strike"]
+        open_interest = option["open_interest"] or 0
+        if strike not in strikes:
+            strikes[strike] = 0
+        strikes[strike] += open_interest
+    return max(strikes, key=strikes.get)
+
+# Función para calcular Gamma Exposure y graficarlo
+def gamma_exposure_chart(strikes_data, current_price, max_pain):
     strikes = sorted(strikes_data.keys())
 
-    # Extraer datos de Gamma para Calls y Puts
     gamma_calls = [strikes_data[s]["CALL"]["OI"] * strikes_data[s]["CALL"]["Gamma"] for s in strikes]
     gamma_puts = [strikes_data[s]["PUT"]["OI"] * strikes_data[s]["PUT"]["Gamma"] for s in strikes]
 
-    # Crear la figura
     fig = go.Figure()
 
-    # Barras de Gamma Exposure para Calls
     fig.add_trace(go.Bar(
         x=strikes,
         y=gamma_calls,
@@ -144,7 +195,6 @@ def gamma_exposure_chart(strikes_data, current_price):
         marker_color="blue"
     ))
 
-    # Barras de Gamma Exposure para Puts (invertido)
     fig.add_trace(go.Bar(
         x=strikes,
         y=[-g for g in gamma_puts],
@@ -152,7 +202,6 @@ def gamma_exposure_chart(strikes_data, current_price):
         marker_color="red"
     ))
 
-    # Añadir línea para el precio actual
     fig.add_shape(
         type="line",
         x0=current_price,
@@ -162,7 +211,15 @@ def gamma_exposure_chart(strikes_data, current_price):
         line=dict(color="orange", width=2, dash="dot")
     )
 
-    # Añadir anotación para el precio actual
+    fig.add_shape(
+        type="line",
+        x0=max_pain,
+        x1=max_pain,
+        y0=min(-max(gamma_puts), min(gamma_calls)) * 1.1,
+        y1=max(max(gamma_calls), -min(gamma_puts)) * 1.1,
+        line=dict(color="green", width=2, dash="dash")
+    )
+
     fig.add_annotation(
         x=current_price,
         y=max(max(gamma_calls), -min(gamma_puts)) * 0.9,
@@ -173,14 +230,58 @@ def gamma_exposure_chart(strikes_data, current_price):
         font=dict(color="orange", size=12)
     )
 
-    # Actualizar diseño del gráfico
+    fig.add_annotation(
+        x=max_pain,
+        y=max(max(gamma_calls), -min(gamma_puts)) * 0.8,
+        text=f"Max Pain: ${max_pain:.2f}",
+        showarrow=True,
+        arrowhead=2,
+        arrowcolor="green",
+        font=dict(color="green", size=12)
+    )
+
     fig.update_layout(
-        title="Gamma Exposure (Calls vs Puts)",
+        title="Gamma Exposure (Calls vs Puts) Target",
         xaxis_title="Strike Price",
         yaxis_title="Gamma Exposure",
         barmode="relative",
         template="plotly_white",
         legend=dict(title="Option Type")
+    )
+
+    return fig
+
+# Función para crear el heatmap
+def create_heatmap(processed_data):
+    strikes = sorted(processed_data.keys())
+
+    oi = [processed_data[s]["CALL"]["OI"] + processed_data[s]["PUT"]["OI"] for s in strikes]
+    gamma = [processed_data[s]["CALL"]["Gamma"] + processed_data[s]["PUT"]["Gamma"] for s in strikes]
+    volume = [processed_data[s]["CALL"]["OI"] * processed_data[s]["CALL"]["Gamma"] +
+              processed_data[s]["PUT"]["OI"] * processed_data[s]["PUT"]["Gamma"] for s in strikes]
+
+    # Normalización de las métricas
+    data = pd.DataFrame({
+        'OI': oi,
+        'Gamma': gamma,
+        'Volume': volume
+    })
+
+    data_normalized = data.apply(lambda x: (x - x.min()) / (x.max() - x.min()))
+
+    fig = go.Figure(data=go.Heatmap(
+        z=data_normalized.T.values,
+        x=strikes,
+        y=data_normalized.columns,
+        colorscale='Viridis',
+        colorbar=dict(title='Normalized Value'),
+    ))
+
+    fig.update_layout(
+        title="Supports & Resistences",
+        xaxis_title="Strike Price",
+        yaxis_title="Métrica",
+        template="plotly_dark"
     )
 
     return fig
@@ -265,7 +366,7 @@ def risk_return_chart_auto(strike_price, premium_paid, current_price, contract_t
 
     # Configurar el diseño del gráfico
     fig.update_layout(
-        title=f"Risk/Return Chart for {contract_type.upper()}",
+        title=f"Risk/Return MM for {contract_type.upper()}",
         xaxis_title="Underlying Price",
         yaxis_title="Profit/Loss ($)",
         template="plotly_white",
@@ -342,23 +443,6 @@ def recommend_trades_based_on_iv_hv(options_data, historical_volatility):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # Función para formatear datos de contratos
 def format_option_data(option, expiration_date, ticker, current_price):
     expiration_date_formatted = datetime.strptime(expiration_date, "%Y-%m-%d").strftime("%b-%d").upper()
@@ -412,10 +496,10 @@ st.title("SCANNER")
 
 
 
-ticker = st.text_input("Enter Ticker", value="NVDA").upper()
+ticker = st.text_input("Ticker", value="NVDA").upper()
 expiration_dates = get_expiration_dates(ticker)
 if expiration_dates:
-    expiration_date = st.selectbox("Select Expiration Date", expiration_dates)
+    expiration_date = st.selectbox("Expiration Date", expiration_dates)
 else:
     st.error("No expiration dates available.")
     st.stop()
@@ -461,7 +545,7 @@ for contract in best_contracts:
         """, unsafe_allow_html=True)
 
 # Crear gráfico de opciones
-st.subheader("Strike vs Open Interest vs Volume")
+
 graph_data = pd.DataFrame({
     "Strike Price": [opt["strike"] for opt in best_contracts],
     "Open Interest": [opt["open_interest"] for opt in best_contracts],
@@ -475,24 +559,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 
 
-# Datos procesados para el gráfico de Gamma Exposure
-st.subheader("Gamma Exposure Chart")
-processed_data = {}
-for opt in options_data:
-    strike = opt["strike"]
-    option_type = opt["option_type"].upper()
-    gamma = opt.get("greeks", {}).get("gamma", 0)
-    open_interest = opt.get("open_interest", 0)
 
-    if strike not in processed_data:
-        processed_data[strike] = {"CALL": {"Gamma": 0, "OI": 0}, "PUT": {"Gamma": 0, "OI": 0}}
-
-    processed_data[strike][option_type]["Gamma"] = gamma
-    processed_data[strike][option_type]["OI"] = open_interest
-
-# Generar el gráfico y mostrarlo
-gamma_fig = gamma_exposure_chart(processed_data, current_price)
-st.plotly_chart(gamma_fig, use_container_width=True)
 
 
 
@@ -511,7 +578,7 @@ current_price = get_current_price(ticker)
 # Verificar que los datos necesarios están disponibles
 if premium_paid > 0:
     # Generar gráfico de riesgo/retorno
-    st.subheader("Risk/Return Chart")
+    st.subheader("")
     risk_return_fig = risk_return_chart_auto(strike_price, premium_paid, current_price, contract_type)
     st.plotly_chart(risk_return_fig, use_container_width=True)
 else:
@@ -538,7 +605,7 @@ else:
     recommendations_df = pd.DataFrame(trade_recommendations)
 
     # Mostrar resultados originales en una tabla
-    st.write("### Recomendaciones de Compra/Venta basadas en IV vs HV")
+    st.write("### Recommended Options")
     st.dataframe(recommendations_df)
 
     # --- Agrupar por Strike y Tipo para simplificar el gráfico ---
@@ -552,7 +619,7 @@ else:
     )
 
     # Crear gráfico de barras con agrupación
-    st.write("### Gráfico de Contratos Recomendados (Agrupados por Strike y Tipo)")
+    st.write("")
     fig_recommendations = px.bar(
         recommendations_df_grouped,
         x="Strike",
@@ -572,3 +639,36 @@ else:
         }
     )
     st.plotly_chart(fig_recommendations, use_container_width=True)
+
+
+# Interfaz de usuario
+
+
+
+
+# Calcular Max Pain ajustado
+adjusted_max_pain = calculate_adjusted_max_pain(options_data)
+
+# Procesar los datos de opciones para generar un diccionario de strikes
+processed_data = {}
+for opt in options_data:
+    strike = opt["strike"]
+    option_type = opt["option_type"].upper()
+    gamma = opt.get("greeks", {}).get("gamma", 0)
+    open_interest = opt.get("open_interest", 0)
+
+    if strike not in processed_data:
+        processed_data[strike] = {"CALL": {"Gamma": 0, "OI": 0}, "PUT": {"Gamma": 0, "OI": 0}}
+
+    processed_data[strike][option_type]["Gamma"] = gamma
+    processed_data[strike][option_type]["OI"] = open_interest
+
+# Generar el gráfico de Gamma Exposure
+st.subheader("")
+gamma_fig = gamma_exposure_chart(processed_data, current_price, adjusted_max_pain)
+st.plotly_chart(gamma_fig, use_container_width=True)
+
+# Crear el Heatmap
+st.subheader("")
+heatmap_fig = create_heatmap(processed_data)
+st.plotly_chart(heatmap_fig, use_container_width=True)
