@@ -11,8 +11,9 @@ import warnings
 import bcrypt
 import streamlit_authenticator as stauth
 import csv
-import requests
 from bs4 import BeautifulSoup
+import requests
+from datetime import datetime, timedelta
 
 # Configuración inicial de la página
 st.set_page_config(page_title="SCANNER OPTIONS", layout="wide")
@@ -24,8 +25,10 @@ st.set_page_config(page_title="SCANNER OPTIONS", layout="wide")
 # Configuración de la API Tradier
 API_KEY = "U1iAJk1HhOCfHxULqzo2ywM2jUAX"
 BASE_URL = "https://api.tradier.com/v1"
+# Configuración de la API de Noticias
 NEWS_API_KEY = "dc681719f9854b148abf6fc1c94fdb33"  # API KEY para NewsAPI
 NEWS_BASE_URL = "https://newsapi.org/v2/everything"  # Endpoint de NewsAPI
+
 
 
 # Función para obtener datos de opciones
@@ -428,24 +431,92 @@ def recommend_trades_based_on_iv_hv(options_data, historical_volatility):
     return recommendations
 
 
-#>>>>>>>>>>>>>>>>>>>>>>>>NEWS
+
+
+
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>FUNCION DE VERIFICACION DE CONTRATOS  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 
 
 
 
 
 
-# Función para obtener noticias relacionadas con el ticker
-def get_news(query, top_n=3, from_time=None):
-    url = f"{NEWS_BASE_URL}?q={query}&apiKey={NEWS_API_KEY}&pageSize={top_n}&sortBy=publishedAt"
-    if from_time:
-        url += f"&from={from_time}"
-    response = requests.get(url)
+
+# Function to get the current stock price
+@st.cache_data
+def get_current_stock_price(ticker):
+    url = f"{BASE_URL}/markets/quotes"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbols": ticker}
+    response = requests.get(url, headers=headers, params=params)
+
     if response.status_code == 200:
-        news_data = response.json()
-        return news_data['articles']
+        quote = response.json().get("quotes", {}).get("quote", {})
+        return quote.get("last", 0)  # Current stock price
     else:
-        st.error("Error al obtener noticias.")
+        st.error("Error fetching the current stock price.")
+        return 0
+
+# Function to get expiration dates
+@st.cache_data
+def get_expiration_dates(ticker):
+    url = f"{BASE_URL}/markets/options/expirations"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker}
+    response = requests.get(url, headers=headers, params=params)
+
+    if response.status_code == 200:
+        return response.json().get("expirations", {}).get("date", [])
+    else:
+        st.error("Error fetching expiration dates.")
         return []
+
+# Function to get option details including Theta and Delta
+@st.cache_data
+def get_option_details(ticker, strike, option_type, expiration_date):
+    url = f"{BASE_URL}/markets/options/chains"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
+    response = requests.get(url, headers=headers, params=params)
+
+    if response.status_code == 200:
+        options = response.json().get("options", {}).get("option", [])
+        for option in options:
+            if (
+                option["strike"] == strike
+                and option["option_type"].upper() == option_type.upper()
+            ):
+                return {
+                    "current_price": option.get("last", 0),
+                    "theta": option.get("greeks", {}).get("theta", 0),
+                    "delta": option.get("greeks", {}).get("delta", 0),
+                }
+    st.error("No details found for the specified contract.")
+    return None
+
+# Function to calculate profit/loss
+def calculate_profit_loss(average_cost, current_contract_price, contracts):
+    profit_loss = (current_contract_price - average_cost) * contracts * 100  # Multiply by 100 for contract size
+    return profit_loss
+
+
+
+
+
+#######################
+
+
+
+
+
+
+
+
+#>>>>>>>>>>>>>>>>>>>>>>>>NEWS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+
+
+
 
 
 
@@ -689,57 +760,78 @@ st.plotly_chart(heatmap_fig, use_container_width=True)
 
 
 
+
+
+
+
+
+
+
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>NEWS
 
 
 
-# Mostrar noticias de acuerdo al ticker (la más reciente y las 2 últimas de la última hora)
-st.subheader(f"News For {ticker}")
-current_time = datetime.now().isoformat()  # Establecemos la hora actual en formato ISO
 
-# Obtener la noticia más top
-top_news = get_news(ticker, top_n=1)
-if top_news:
-    st.markdown(f"**Top news for {ticker}:**")
-    st.markdown(f"**{top_news[0]['title']}**")
-    st.markdown(f"[Read More]({top_news[0]['url']})")
-else:
-    st.write("No news found for this ticker.")
 
-# Obtener las noticias más recientes de la última hora
-recent_news = get_news(ticker, top_n=2, from_time=current_time)
-if recent_news:
-    st.markdown("**Top 2 Recent News** (last hour):")
-    for article in recent_news:
-        st.markdown(f"**{article['title']}**")
-        st.markdown(f"[Read More]({article['url']})")
-else:
-    st.write("No recent news found for this ticker in the last hour.")
+#VERIFICACION DE CONTRATOS   >>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
-# Lista de tickers o palabras clave para obtener noticias de Trump, TSLA, NIO, MARA, BTC
-tickers_to_check = ["Trump", "TSLA","BTC"]
 
-# Mostrar noticias de múltiples tickers (Trump, TSLA, NIO, MARA, BTC)
-st.subheader("News")
+# User interface
+def contract_profit_loss_checker():
+    st.title("Option Profit/Loss Checker")
 
-for ticker in tickers_to_check:
-    st.markdown(f"**News for {ticker}:**")
-    top_ticker_news = get_news(ticker, top_n=1)
-    if top_ticker_news:
-        st.markdown(f"**Top news for {ticker}:**")
-        st.markdown(f"**{top_ticker_news[0]['title']}**")
-        st.markdown(f"[Read More]({top_ticker_news[0]['url']})")
+    # Input: Ticker
+    ticker = st.text_input("Enter the ticker symbol of the underlying asset", value="MARA").upper()
+
+    # Automatically fetch the current stock price
+    current_stock_price = get_current_stock_price(ticker)
+    if current_stock_price > 0:
+        st.write(f"**Current stock price for {ticker}:** ${current_stock_price:.2f}")
     else:
-        st.write(f"No news found for {ticker}.")
+        st.stop()
 
-    recent_ticker_news = get_news(ticker, top_n=2, from_time=current_time)
-    if recent_ticker_news:
-        st.markdown(f"**Top 2 Recent News for {ticker} (last hour):**")
-        for article in recent_ticker_news:
-            st.markdown(f"**{article['title']}**")
-            st.markdown(f"[Read More]({article['url']})")
+    # Fetch expiration dates
+    expiration_dates = get_expiration_dates(ticker)
+    if expiration_dates:
+        expiration_date = st.selectbox("Select expiration date", expiration_dates)
     else:
-        st.write(f"No recent news found for {ticker} in the last hour.")
+        st.stop()
+
+    # Input: Contract details
+    strike = st.number_input("strike price", min_value=0.0, step=0.01, value=30.0)
+    option_type = st.selectbox("option type", ["CALL", "PUT"])
+    average_cost = st.number_input("Enter the average cost (price you paid per contract)", min_value=0.0, step=0.01, value=1.36)
+    contracts = st.number_input("Enter the number of contracts", min_value=1, step=1, value=1)
+
+    # Fetch option details
+    option_details = get_option_details(ticker, strike, option_type, expiration_date)
+    if option_details:
+        current_contract_price = option_details["current_price"]
+        st.write(f"**Current contract price:** ${current_contract_price:.2f}")
+
+        # Calculate profit or loss
+        profit_loss = calculate_profit_loss(
+            average_cost,
+            current_contract_price,
+            contracts,
+        )
+
+        # Display results
+        if profit_loss > 0:
+            st.success(f"You are in profit! Total profit: ${profit_loss:.2f}")
+        elif profit_loss < 0:
+            st.error(f"You are at a loss. Total loss: ${abs(profit_loss):.2f}")
+        else:
+            st.info("You are breaking even. No profit or loss.")
+    else:
+        st.stop()
+
+if __name__ == "__main__":
+    contract_profit_loss_checker()
+
+
+
+########################
 
 
 
