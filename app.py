@@ -23,7 +23,7 @@ st.set_page_config(page_title="SCANNER OPTIONS", layout="wide")
 
 
 # Configuración de la API Tradier
-API_KEY = "U1iAJk1HhOCfHxULqzo2ywM2jUAX"
+API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
 BASE_URL = "https://api.tradier.com/v1"
 # Configuración de la API de Noticias
 NEWS_API_KEY = "dc681719f9854b148abf6fc1c94fdb33"  # API KEY para NewsAPI
