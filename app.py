@@ -524,8 +524,6 @@ def calculate_profit_loss(average_cost, current_contract_price, contracts):
 
 
 
-
-
 # Función para formatear datos de contratos
 def format_option_data(option, expiration_date, ticker, current_price):
     expiration_date_formatted = datetime.strptime(expiration_date, "%Y-%m-%d").strftime("%b-%d").upper()
@@ -592,6 +590,9 @@ st.write(f"**Current Price for {ticker}:** ${current_price:.2f}")
 
 options_data = get_options_data(ticker, expiration_date)
 best_contracts = select_best_contracts(options_data, current_price)
+if expiration_dates:
+    
+    current_price = get_current_price(ticker)
 
 st.subheader("Recommended Contracts")
 for contract in best_contracts:
@@ -650,7 +651,9 @@ st.plotly_chart(fig, use_container_width=True)
 
 
 
-
+if expiration_dates:
+    
+    current_price = get_current_price(ticker)
 # Selecciona automáticamente el primer contrato como ejemplo
 selected_contract = best_contracts[0]  # Seleccionar el mejor contrato basado en la puntuación
 strike_price = selected_contract["strike"]
@@ -672,7 +675,9 @@ else:
 
 
 
-
+if expiration_dates:
+    
+    current_price = get_current_price(ticker)
 # --- Despliegue en la app ---
 # Calcular volatilidad histórica simulada (sustituir por datos reales si están disponibles)
 historical_volatility = 25  # Supongamos 30% como ejemplo
@@ -701,6 +706,13 @@ else:
         })
     )
 
+if expiration_dates:
+    
+    current_price = get_current_price(ticker)
+     
+if expiration_dates:
+    
+    current_price = get_current_price(ticker)
     # Crear gráfico de barras con agrupación
     st.write("")
     fig_recommendations = px.bar(
@@ -728,10 +740,13 @@ else:
 
 
 
-
 # Calcular Max Pain ajustado
 adjusted_max_pain = calculate_adjusted_max_pain(options_data)
+if expiration_dates:
+    
+    current_price = get_current_price(ticker)
 
+    st.write(f"{ticker} ${current_price:.2f}")
 # Procesar los datos de opciones para generar un diccionario de strikes
 processed_data = {}
 for opt in options_data:
@@ -750,7 +765,11 @@ for opt in options_data:
 st.subheader("")
 gamma_fig = gamma_exposure_chart(processed_data, current_price, adjusted_max_pain)
 st.plotly_chart(gamma_fig, use_container_width=True)
+if expiration_dates:
+    
+    current_price = get_current_price(ticker)
 
+    st.write(f"{ticker} ${current_price:.2f}")
 # Crear el Heatmap
 st.subheader("")
 heatmap_fig = create_heatmap(processed_data)
@@ -832,7 +851,4 @@ if __name__ == "__main__":
 
 
 ########################
-
-
-
 
