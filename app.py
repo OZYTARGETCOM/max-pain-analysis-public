@@ -511,6 +511,9 @@ def calculate_profit_loss(average_cost, current_contract_price, contracts):
 
 
 
+
+
+
 #>>>>>>>>>>>>>>>>>>>>>>>>NEWS>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 
@@ -800,7 +803,7 @@ def contract_profit_loss_checker():
     # Input: Contract details
     strike = st.number_input("strike price", min_value=0.0, step=0.01, value=30.0)
     option_type = st.selectbox("option type", ["CALL", "PUT"])
-    average_cost = st.number_input("Enter the average cost (price you paid per contract)", min_value=0.0, step=0.01, value=1.36)
+    average_cost = st.number_input("Enter the average cost (price you paid per contract)", min_value=0.0, step=0.01, value=4.36)
     contracts = st.number_input("Enter the number of contracts", min_value=1, step=1, value=1)
 
     # Fetch option details
@@ -832,4 +835,5 @@ if __name__ == "__main__":
 
 
 ########################
+
 
