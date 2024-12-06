@@ -15,34 +15,48 @@ from bs4 import BeautifulSoup
 import requests
 from datetime import datetime, timedelta
 
+
+
+
 # Configuración inicial de la página
 st.set_page_config(page_title="SCANNER OPTIONS", layout="wide")
 
-#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>seguridad
-
-
-
-# Configuración de la API Tradier
+# Claves de las APIs
 API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
 BASE_URL = "https://api.tradier.com/v1"
-# Configuración de la API de Noticias
-NEWS_API_KEY = "dc681719f9854b148abf6fc1c94fdb33"  # API KEY para NewsAPI
-NEWS_BASE_URL = "https://newsapi.org/v2/everything"  # Endpoint de NewsAPI
 
+# Función para obtener fechas de expiración
+@st.cache_data
+def get_expiration_dates(ticker):
+    url = f"{BASE_URL}/markets/options/expirations"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker}
+    response = requests.get(url, headers=headers, params=params)
 
+    if response.status_code == 200:
+        dates = response.json().get("expirations", {}).get("date", [])
+        if not dates:
+            st.warning(f"No se encontraron fechas de expiración para {ticker}.")
+        return dates
+    else:
+        st.error(f"Error al obtener fechas de expiración: {response.status_code}")
+        return []
 
 # Función para obtener datos de opciones
 @st.cache_data
 def get_options_data(ticker, expiration_date):
     url = f"{BASE_URL}/markets/options/chains"
     headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
-    params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}  # Activar Greeks
+    params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
     response = requests.get(url, headers=headers, params=params)
 
     if response.status_code == 200:
-        return response.json().get("options", {}).get("option", [])
+        options = response.json().get("options", {}).get("option", [])
+        if not options:
+            st.warning(f"No se encontraron datos de opciones para {ticker} con expiración {expiration_date}.")
+        return options
     else:
-        st.error("Error fetching options data.")
+        st.error(f"Error al obtener datos de opciones: {response.status_code}")
         return []
 
 # Función para obtener el precio actual
@@ -57,18 +71,214 @@ def get_current_price(ticker):
         quote = response.json().get("quotes", {}).get("quote", {})
         return quote.get("last", 0)
     else:
-        st.error("Error fetching current price.")
+        st.error(f"Error al obtener el precio actual: {response.status_code}")
         return 0
-    
-    # Contenedor dinámico para mostrar el precio actualizado
-price_placeholder = st.empty()
 
-# Función para actualizar dinámicamente el precio
-def update_current_price(ticker):
-    while True:
-        price = get_current_price(ticker)
-        price_placeholder.write(f"**Current Price for {ticker}:** ${price:.2f}")
-        time.sleep(10)  # Actualiza cada 10 segundos
+# Función para calcular Max Pain
+def calculate_max_pain(options_data):
+    strikes = {}
+    for option in options_data:
+        strike = option["strike"]
+        open_interest = option.get("open_interest", 0)
+        if strike not in strikes:
+            strikes[strike] = 0
+        strikes[strike] += open_interest
+    return max(strikes, key=strikes.get) if strikes else None
+
+def gamma_exposure_chart(options_data, current_price, max_pain):
+    # Obtener todos los strikes únicos
+    strikes = sorted({option["strike"] for option in options_data})
+    
+    # Calcular Gamma para Calls y Puts
+    gamma_calls = [sum(
+        option["open_interest"] * option.get("greeks", {}).get("gamma", 0)
+        for option in options_data if option["strike"] == strike and option["option_type"] == "call"
+    ) for strike in strikes]
+    
+    gamma_puts = [-sum(
+        option["open_interest"] * option.get("greeks", {}).get("gamma", 0)
+        for option in options_data if option["strike"] == strike and option["option_type"] == "put"
+    ) for strike in strikes]
+
+    # Asegurarnos de que los strikes con 0 gamma estén presentes
+    gamma_values = gamma_calls + gamma_puts
+    y_min = min(gamma_values) * 1.1 if gamma_values else -1
+    y_max = max(gamma_values) * 1.1 if gamma_values else 1
+
+    # Crear figura
+    fig = go.Figure()
+    
+    # Barras de Gamma Calls y Puts
+    fig.add_trace(go.Bar(x=strikes, y=gamma_calls, name="Gamma CALL", marker_color="blue"))
+    fig.add_trace(go.Bar(x=strikes, y=gamma_puts, name="Gamma PUT", marker_color="red"))
+    
+    # Línea para el precio actual
+    fig.add_shape(
+        type="line",
+        x0=current_price, x1=current_price,
+        y0=y_min, y1=y_max,
+        line=dict(color="orange", dash="dot", width=2),
+        name="Current Price"
+    )
+    
+    # Línea para Max Pain
+    fig.add_shape(
+        type="line",
+        x0=max_pain, x1=max_pain,
+        y0=y_min, y1=y_max,
+        line=dict(color="green", dash="dash", width=2),
+        name="Max Pain"
+    )
+
+    # Etiquetas
+    fig.add_annotation(
+        x=current_price, y=y_max * 0.9,
+        text=f"Precio Actual: ${current_price:.2f}",
+        showarrow=True, arrowhead=2, arrowcolor="orange",
+        font=dict(color="orange", size=12)
+    )
+    fig.add_annotation(
+        x=max_pain, y=y_max * 0.8,
+        text=f"Max Pain: ${max_pain:.2f}",
+        showarrow=True, arrowhead=2, arrowcolor="green",
+        font=dict(color="green", size=12)
+    )
+
+    # Ajustes del diseño
+    fig.update_layout(
+        title="Gamma Exposure (Calls vs Puts)",
+        xaxis_title="Strike Price",
+        yaxis_title="Gamma Exposure",
+        barmode="relative",
+        template="plotly_white",
+        legend=dict(title="Option Type")
+    )
+    return fig
+
+
+
+def plot_skew_analysis(options_data):
+    # Crear listas para strikes, IV y tipos
+    strikes = [option["strike"] for option in options_data]
+    iv = [option.get("implied_volatility", 0) * 100 for option in options_data]
+    option_type = [option["option_type"].upper() for option in options_data]
+    open_interest = [option.get("open_interest", 0) for option in options_data]
+
+    # Aplicar desplazamiento dinámico en el eje Y
+    adjusted_iv = [
+        iv[i] + (open_interest[i] * 0.01) if option_type[i] == "CALL" else
+        -(iv[i] + (open_interest[i] * 0.01)) for i in range(len(iv))
+    ]
+
+    # Crear DataFrame para análisis
+    skew_df = pd.DataFrame({
+        "Strike": strikes,
+        "Adjusted IV (%)": adjusted_iv,
+        "Option Type": option_type,
+        "Open Interest": open_interest
+    })
+
+    # Crear gráfico interactivo con Plotly Express
+    fig = px.scatter(
+        skew_df,
+        x="Strike",
+        y="Adjusted IV (%)",
+        color="Option Type",
+        size="Open Interest",
+        hover_data=["Strike", "Option Type", "Open Interest", "Adjusted IV (%)"],
+        title="Implied Volatility Skew Analysis",
+        labels={"Option Type": "Contract Type"},
+        color_discrete_map={"CALL": "blue", "PUT": "red"},
+    )
+
+    # Ajustar diseño del gráfico
+    fig.update_layout(
+        xaxis_title="Strike Price",
+        yaxis_title="Implied Volatility (%) (Separados por CALLS y PUTS)",
+        legend_title="Option Type",
+        template="plotly_white"
+    )
+    return fig
+
+
+
+
+
+# Interfaz de usuario
+st.title("SCANNER OPTIONS")
+
+# Entrada del usuario
+ticker = st.text_input("Ingrese el ticker (por ejemplo, AAPL):", value="AAPL").upper()
+expiration_dates = get_expiration_dates(ticker)
+
+if expiration_dates:
+    expiration_date = st.selectbox("Seleccione la fecha de expiración:", expiration_dates)
+    current_price = get_current_price(ticker)
+    options_data = get_options_data(ticker, expiration_date)
+
+    if options_data:
+        st.write(f"**Precio actual de {ticker}:** ${current_price:.2f}")
+        max_pain = calculate_max_pain(options_data)
+
+        st.subheader("Gamma Exposure")
+        gamma_fig = gamma_exposure_chart(options_data, current_price, max_pain)
+        st.plotly_chart(gamma_fig, use_container_width=True)
+
+        st.subheader("Skew Analysis")
+        skew_fig = plot_skew_analysis(options_data)
+        st.plotly_chart(skew_fig, use_container_width=True)
+    else:
+        st.warning("No se encontraron datos de opciones para el ticker seleccionado.")
+else:
+    st.warning("No se encontraron fechas de expiración para el ticker seleccionado.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -90,18 +300,7 @@ def get_expiration_dates(ticker):
         st.error("Error fetching expiration dates.")
         return []
 
-# Función para calcular Max Pain
-def calculate_max_pain(options_data):
-    if not options_data:
-        return None
-    strikes = {}
-    for option in options_data:
-        strike = option["strike"]
-        open_interest = option["open_interest"] or 0
-        if strike not in strikes:
-            strikes[strike] = 0
-        strikes[strike] += open_interest
-    return max(strikes, key=strikes.get)
+
 
 # Función para calcular puntuación avanzada
 def calculate_advanced_score(option, current_price, max_pain):
@@ -549,6 +748,7 @@ def recommend_trades_based_on_iv_hv(options_data, historical_volatility):
 
 
 
+
 # Función para formatear datos de contratos
 def format_option_data(option, expiration_date, ticker, current_price):
     expiration_date_formatted = datetime.strptime(expiration_date, "%Y-%m-%d").strftime("%b-%d").upper()
@@ -602,13 +802,9 @@ st.title("SCANNER")
 
 
 
-ticker = st.text_input("Ticker", value="NVDA").upper()
-expiration_dates = get_expiration_dates(ticker)
-if expiration_dates:
-    expiration_date = st.selectbox("Expiration Date", expiration_dates)
-else:
-    st.error("No expiration dates available.")
-    st.stop()
+
+
+
 
 current_price = get_current_price(ticker)
 st.write(f"**Current Price for {ticker}:** ${current_price:.2f}")
@@ -774,23 +970,18 @@ st.subheader("")
 gamma_fig = gamma_exposure_chart(processed_data, current_price, adjusted_max_pain)
 st.plotly_chart(gamma_fig, use_container_width=True)
 
+
+
+
+
+
+
+
+
 # Crear el Heatmap
 st.subheader("")
 heatmap_fig = create_heatmap(processed_data)
 st.plotly_chart(heatmap_fig, use_container_width=True)
-
-
-
-
-
-
-
-
-
-
-
-
-#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>NEWS
 
 
 
