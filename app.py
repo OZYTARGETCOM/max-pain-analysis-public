@@ -59,6 +59,22 @@ def get_current_price(ticker):
     else:
         st.error("Error fetching current price.")
         return 0
+    
+    # Contenedor dinámico para mostrar el precio actualizado
+price_placeholder = st.empty()
+
+# Función para actualizar dinámicamente el precio
+def update_current_price(ticker):
+    while True:
+        price = get_current_price(ticker)
+        price_placeholder.write(f"**Current Price for {ticker}:** ${price:.2f}")
+        time.sleep(10)  # Actualiza cada 10 segundos
+
+
+
+
+
+
 
 # Función para obtener fechas de expiración
 @st.cache_data
@@ -173,7 +189,17 @@ def calculate_adjusted_max_pain(options_data):
         strikes[strike] += open_interest
     return max(strikes, key=strikes.get)
 
-# Función para calcular Gamma Exposure y graficarlo
+# Contenedor dinámico para mostrar el precio actualizado
+price_placeholder = st.empty()
+
+# Función para actualizar dinámicamente el precio
+def update_current_price(ticker):
+    while True:
+        price = get_current_price(ticker)
+        price_placeholder.write(f"**Current Price for {ticker}:** ${price:.2f}")
+        time.sleep(10)  # Actualiza cada 10 segundos
+
+
 def gamma_exposure_chart(strikes_data, current_price, max_pain):
     strikes = sorted(strikes_data.keys())
 
@@ -182,13 +208,13 @@ def gamma_exposure_chart(strikes_data, current_price, max_pain):
 
     fig = go.Figure()
 
+    # Añadir barras para Gamma Calls y Puts
     fig.add_trace(go.Bar(
         x=strikes,
         y=gamma_calls,
         name="Gamma CALL",
         marker_color="blue"
     ))
-
     fig.add_trace(go.Bar(
         x=strikes,
         y=[-g for g in gamma_puts],
@@ -196,24 +222,29 @@ def gamma_exposure_chart(strikes_data, current_price, max_pain):
         marker_color="red"
     ))
 
+    # Línea para el precio actual
     fig.add_shape(
         type="line",
         x0=current_price,
         x1=current_price,
         y0=min(-max(gamma_puts), min(gamma_calls)) * 1.1,
         y1=max(max(gamma_calls), -min(gamma_puts)) * 1.1,
-        line=dict(color="orange", width=2, dash="dot")
+        line=dict(color="orange", width=2, dash="dot"),
+        name="Current Price"
     )
 
+    # Línea para Max Pain
     fig.add_shape(
         type="line",
         x0=max_pain,
         x1=max_pain,
         y0=min(-max(gamma_puts), min(gamma_calls)) * 1.1,
         y1=max(max(gamma_calls), -min(gamma_puts)) * 1.1,
-        line=dict(color="green", width=2, dash="dash")
+        line=dict(color="green", width=2, dash="dash"),
+        name="Max Pain"
     )
 
+    # Etiquetas para el precio actual y Max Pain
     fig.add_annotation(
         x=current_price,
         y=max(max(gamma_calls), -min(gamma_puts)) * 0.9,
@@ -223,7 +254,6 @@ def gamma_exposure_chart(strikes_data, current_price, max_pain):
         arrowcolor="orange",
         font=dict(color="orange", size=12)
     )
-
     fig.add_annotation(
         x=max_pain,
         y=max(max(gamma_calls), -min(gamma_puts)) * 0.8,
@@ -234,8 +264,9 @@ def gamma_exposure_chart(strikes_data, current_price, max_pain):
         font=dict(color="green", size=12)
     )
 
+    # Configuración del diseño del gráfico
     fig.update_layout(
-        title="Gamma Exposure (Calls vs Puts) Target",
+        title="Gamma Exposure (Calls vs Puts)",
         xaxis_title="Strike Price",
         yaxis_title="Gamma Exposure",
         barmode="relative",
@@ -244,6 +275,55 @@ def gamma_exposure_chart(strikes_data, current_price, max_pain):
     )
 
     return fig
+
+
+
+
+
+# Función para actualizar Max Pain y Precio Actual en Tiempo Real
+def refresh_data_in_real_time(ticker, expiration_date, update_interval=10):
+    # Contenedores dinámicos en Streamlit
+    price_placeholder = st.empty()
+    max_pain_placeholder = st.empty()
+
+    while True:
+        # Obtener el precio actual y los datos de opciones
+        current_price = get_current_price(ticker)
+        options_data = get_options_data(ticker, expiration_date)
+        
+        if not options_data:
+            st.error("Error: No se pudieron obtener los datos de opciones.")
+            break
+        
+        max_pain = calculate_adjusted_max_pain(options_data)
+
+        # Actualizar los valores en la interfaz
+        price_placeholder.markdown(f"### **Precio Actual ({ticker}):** ${current_price:.2f}")
+        max_pain_placeholder.markdown(f"### **Max Pain:** ${max_pain:.2f}")
+
+        # Esperar el intervalo especificado antes de actualizar nuevamente
+        time.sleep(update_interval)
+
+
+
+
+
+
+
+
+
+
+
+# Contenedor dinámico para mostrar el precio actualizado
+price_placeholder = st.empty()
+
+# Función para actualizar dinámicamente el precio
+def update_current_price(ticker):
+    while True:
+        price = get_current_price(ticker)
+        price_placeholder.write(f"**Current Price for {ticker}:** ${price:.2f}")
+        time.sleep(10)  # Actualiza cada 10 segundos
+
 
 # Función para crear el heatmap
 def create_heatmap(processed_data):
@@ -437,66 +517,6 @@ def recommend_trades_based_on_iv_hv(options_data, historical_volatility):
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>FUNCION DE VERIFICACION DE CONTRATOS  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 
 
 
-
-
-
-
-# Function to get the current stock price
-@st.cache_data
-def get_current_stock_price(ticker):
-    url = f"{BASE_URL}/markets/quotes"
-    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
-    params = {"symbols": ticker}
-    response = requests.get(url, headers=headers, params=params)
-
-    if response.status_code == 200:
-        quote = response.json().get("quotes", {}).get("quote", {})
-        return quote.get("last", 0)  # Current stock price
-    else:
-        st.error("Error fetching the current stock price.")
-        return 0
-
-# Function to get expiration dates
-@st.cache_data
-def get_expiration_dates(ticker):
-    url = f"{BASE_URL}/markets/options/expirations"
-    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
-    params = {"symbol": ticker}
-    response = requests.get(url, headers=headers, params=params)
-
-    if response.status_code == 200:
-        return response.json().get("expirations", {}).get("date", [])
-    else:
-        st.error("Error fetching expiration dates.")
-        return []
-
-# Function to get option details including Theta and Delta
-@st.cache_data
-def get_option_details(ticker, strike, option_type, expiration_date):
-    url = f"{BASE_URL}/markets/options/chains"
-    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
-    params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
-    response = requests.get(url, headers=headers, params=params)
-
-    if response.status_code == 200:
-        options = response.json().get("options", {}).get("option", [])
-        for option in options:
-            if (
-                option["strike"] == strike
-                and option["option_type"].upper() == option_type.upper()
-            ):
-                return {
-                    "current_price": option.get("last", 0),
-                    "theta": option.get("greeks", {}).get("theta", 0),
-                    "delta": option.get("greeks", {}).get("delta", 0),
-                }
-    st.error("No details found for the specified contract.")
-    return None
-
-# Function to calculate profit/loss
-def calculate_profit_loss(average_cost, current_contract_price, contracts):
-    profit_loss = (current_contract_price - average_cost) * contracts * 100  # Multiply by 100 for contract size
-    return profit_loss
 
 
 
@@ -774,66 +794,5 @@ st.plotly_chart(heatmap_fig, use_container_width=True)
 
 
 
-
-
-#VERIFICACION DE CONTRATOS   >>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
-
-# User interface
-def contract_profit_loss_checker():
-    st.title("Option Profit/Loss Checker")
-
-    # Input: Ticker
-    ticker = st.text_input("Enter the ticker symbol of the underlying asset", value="MARA").upper()
-
-    # Automatically fetch the current stock price
-    current_stock_price = get_current_stock_price(ticker)
-    if current_stock_price > 0:
-        st.write(f"**Current stock price for {ticker}:** ${current_stock_price:.2f}")
-    else:
-        st.stop()
-
-    # Fetch expiration dates
-    expiration_dates = get_expiration_dates(ticker)
-    if expiration_dates:
-        expiration_date = st.selectbox("Select expiration date", expiration_dates)
-    else:
-        st.stop()
-
-    # Input: Contract details
-    strike = st.number_input("strike price", min_value=0.0, step=0.01, value=30.0)
-    option_type = st.selectbox("option type", ["CALL", "PUT"])
-    average_cost = st.number_input("Enter the average cost (price you paid per contract)", min_value=0.0, step=0.01, value=4.36)
-    contracts = st.number_input("Enter the number of contracts", min_value=1, step=1, value=1)
-
-    # Fetch option details
-    option_details = get_option_details(ticker, strike, option_type, expiration_date)
-    if option_details:
-        current_contract_price = option_details["current_price"]
-        st.write(f"**Current contract price:** ${current_contract_price:.2f}")
-
-        # Calculate profit or loss
-        profit_loss = calculate_profit_loss(
-            average_cost,
-            current_contract_price,
-            contracts,
-        )
-
-        # Display results
-        if profit_loss > 0:
-            st.success(f"You are in profit! Total profit: ${profit_loss:.2f}")
-        elif profit_loss < 0:
-            st.error(f"You are at a loss. Total loss: ${abs(profit_loss):.2f}")
-        else:
-            st.info("You are breaking even. No profit or loss.")
-    else:
-        st.stop()
-
-if __name__ == "__main__":
-    contract_profit_loss_checker()
-
-
-
-########################
 
 
