@@ -1,26 +1,12 @@
-import streamlit as st
-import pandas as pd
-import requests
-from datetime import datetime
-import plotly.express as px
-import numpy as np
-import plotly.graph_objects as go
-import time
-import yfinance as yf
-import warnings
-import bcrypt
-import streamlit_authenticator as stauth
-import csv
-from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
-import xgboost as xgb
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
-import openai
-from dotenv import load_dotenv
+import streamlit as st  # Para la interfaz Streamlit
+import pandas as pd  # Para manipulación de datos tabulares
+import requests  # Para llamadas a la API Tradier
+import plotly.express as px  # Para gráficos interactivos sencillos
+import plotly.graph_objects as go  # Para gráficos avanzados
+from datetime import datetime, timedelta  # Para manejo de fechas
+import numpy as np  # Para cálculos matemáticos y manipulación de arrays
+from dotenv import load_dotenv  # Para cargar variables de entorno
+
 
 
 # Configuración inicial de la página
@@ -554,7 +540,6 @@ display_winning_contracts(winning_options)
 
 
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
 
 
 
