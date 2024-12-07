@@ -53,3 +53,4 @@ streamtologger>=2017.1
 tksheet>=5.3.2,<=6.3.5
 win10toast>=0.9; platform_system == "Windows" and platform_release == "10"
 protobuf
+xgboost
