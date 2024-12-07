@@ -12,8 +12,16 @@ import bcrypt
 import streamlit_authenticator as stauth
 import csv
 from bs4 import BeautifulSoup
-import requests
 from datetime import datetime, timedelta
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+
+
 
 # Configuración inicial de la página
 st.set_page_config(page_title="SCANNER OPTIONS", layout="wide")
@@ -331,6 +339,221 @@ st.plotly_chart(skew_fig, use_container_width=True)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#########################################################################
+
+
+def calculate_support_resistance_gamma(processed_data, current_price, price_range=20):
+    """
+    Calcula el soporte y la resistencia basados en el Gamma más alto dentro de un rango dado.
+    """
+    max_gamma_call, max_gamma_put = -1, -1
+    resistance_strike, support_strike = None, None
+
+    # Filtrar strikes en el rango deseado
+    strikes_in_range = {
+        strike: data for strike, data in processed_data.items()
+        if current_price - price_range <= strike <= current_price + price_range
+    }
+
+    # Buscar la resistencia (CALL con mayor Gamma)
+    for strike, data in strikes_in_range.items():
+        gamma_call = data["CALL"].get("Gamma", 0)
+        if strike >= current_price and gamma_call > max_gamma_call:
+            max_gamma_call = gamma_call
+            resistance_strike = strike
+
+    # Buscar el soporte (PUT con mayor Gamma)
+    for strike, data in strikes_in_range.items():
+        gamma_put = data["PUT"].get("Gamma", 0)
+        if strike <= current_price and gamma_put > max_gamma_put:
+            max_gamma_put = gamma_put
+            support_strike = strike
+
+    # Validar resultados
+    return {
+        "Resistance (CALL)": {
+            "Strike": resistance_strike or "No Match",
+            "Gamma": max_gamma_call if resistance_strike else 0,
+        },
+        "Support (PUT)": {
+            "Strike": support_strike or "No Match",
+            "Gamma": max_gamma_put if support_strike else 0,
+        },
+    }
+
+
+def generate_winning_contract(options_data, current_price, iv_hv_ratio=1.2):
+    """
+    Genera un contrato ganador basado en criterios calculados.
+    """
+    winning_contracts = []
+
+    for option in options_data:
+        strike = option["strike"]
+        delta = option.get("greeks", {}).get("delta", 0)
+        gamma = option.get("greeks", {}).get("gamma", 0)
+        theta = option.get("greeks", {}).get("theta", 0)
+        iv = option.get("implied_volatility", 0) * 100
+        hv = option.get("historical_volatility", 0) * 100
+        volume = option.get("volume", 0)
+        open_interest = option.get("open_interest", 0)
+        bid = option["bid"] or 0
+        ask = option["ask"] or 0
+        mid_price = (bid + ask) / 2 if bid and ask else bid or ask
+
+        # Condiciones del contrato ganador
+        if (
+            0.4 <= abs(delta) <= 0.6 and
+            gamma > 0.01 and
+            mid_price > 0 and
+            volume > 500 and
+            open_interest > 1000 and
+            (iv / hv if hv > 0 else 1) <= iv_hv_ratio
+        ):
+            max_gain = ((current_price - strike) / mid_price * 100) if delta < 0 else ((strike - current_price) / mid_price * 100)
+            risk_reward = max_gain / mid_price if mid_price > 0 else 0
+
+            winning_contracts.append({
+                "Strike": strike,
+                "Type": "CALL" if delta > 0 else "PUT",
+                "Delta": round(delta, 4),
+                "Gamma": round(gamma, 4),
+                "Theta": round(theta, 4),
+                "IV": round(iv, 2),
+                "HV": round(hv, 2),
+                "Volume": volume,
+                "Open Interest": open_interest,
+                "Max Gain (%)": round(max_gain, 2),
+                "Risk-Reward Ratio": round(risk_reward, 2),
+                "Entry Price": round(mid_price, 2),
+            })
+
+    # Ordenar por el mayor Max Gain
+    winning_contracts = sorted(winning_contracts, key=lambda x: x["Max Gain (%)"], reverse=True)
+    return winning_contracts[:3]
+
+
+def display_support_resistance(support_resistance):
+    """
+    Muestra el soporte y resistencia calculados en tarjetas dinámicas.
+    """
+    st.subheader("")
+    for key, value in support_resistance.items():
+        card_color = "#d4f4dd" if "CALL" in key else "#f4d4d4"
+        border_color = "#28a745" if "CALL" in key else "#dc3545"
+
+        st.markdown(f"""
+            <div style="border: 2px solid {border_color}; border-radius: 10px; padding: 10px; margin-bottom: 10px; background-color: {card_color};">
+                <h4 style="color: black; margin-bottom: 5px;">{key}</h4>
+                <p style="color: black; margin: 5px 0;"><b>Strike:</b> {value['Strike']}</p>
+                <p style="color: black; margin: 5px 0;"><b>Gamma:</b> {value['Gamma']:.4f}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+
+def display_winning_contracts(winning_contracts):
+    """
+    Muestra los contratos ganadores en tarjetas dentro de Streamlit.
+    Las tarjetas serán verdes para CALLs y rojas para PUTs.
+    """
+    if not winning_contracts:
+        st.write("Wait Dude There are no Contracts Relax.")
+        return
+
+    st.subheader("High Performance Contracts")
+    for contract in winning_contracts:
+        # Determinar el color de la tarjeta según el tipo de contrato
+        card_color = "#d4f4dd" if contract['Type'] == "CALL" else "#f4d4d4"
+        border_color = "#28a745" if contract['Type'] == "CALL" else "#dc3545"
+
+        # Contenido dinámico de la tarjeta
+        st.markdown(f"""
+            <div style="border: 2px solid {border_color}; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: {card_color};">
+                <h4 style="color: black; margin-bottom: 10px; font-size: 18px;">{contract['Type']} - Strike: {contract['Strike']}</h4>
+                <p style="color: black; margin: 5px 0;"><b>Delta:</b> {contract['Delta']} | <b>Gamma:</b> {contract['Gamma']} | <b>Theta:</b> {contract['Theta']}</p>
+                <p style="color: black; margin: 5px 0;"><b>IV:</b> {contract['IV']}% | <b>HV:</b> {contract['HV']}%</p>
+                <p style="color: black; margin: 5px 0;"><b>Volume:</b> {contract['Volume']} | <b>Open Interest:</b> {contract['Open Interest']}</p>
+                <p style="color: black; margin: 5px 0;"><b>Entry Price:</b> ${contract['Entry Price']} | <b>Max Gain:</b> {contract['Max Gain (%)']}% | <b>RR Ratio:</b> {contract['Risk-Reward Ratio']}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+
+# Llamar a las funciones y mostrar resultados en Streamlit
+support_resistance = calculate_support_resistance_gamma(processed_data, current_price, price_range=20)
+display_support_resistance(support_resistance)
+
+winning_options = generate_winning_contract(options_data, current_price)
+display_winning_contracts(winning_options)
+
+
+
+
+
+
+
+
+
+
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 
 
