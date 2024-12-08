@@ -758,6 +758,105 @@ else:
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+def detect_and_update_targets(processed_data, current_price, threshold_percentage=10):
+    """
+    Detect and dynamically update Maximum and Bottom Targets if they are broken.
+    """
+    # Identificar los strikes con el Gamma más alto
+    max_gamma_call = max(
+        (processed_data[strike]["CALL"]["Gamma"] * processed_data[strike]["CALL"]["OI"], strike)
+        for strike in processed_data if "CALL" in processed_data[strike]
+    )
+    max_gamma_put = max(
+        (processed_data[strike]["PUT"]["Gamma"] * processed_data[strike]["PUT"]["OI"], strike)
+        for strike in processed_data if "PUT" in processed_data[strike]
+    )
+
+    # Extraer strikes iniciales
+    strike_call = max_gamma_call[1]
+    strike_put = max_gamma_put[1]
+
+    # Si rompe el máximo
+    if current_price > strike_call * (1 + threshold_percentage / 100):
+        # Buscar el siguiente nivel CALL
+        next_call_targets = sorted(
+            [(processed_data[s]["CALL"]["Gamma"] * processed_data[s]["CALL"]["OI"], s)
+             for s in processed_data if s > strike_call and "CALL" in processed_data[s]],
+            reverse=True
+        )
+        strike_call = next_call_targets[0][1] if next_call_targets else strike_call  # Actualizar si hay otro nivel
+
+    # Si rompe el mínimo
+    if current_price < strike_put * (1 - threshold_percentage / 100):
+        # Buscar el siguiente nivel PUT
+        next_put_targets = sorted(
+            [(processed_data[s]["PUT"]["Gamma"] * processed_data[s]["PUT"]["OI"], s)
+             for s in processed_data if s < strike_put and "PUT" in processed_data[s]],
+            reverse=True
+        )
+        strike_put = next_put_targets[0][1] if next_put_targets else strike_put  # Actualizar si hay otro nivel
+
+    return {
+        "Current Price": current_price,
+        "Maximum Target Today": strike_call,
+        "Bottom Target Today": strike_put,
+        "Next CALL Target": round(strike_call, 2),
+        "Next PUT Target": round(strike_put, 2),
+    }
+
+
+# Calcular y actualizar dinámicamente los targets
+updated_targets = detect_and_update_targets(processed_data, current_price)
+
+# Mostrar resultados
+st.subheader("Target Updates")
+st.markdown(f"""
+    <div style="border: 2px solid #007bff; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: #e6f7ff;">
+        <h3 style="color: #0056b3;">Price Movement</h3>
+        <p style="color: black;"><b>Current Price:</b> ${updated_targets['Current Price']:.2f}</p>
+        <p style="color: black;"><b>Maximum Target Today:</b> ${updated_targets['Maximum Target Today']}</p>
+        <p style="color: black;"><b>Bottom Target Today:</b> ${updated_targets['Bottom Target Today']}</p>
+    </div>
+""", unsafe_allow_html=True)
+
+# Mostrar los siguientes targets dinámicos
+st.markdown(f"""
+    <div style="border: 2px solid #28a745; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: #d4edda;">
+        <h3 style="color: #155724;">Next Dynamic Targets</h3>
+        <p style="color: black;"><b>Next CALL Target:</b> ${updated_targets['Next CALL Target']}</p>
+        <p style="color: black;"><b>Next PUT Target:</b> ${updated_targets['Next PUT Target']}</p>
+    </div>
+""", unsafe_allow_html=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Add a disclaimer message at the bottom of the app
 st.markdown("""
     <div style="text-align: center; margin-top: 50px; font-size: 10px; color: red;">
@@ -767,8 +866,6 @@ st.markdown("""
         <p><strong>© 2024 OzyTarget. All rights reserved.</strong></p>
     </div>
 """, unsafe_allow_html=True)
-
-
 
 
 
