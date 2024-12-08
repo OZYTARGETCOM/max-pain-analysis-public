@@ -825,7 +825,7 @@ updated_targets = detect_and_update_targets(processed_data, current_price)
 st.subheader("Target Updates")
 st.markdown(f"""
     <div style="border: 2px solid #007bff; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: #e6f7ff;">
-        <h3 style="color: #0056b3;">Price Movement</h3>
+        <h3 style="color: #0056b3;">TODAY TARGETS</h3>
         <p style="color: black;"><b>Current Price:</b> ${updated_targets['Current Price']:.2f}</p>
         <p style="color: black;"><b>Maximum Target Today:</b> ${updated_targets['Maximum Target Today']}</p>
         <p style="color: black;"><b>Bottom Target Today:</b> ${updated_targets['Bottom Target Today']}</p>
@@ -835,7 +835,7 @@ st.markdown(f"""
 # Mostrar los siguientes targets dinámicos
 st.markdown(f"""
     <div style="border: 2px solid #28a745; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: #d4edda;">
-        <h3 style="color: #155724;">Next Dynamic Targets</h3>
+        <h3 style="color: #155724;">Break the Targets</h3>
         <p style="color: black;"><b>Next CALL Target:</b> ${updated_targets['Next CALL Target']}</p>
         <p style="color: black;"><b>Next PUT Target:</b> ${updated_targets['Next PUT Target']}</p>
     </div>
@@ -866,6 +866,5 @@ st.markdown("""
         <p><strong>© 2024 OzyTarget. All rights reserved.</strong></p>
     </div>
 """, unsafe_allow_html=True)
-
 
 
