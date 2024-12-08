@@ -258,7 +258,7 @@ def plot_skew_analysis_with_totals(options_data):
 # Interfaz de usuario
 st.title("SCANNER")
 
-ticker = st.text_input("Ticker", value="AAPL", key="ticker_input").upper()
+ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
 expiration_dates = get_expiration_dates(ticker)
 if expiration_dates:
     expiration_date = st.selectbox("Expiration Date", expiration_dates, key="expiration_date")
@@ -492,6 +492,7 @@ display_support_resistance(support_resistance)
 
 winning_options = generate_winning_contract(options_data, current_price)
 display_winning_contracts(winning_options)
+
 
 
 
@@ -857,14 +858,96 @@ st.markdown(f"""
 
 
 
-# Add a disclaimer message at the bottom of the app
-st.markdown("""
-    <div style="text-align: center; margin-top: 50px; font-size: 10px; color: red;">
-        <p><strong>Beta Version</strong></p>
-        <p>This system is exclusively for authorized users and has a time limit of <strong>5 consecutive minutes</strong>.</p>
-        <p>This is a private platform, and all rights belong to <strong>OzyTarget</strong>. Unauthorized use will be monitored and subject to legal action under applicable terms.</p>
-        <p><strong>© 2024 OzyTarget. All rights reserved.</strong></p>
-    </div>
-""", unsafe_allow_html=True)
 
 
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+
+
+
+
+
+
+
+
+# Función para calcular zonas clave
+def calculate_key_levels(options_data):
+    key_levels = {"CALL": [], "PUT": []}
+    for option in options_data:
+        strike = option["strike"]
+        gamma = option.get("greeks", {}).get("gamma", 0)
+        delta = option.get("greeks", {}).get("delta", 0)
+        oi = option.get("open_interest", 0)
+
+        if option["option_type"].upper() == "CALL":
+            key_levels["CALL"].append((strike, gamma, delta, oi))
+        elif option["option_type"].upper() == "PUT":
+            key_levels["PUT"].append((strike, gamma, delta, oi))
+
+    # Ordenar por Open Interest y seleccionar los 3 niveles más relevantes
+    for key in key_levels:
+        key_levels[key] = sorted(key_levels[key], key=lambda x: x[3], reverse=True)[:3]
+
+    return key_levels
+
+# Función para verificar alertas dinámicas
+def check_alerts(current_price, key_levels):
+    alerts = []
+    for option_type, levels in key_levels.items():
+        for strike, gamma, delta, oi in levels:
+            if abs(current_price - strike) <= 1:  # A menos de 1 punto del strike
+                alerts.append(f"{option_type} Strike {strike} is being approached! (Gamma: {gamma}, OI: {oi})")
+    return alerts
+
+# Interfaz de usuario
+
+
+
+current_price = get_current_price(ticker)
+options_data = get_options_data(ticker, expiration_date)
+
+if not options_data:
+    st.error("No options data available.")
+    st.stop()
+
+# Calcular niveles clave y alertas
+key_levels = calculate_key_levels(options_data)
+alerts = check_alerts(current_price, key_levels)
+
+# Mostrar resultados
+st.subheader("Current Price")
+st.markdown(f"**${current_price:.2f}**")
+
+st.subheader("Key Levels")
+for option_type, levels in key_levels.items():
+    st.markdown(f"### {option_type}")
+    for strike, gamma, delta, oi in levels:
+        st.markdown(f"- **Strike:** {strike}, **Gamma:** {gamma:.4f}, **Delta:** {delta:.4f}, **OI:** {oi}")
+
+st.subheader("Intraday ")
+if alerts:
+    for alert in alerts:
+        st.markdown(f"🚨 {alert}")
+else:
+    st.markdown("No alerts at the moment.")
+
+# Visualización de Gamma y OI
+def plot_gamma_oi(key_levels):
+    strikes = []
+    gammas = []
+    open_interests = []
+    option_types = []
+
+    for option_type, levels in key_levels.items():
+        for strike, gamma, _, oi in levels:
+            strikes.append(strike)
+            gammas.append(gamma)
+            open_interests.append(oi)
+            option_types.append(option_type)
+
+    df = pd.DataFrame({"Strike": strikes, "Gamma": gammas, "OI": open_interests, "Type": option_types})
+    fig = px.scatter(df, x="Strike", y="Gamma", size="OI", color="Type", title="Executed Strike")
+    return fig
+
+st.plotly_chart(plot_gamma_oi(key_levels), use_container_width=True)
