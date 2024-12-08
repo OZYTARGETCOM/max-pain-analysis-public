@@ -951,3 +951,226 @@ def plot_gamma_oi(key_levels):
     return fig
 
 st.plotly_chart(plot_gamma_oi(key_levels), use_container_width=True)
+
+
+
+
+
+
+
+
+
+############################################################################################
+
+
+
+
+
+
+
+
+
+
+all_tickers = [
+    # 100 Tickers de NASDAQ
+    "AAPL", "MSFT", "NVDA", "GOOG", "AMZN", "META", "TSLA", "ADBE", "INTC", "NFLX",
+    "QCOM", "CSCO", "AMD", "PYPL", "AVGO", "AMAT", "TXN", "MRVL", "INTU", "SHOP",
+    "JD", "ZM", "DOCU", "CRWD", "SNOW", "ZS", "PANW", "SPLK", "MDB", "OKTA",
+    "ROKU", "ALGN", "ADSK", "DXCM", "TEAM", "PDD", "MELI", "BIDU", "BABA", "NTES",
+    "ATVI", "EA", "ILMN", "EXPE", "SIRI", "KLAC", "LRCX", "ASML", "SWKS", "XLNX",
+    "WDAY", "TTWO", "VRTX", "REGN", "BIIB", "SGEN", "MAR", "CTSH", "FISV", "MTCH",
+    "TTD", "SPLK", "PTON", "DOCS", "UPST", "HIMS", "CRSP", "NVCR", "EXAS", "ARKK",
+    "ZS", "TWLO", "U", "HUBS", "VIX", "BILL", "ZI", "GTLB", "NET", "FVRR",
+    "TTD", "COIN", "RBLX", "DKNG", "SPOT", "SNAP", "PINS", "MTCH", "LYFT", "GRPN",
+
+    # 100 Tickers de NYSE
+    "BRK.B", "JNJ", "V", "PG", "JPM", "HD", "DIS", "MA", "UNH", "PFE", "KO", "PEP",
+    "BAC", "WMT", "XOM", "CVX", "ABT", "TMO", "MRK", "MCD", "CAT", "GS", "MMM",
+    "RTX", "IBM", "DOW", "GE", "BA", "LMT", "FDX", "T", "VZ", "NKE", "AXP", "ORCL",
+    "CSX", "USB", "SPG", "AMT", "PLD", "CCI", "PSA", "CB", "BK", "SCHW", "TFC", "SO",
+    "D", "DUK", "NEE", "EXC", "SRE", "AEP", "EIX", "PPL", "PEG", "FE", "AEE", "AES",
+    "ETR", "XEL", "AWK", "WEC", "ED", "ES", "CNP", "CMS", "DTE", "EQT", "OGE",
+    "OKE", "SWX", "WMB", "APA", "DVN", "FANG", "MRO", "PXD", "HAL", "SLB", "COP",
+    "CVX", "XOM", "PSX", "MPC", "VLO", "HES", "OXY", "EOG", "KMI", "WES","DJT","BITX","SMCI","ENPH",
+
+    # 100 Tickers de Russell
+    "PLTR", "ROKU", "SQ", "AFRM", "UPST", "FVRR", "ETSY", "NET", "DDOG", "TWLO",
+    "U", "HUBS", "DOCN", "GTLB", "SMAR", "PATH", "COUP", "ASAN", "RBLX", "DKNG",
+    "BILL", "ZI", "TTD", "CRSP", "NVCR", "EXAS", "ARKK", "MTCH", "LYFT", "GRPN",
+    "BB", "CLF", "FUBO", "CLOV", "NNDM", "SKLZ", "SPCE", "SNDL", "WKHS", "GME",
+    "AMC", "BBBY", "APRN", "SPWR", "RUN", "FCEL", "PLUG", "SOLO", "KNDI", "XPEV",
+    "LI", "NIO", "RIDE", "NKLA", "QS", "LCID", "FSR", "PSNY", "GOEV", "WKHS",
+    "VRM", "BABA", "JD", "PDD", "BIDU", "TCEHY", "NTES", "IQ", "HUYA", "DOYU",
+    "EDU", "TAL", "ZH", "DIDI", "YMM", "BILI", "PDD", "LU", "QD", "FINV",
+    "OCGN", "NVTA", "CRSP", "BEAM", "EDIT", "NTLA", "PACB", "TWST", "FLGT", "FATE"
+]
+
+# Función para obtener datos de múltiples tickers
+@st.cache_data
+def fetch_batch_stock_data(tickers):
+    tickers_str = ",".join(tickers)
+    url = f"{BASE_URL}/markets/quotes"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbols": tickers_str}
+
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        data = response.json().get("quotes", {}).get("quote", [])
+        if isinstance(data, dict):
+            data = [data]
+        return [
+            {
+                "Ticker": item.get("symbol", ""),
+                "Price": item.get("last", 0),
+                "Change (%)": item.get("change_percentage", 0),
+                "Volume": item.get("volume", 0),
+                "Average Volume": item.get("average_volume", 1),
+                "IV": item.get("implied_volatility", None),
+                "HV": item.get("historical_volatility", None),
+                "Previous Close": item.get("prev_close", 0)
+            }
+            for item in data
+        ]
+    else:
+        st.error(f"Error al obtener datos: {response.status_code}")
+        return []
+
+# Función para calcular top movers básicos
+def calculate_top_movers(data):
+    df = pd.DataFrame(data)
+    if df.empty:
+        return pd.DataFrame()
+
+    df["IV"] = df["IV"].fillna(0).infer_objects(copy=False)
+    df["Average Volume"] = df["Average Volume"].replace(0, np.nan)
+    df["Volumen Relativo"] = df["Volume"] / df["Average Volume"]
+    df["Cambio Relativo"] = np.abs(df["Change (%)"]) / df["Change (%)"].mean()
+
+    df["Score"] = (df["Volumen Relativo"] * 4) + (df["Cambio Relativo"] * 3) + df["IV"]
+
+    return df.sort_values("Score", ascending=False).head(3)
+
+# Función para detectar movimientos continuos
+def calculate_continuous_movers(data):
+    df = pd.DataFrame(data)
+    if df.empty:
+        return pd.DataFrame()
+
+    df["IV"] = df["IV"].fillna(0).infer_objects(copy=False)
+    df["HV"] = df["HV"].fillna(0).infer_objects(copy=False)
+    df["Average Volume"] = df["Average Volume"].replace(0, np.nan)
+
+    df["Volumen Relativo"] = df["Volume"] / df["Average Volume"]
+    df["Momentum"] = np.abs(df["Price"] - df["Previous Close"]) / df["Previous Close"]
+    df["Cambio Relativo"] = np.abs(df["Change (%)"]) / df["Change (%)"].mean()
+
+    df["Score"] = (df["Volumen Relativo"] * 4) + (df["Momentum"] * 3) + (df["Cambio Relativo"] * 2) + (df["IV"] + df["HV"])
+
+    return df.sort_values("Score", ascending=False).head(3)
+
+# Función para calcular potencial explosivo
+def calculate_explosive_movers(data):
+    df = pd.DataFrame(data)
+    if df.empty:
+        return pd.DataFrame()
+
+    df["IV"] = df["IV"].fillna(0).infer_objects(copy=False)
+    df["HV"] = df["HV"].fillna(0).infer_objects(copy=False)
+    df["Average Volume"] = df["Average Volume"].replace(0, np.nan)
+
+    df["Volumen Relativo"] = df["Volume"] / df["Average Volume"]
+    df["Explosión"] = df["Volumen Relativo"] * df["Change (%)"].abs()
+    df["Score"] = df["Explosión"] + (df["IV"] * 0.5)
+
+    return df.sort_values("Score", ascending=False).head(3)
+
+
+
+
+# Función para calcular actividad de opciones
+def calculate_options_activity(data):
+    df = pd.DataFrame(data)
+    if df.empty:
+        return pd.DataFrame()
+
+    df["IV"] = df["IV"].fillna(0).astype(float)
+    df["Volumen Relativo"] = df["Volume"] / df["Average Volume"]
+    df["Options Activity"] = df["Volumen Relativo"] * df["IV"]
+
+    return df.sort_values("Options Activity", ascending=False).head(3)
+
+
+# Interfaz de usuario
+st.title("")
+
+
+
+stock_data = fetch_batch_stock_data(all_tickers)
+
+if stock_data:
+    # Versión 1: Básico
+    st.subheader("Top Movers")
+    top_movers = calculate_top_movers(stock_data)
+    for _, row in top_movers.iterrows():
+        st.markdown(f"""
+            <div style="border: 2px solid #28a745; padding: 10px; margin-bottom: 10px;">
+                <h3>{row['Ticker']}</h3>
+                <p><b>Precio:</b> ${row['Price']:.2f}</p>
+                <p><b>Cambio (%):</b> {row['Change (%)']:.2f}%</p>
+                <p><b>Volumen Relativo:</b> {row['Volumen Relativo']:.2f}</p>
+                <p><b>Puntaje:</b> {row['Score']:.2f}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+    # Versión 2: Movimientos Continuos
+    st.subheader("")
+    continuous_movers = calculate_continuous_movers(stock_data)
+    for _, row in continuous_movers.iterrows():
+        st.markdown(f"""
+            <div style="border: 2px solid #ff4500; padding: 10px; margin-bottom: 10px;">
+                <h3>{row['Ticker']}</h3>
+                <p><b>Precio:</b> ${row['Price']:.2f}</p>
+                <p><b>Momentum:</b> {row['Momentum']:.2f}</p>
+                <p><b>Puntaje:</b> {row['Score']:.2f}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+    # Versión 3: Explosión
+    st.subheader("")
+    explosive_movers = calculate_explosive_movers(stock_data)
+    for _, row in explosive_movers.iterrows():
+        st.markdown(f"""
+            <div style="border: 2px solid #0000FF; padding: 10px; margin-bottom: 10px;">
+                <h3>{row['Ticker']}</h3>
+                <p><b>Precio:</b> ${row['Price']:.2f}</p>
+                <p><b>Explosión:</b> {row['Explosión']:.2f}</p>
+                <p><b>Puntaje:</b> {row['Score']:.2f}</p>
+            </div>
+        """, unsafe_allow_html=True)
+else:
+    st.warning("No se encontraron datos para los tickers ingresados.")
+
+
+
+
+
+
+# Nueva Sección: Actividad de Opciones
+    st.subheader("Actividad de Opciones")
+    options_activity = calculate_options_activity(stock_data)
+    for _, row in options_activity.iterrows():
+        st.markdown(f"""
+            <div style="border: 2px solid #0000FF; padding: 10px; margin-bottom: 10px;">
+                <h3>{row['Ticker']}</h3>
+                <p><b>Precio:</b> ${row['Price']:.2f}</p>
+                <p><b>Volumen Relativo:</b> {row['Volumen Relativo']:.2f}</p>
+                <p><b>Actividad de Opciones:</b> {row['Options Activity']:.2f}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+
+    else:
+     st.warning("No se encontraron datos para los tickers ingresados.")
+
+
+    ####################################################################### 
