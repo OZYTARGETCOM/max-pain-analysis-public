@@ -10,7 +10,7 @@ from dotenv import load_dotenv  # Para cargar variables de entorno
 
 
 # Configuración inicial de la página
-st.set_page_config(page_title="SCANNER OPTIONS", layout="wide")
+st.set_page_config(page_title="SCANNER ", layout="wide")
 
 # Configuración de la API Tradier
 API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
@@ -155,9 +155,9 @@ def gamma_exposure_chart_optimized(processed_data, current_price, max_pain):
     )
 
     fig.update_layout(
-        title="Gamma Exposure (Calls vs Puts)",
+        title="(Calls vs Puts)",
         xaxis_title="Strike Price",
-        yaxis_title="Gamma Exposure",
+        yaxis_title="VOLUME E",
         template="plotly_white",
         legend=dict(title="Option Type"),
     )
@@ -190,8 +190,8 @@ def create_heatmap(processed_data):
     ))
 
     fig.update_layout(
-        title="Supports & Resistances (Heatmap)",
-        xaxis_title="Strike Price",
+        title="GEAR",
+        xaxis_title="GEAR",
         yaxis_title="Metrics",
         template="plotly_dark"
     )
@@ -256,7 +256,7 @@ def plot_skew_analysis_with_totals(options_data):
 
 
 # Interfaz de usuario
-st.title("SCANNER OPTIONS")
+st.title("SCANNER")
 
 ticker = st.text_input("Ticker", value="AAPL", key="ticker_input").upper()
 expiration_dates = get_expiration_dates(ticker)
@@ -307,7 +307,7 @@ st.plotly_chart(heatmap_fig, use_container_width=True)
 
 
 
-st.subheader("Skew Analysis")
+st.subheader("Options")
 
 # Llamar a la función mejorada
 skew_fig, total_calls, total_puts = plot_skew_analysis_with_totals(options_data)
@@ -321,64 +321,27 @@ st.plotly_chart(skew_fig, use_container_width=True)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Función para generar señales en formato de tarjetas
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -387,7 +350,7 @@ st.plotly_chart(skew_fig, use_container_width=True)
 #########################################################################
 
 
-def calculate_support_resistance_gamma(processed_data, current_price, price_range=20):
+def calculate_support_resistance_gamma(processed_data, current_price, price_range=21):
     """
     Calcula el soporte y la resistencia basados en el Gamma más alto dentro de un rango dado.
     """
@@ -542,6 +505,268 @@ display_winning_contracts(winning_options)
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 
+
+
+
+
+
+
+def calculate_iron_condor(processed_data, current_price, step=5):
+    """
+    Calcula los strikes, primas, puntos de equilibrio y rango de beneficio para un Iron Condor.
+    """
+    # Identificar el Gamma más alto para CALLs y PUTs
+    max_gamma_call = max(
+        (processed_data[strike]["CALL"]["Gamma"], strike)
+        for strike in processed_data if "CALL" in processed_data[strike]
+    )
+    max_gamma_put = max(
+        (processed_data[strike]["PUT"]["Gamma"], strike)
+        for strike in processed_data if "PUT" in processed_data[strike]
+    )
+
+    # Strikes óptimos para vender
+    strike_call_sell = max_gamma_call[1]
+    strike_put_sell = max_gamma_put[1]
+
+    # Strikes para las posiciones compradas
+    strike_call_buy = strike_call_sell + step
+    strike_put_buy = strike_put_sell - step
+
+    # Primas para cada posición (usando Gamma * OI como aproximación)
+    premium_call_sell = processed_data[strike_call_sell]["CALL"]["OI"] * processed_data[strike_call_sell]["CALL"]["Gamma"]
+    premium_call_buy = processed_data.get(strike_call_buy, {}).get("CALL", {}).get("OI", 0) * processed_data.get(strike_call_buy, {}).get("CALL", {}).get("Gamma", 0)
+
+    premium_put_sell = processed_data[strike_put_sell]["PUT"]["OI"] * processed_data[strike_put_sell]["PUT"]["Gamma"]
+    premium_put_buy = processed_data.get(strike_put_buy, {}).get("PUT", {}).get("OI", 0) * processed_data.get(strike_put_buy, {}).get("Gamma", 0)
+
+    # Cálculo de los puntos de equilibrio
+    breakeven_call = strike_call_sell + (premium_call_sell - premium_call_buy)
+    breakeven_put = strike_put_sell - (premium_put_sell - premium_put_buy)
+
+    # Rango de beneficio
+    max_profit_range = (breakeven_put, breakeven_call)
+
+    return {
+        "Sell Call Strike": strike_call_sell,
+        "Buy Call Strike": strike_call_buy,
+        "Sell Put Strike": strike_put_sell,
+        "Buy Put Strike": strike_put_buy,
+        "Breakeven Call": breakeven_call,
+        "Breakeven Put": breakeven_put,
+        "Max Profit Range": max_profit_range,
+        "Premiums": {
+            "Call Sell": premium_call_sell,
+            "Call Buy": premium_call_buy,
+            "Put Sell": premium_put_sell,
+            "Put Buy": premium_put_buy,
+        }
+    }
+
+
+# Calcular el Iron Condor
+iron_condor = calculate_iron_condor(processed_data, current_price)
+
+# Presentar resultados en tarjetas dinámicas
+st.subheader("Analysis")
+
+# Color personalizado
+text_color = "black"  # Cambia a "black", "yellow", o cualquier color CSS válido
+
+# Tarjeta para las posiciones CALL
+st.markdown(f"""
+    <div style="border: 2px solid #007bff; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: #e6f7ff;">
+        <h3 style="color: #0056b3;">CALLs</h3>
+        <p style="color: {text_color};"><b>Sell Call Strike:</b> {iron_condor['Sell Call Strike']}</p>
+        <p style="color: {text_color};"><b>Buy Call Strike:</b> {iron_condor['Buy Call Strike']}</p>
+        <p style="color: {text_color};"><b>Breakeven Call:</b> {iron_condor['Breakeven Call']:.2f}</p>
+        <p style="color: {text_color};"><b>Premium (Sell Call):</b> ${iron_condor['Premiums']['Call Sell']:.2f}</p>
+        <p style="color: {text_color};"><b>Premium (Buy Call):</b> ${iron_condor['Premiums']['Call Buy']:.2f}</p>
+    </div>
+""", unsafe_allow_html=True)
+
+# Tarjeta para las posiciones PUT
+st.markdown(f"""
+    <div style="border: 2px solid #dc3545; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: #f8d7da;">
+        <h3 style="color: #8b0000;">PUTs</h3>
+        <p style="color: {text_color};"><b>Sell Put Strike:</b> {iron_condor['Sell Put Strike']}</p>
+        <p style="color: {text_color};"><b>Buy Put Strike:</b> {iron_condor['Buy Put Strike']}</p>
+        <p style="color: {text_color};"><b>Breakeven Put:</b> {iron_condor['Breakeven Put']:.2f}</p>
+        <p style="color: {text_color};"><b>Premium (Sell Put):</b> ${iron_condor['Premiums']['Put Sell']:.2f}</p>
+        <p style="color: {text_color};"><b>Premium (Buy Put):</b> ${iron_condor['Premiums']['Put Buy']:.2f}</p>
+    </div>
+""", unsafe_allow_html=True)
+
+# Tarjeta para el rango de beneficio máximo
+st.markdown(f"""
+    <div style="border: 2px solid #28a745; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: #d4edda;">
+        <h3 style="color: #155724;">Range</h3>
+        <p style="color: {text_color};"><b>Desde:</b> {iron_condor['Max Profit Range'][0]:.2f}</p>
+        <p style="color: {text_color};"><b>Hasta:</b> {iron_condor['Max Profit Range'][1]:.2f}</p>
+    </div>
+""", unsafe_allow_html=True)
+
+
+################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Obtener el precio actual
+current_price = get_current_price(ticker)
+
+# Mostrar el precio actual en la interfaz para debugging
+st.write(f"**Current Price:** ${current_price:.2f}")
+
+# Verificar si el precio es válido
+if current_price == 0:
+    st.error("Error: Could not retrieve current price. Please check your API or the ticker symbol.")
+    st.stop()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def detect_synthetic_trigger(processed_data, current_price, threshold_percentage=10):
+    """
+    Detecta un "sintético" cuando el precio rompe un alto volumen de Gamma PUT o CALL.
+    Asegura que el tipo de contrato esté correctamente asociado.
+    """
+    # Identificar el strike con el mayor volumen de Gamma para CALL y PUT
+    max_gamma_call = max(
+        (processed_data[strike]["CALL"]["Gamma"] * processed_data[strike]["CALL"]["OI"], strike)
+        for strike in processed_data if "CALL" in processed_data[strike]
+    )
+    max_gamma_put = max(
+        (processed_data[strike]["PUT"]["Gamma"] * processed_data[strike]["PUT"]["OI"], strike)
+        for strike in processed_data if "PUT" in processed_data[strike]
+    )
+
+    # Definir los niveles de ruptura
+    gamma_call_level = max_gamma_call[1]
+    gamma_put_level = max_gamma_put[1]
+    call_threshold_up = gamma_call_level * (1 + threshold_percentage / 100)
+    put_threshold_up = gamma_put_level * (1 + threshold_percentage / 100)
+
+    # Inicializar los triggers
+    synthetic_trigger = None
+
+    # Verificar ruptura en CALLs
+    if current_price > call_threshold_up:  # Ruptura hacia arriba en CALLs
+        next_targets = sorted(
+            [(processed_data[strike]["CALL"]["Gamma"] * processed_data[strike]["CALL"]["OI"], strike)
+             for strike in processed_data if strike > gamma_call_level and "CALL" in processed_data[strike]],
+            reverse=True
+        )[:3]
+        next_targets = [strike for _, strike in next_targets]
+        synthetic_trigger = {
+            "type": "CALL",
+            "triggered_level": gamma_call_level,
+            "next_targets": next_targets,
+            "direction": "UP"
+        }
+
+    # Verificar ruptura en PUTs
+    elif current_price > put_threshold_up:  # Ruptura hacia arriba en PUTs
+        next_targets = sorted(
+            [(processed_data[strike]["PUT"]["Gamma"] * processed_data[strike]["PUT"]["OI"], strike)
+             for strike in processed_data if strike > gamma_put_level and "PUT" in processed_data[strike]],
+            reverse=True
+        )[:3]
+        next_targets = [strike for _, strike in next_targets]
+        synthetic_trigger = {
+            "type": "PUT",
+            "triggered_level": gamma_put_level,
+            "next_targets": next_targets,
+            "direction": "UP"
+        }
+
+    # Si no hay ruptura, mostrar los siguientes targets relevantes
+    if synthetic_trigger is None:
+        next_call_target = min(
+            strike for strike in processed_data if strike > current_price and "CALL" in processed_data[strike]
+        )
+        next_put_target = max(
+            strike for strike in processed_data if strike < current_price and "PUT" in processed_data[strike]
+        )
+        synthetic_trigger = {
+            "type": "NO TRIGGER",
+            "next_call_target": next_call_target,
+            "next_put_target": next_put_target,
+        }
+
+    return synthetic_trigger
+
+# Detectar el sintético
+synthetic_trigger = detect_synthetic_trigger(processed_data, current_price, threshold_percentage=11)
+
+# Mostrar resultados
+if synthetic_trigger["type"] == "NO TRIGGER":
+    st.markdown(f"""
+        <div style="border: 2px solid #ffc107; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: #fff3cd;">
+            <h3 style="color: black;">Direction</h3>
+            <p style="color: black;">Current price: ${current_price:.2f}</p>
+            <p style="color: black;"><b>Next CALL Target:</b> {synthetic_trigger['next_call_target']}</p>
+            <p style="color: black;"><b>Next PUT Target:</b> {synthetic_trigger['next_put_target']}</p>
+        </div>
+    """, unsafe_allow_html=True)
+else:
+    next_targets = ", ".join(map(str, synthetic_trigger['next_targets']))
+    st.markdown(f"""
+        <div style="border: 2px solid #ffc107; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: #fff3cd;">
+            <h3 style="color: black;">Synthetic Trigger Detected</h3>
+            <p style="color: black;"><b>Type:</b> {synthetic_trigger['type']}</p>
+            <p style="color: black;"><b>Triggered Level:</b> {synthetic_trigger['triggered_level']}</p>
+            <p style="color: black;"><b>Direction:</b> {synthetic_trigger['direction']}</p>
+            <p style="color: black;"><b>Next Targets:</b> {next_targets}</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+
+
+
+
+
+
+
+# Add a disclaimer message at the bottom of the app
+st.markdown("""
+    <div style="text-align: center; margin-top: 50px; font-size: 10px; color: red;">
+        <p><strong>Beta Version</strong></p>
+        <p>This system is exclusively for authorized users and has a time limit of <strong>5 consecutive minutes</strong>.</p>
+        <p>This is a private platform, and all rights belong to <strong>OzyTarget</strong>. Unauthorized use will be monitored and subject to legal action under applicable terms.</p>
+        <p><strong>© 2024 OzyTarget. All rights reserved.</strong></p>
+    </div>
+""", unsafe_allow_html=True)
 
 
 
