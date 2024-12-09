@@ -5,7 +5,6 @@ import plotly.express as px  # Para gráficos interactivos sencillos
 import plotly.graph_objects as go  # Para gráficos avanzados
 from datetime import datetime, timedelta  # Para manejo de fechas
 import numpy as np  # Para cálculos matemáticos y manipulación de arrays
-from dotenv import load_dotenv  # Para cargar variables de entorno
 
 
 
