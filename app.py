@@ -16,21 +16,27 @@ API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
 BASE_URL = "https://api.tradier.com/v1"
 
 # Función para obtener datos de opciones
-@st.cache_data
+@st.cache_data(ttl=30)
 def get_options_data(ticker, expiration_date):
+    
     url = f"{BASE_URL}/markets/options/chains"
     headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
     params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
     response = requests.get(url, headers=headers, params=params)
+    
 
     if response.status_code == 200:
         return response.json().get("options", {}).get("option", [])
     else:
         st.error("Error fetching options data.")
         return []
+    
+import time
+time.sleep(0.2)  # Pausa de 200ms entre solicitudes
+
 
 # Función para obtener fechas de expiración
-@st.cache_data
+@st.cache_data(ttl=30)
 def get_expiration_dates(ticker):
     url = f"{BASE_URL}/markets/options/expirations"
     headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
@@ -44,7 +50,7 @@ def get_expiration_dates(ticker):
         return []
 
 # Función para obtener el precio actual
-@st.cache_data
+@st.cache_data(ttl=30)
 def get_current_price(ticker):
     url = f"{BASE_URL}/markets/quotes"
     headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
@@ -270,6 +276,10 @@ options_data = get_options_data(ticker, expiration_date)
 if not options_data:
     st.error("No options data available.")
     st.stop()
+
+import time
+time.sleep(0.2)  # Pausa de 200ms entre solicitudes
+
 
 # Calcular Max Pain con el cálculo mejorado
 max_pain = calculate_max_pain_optimized(options_data)
@@ -905,6 +915,9 @@ def check_alerts(current_price, key_levels):
 
 current_price = get_current_price(ticker)
 options_data = get_options_data(ticker, expiration_date)
+import time
+time.sleep(0.2)  # Pausa de 200ms entre solicitudes
+
 
 if not options_data:
     st.error("No options data available.")
@@ -1005,7 +1018,7 @@ all_tickers = [
 ]
 
 # Función para obtener datos de múltiples tickers
-@st.cache_data
+@st.cache_data(ttl=30)
 def fetch_batch_stock_data(tickers):
     tickers_str = ",".join(tickers)
     url = f"{BASE_URL}/markets/quotes"
@@ -1172,4 +1185,4 @@ else:
      st.warning("No se encontraron datos para los tickers ingresados.")
 
 
-    ####################################################################### 
+    #######################################################################  
