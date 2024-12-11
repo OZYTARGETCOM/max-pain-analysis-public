@@ -284,19 +284,36 @@ time.sleep(0.2)  # Pausa de 200ms entre solicitudes
 # Calcular Max Pain con el cálculo mejorado
 max_pain = calculate_max_pain_optimized(options_data)
 
-# Procesar datos para gráficos
+# Procesar datos para gráficos con validaciones
 processed_data = {}
+
 for opt in options_data:
-    strike = opt["strike"]
-    option_type = opt["option_type"].upper()
+    # Verificar si el elemento es válido
+    if not opt or not isinstance(opt, dict):
+        continue  # Ignorar valores inválidos
+
+    # Validar strike
+    strike = opt.get("strike")
+    if strike is None:
+        continue  # Ignorar si no tiene strike
+
+    # Validar option_type
+    option_type = opt.get("option_type", "").upper()
+    if option_type not in ["CALL", "PUT"]:
+        continue  # Ignorar si el tipo de opción no es válido
+
+    # Obtener valores seguros
     gamma = opt.get("greeks", {}).get("gamma", 0)
     open_interest = opt.get("open_interest", 0)
 
+    # Inicializar estructura si no existe
     if strike not in processed_data:
         processed_data[strike] = {"CALL": {"Gamma": 0, "OI": 0}, "PUT": {"Gamma": 0, "OI": 0}}
 
+    # Actualizar datos
     processed_data[strike][option_type]["Gamma"] = gamma
     processed_data[strike][option_type]["OI"] = open_interest
+
 
 # Mostrar gráficos
 st.subheader("Gamma Exposure")
@@ -1185,4 +1202,4 @@ else:
      st.warning("No se encontraron datos para los tickers ingresados.")
 
 
-    #######################################################################  
+ 
