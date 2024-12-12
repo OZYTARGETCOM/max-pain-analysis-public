@@ -1275,14 +1275,9 @@ st.title("Live News Scanner")
 st.write("")
 
 # Palabras clave automáticas
-keywords = ["CPI", "Core CPI", "PCE", "Core PCE", "Inflation", "Elon",
-    "GDP", "Trump", "Donald Trump",
-    "Unemployment", "Nonfarm Payrolls", "Jobless Claims", "Labor Market", "Employment Rate",
-    "FOMC", "Fed Minutes", "Interest Rate Decision", "", "Tapering",
-    "Rate Hike", "Rate Cut", "Treasury Yield", "Debt Ceiling", "Treasury Bonds", "Yield Curve",
-    "Consumer Sentiment", "ISM Manufacturing","upgrade", "stock buyback", 
-    "price target", "breaking news", "Apple", "Microsoft", "Google", "Amazon", 
-    "Meta", "Tesla", "NVDA"]
+keywords = ["CPI", "Core CPI", "#trump", "Core PCE", "@donaldtrump", "Elon",
+    "GDP", "Trump", "Donald Trump", "Apple", "@msft", "@Googl", "@amzn", 
+    "@Meta", "@tsla", "@NVDA"]
 
 # Inicializar estado
 if "news_data" not in st.session_state:
