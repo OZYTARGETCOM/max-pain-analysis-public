@@ -1,4 +1,5 @@
 
+
 import streamlit as st  # Para la interfaz Streamlit
 import pandas as pd  # Para manipulación de datos tabulares
 import requests  # Para llamadas a la API Tradier
@@ -6,8 +7,7 @@ import plotly.express as px  # Para gráficos interactivos sencillos
 import plotly.graph_objects as go  # Para gráficos avanzados
 from datetime import datetime, timedelta  # Para manejo de fechas
 import numpy as np  # Para cálculos matemáticos y manipulación de arrays
-from bs4 import BeautifulSoup
-import time
+
 
 
 # Configuración inicial de la página
@@ -1208,7 +1208,11 @@ else:
 
 
 
-
+import streamlit as st
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime
+import time
 
 # Función para buscar las últimas noticias
 def fetch_latest_news(keywords):
