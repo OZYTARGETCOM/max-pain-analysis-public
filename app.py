@@ -1262,7 +1262,7 @@ def fetch_backup_news(keywords):
     news = []
 
     articles = soup.select("a.title")
-    for article in articles[:200]:
+    for article in articles[:20]:
         title = article.text.strip()
         link = article["href"]
         news.append({"title": title, "link": link, "time": "Recently"})
@@ -1308,6 +1308,6 @@ while True:
         st.error("No recent news found from any source.")
 
     # Esperar 30 segundos antes de actualizar
-    time.sleep(30)
+    time.sleep(60)
 
  
