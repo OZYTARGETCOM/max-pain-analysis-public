@@ -1274,13 +1274,9 @@ st.title("Live News Scanner")
 st.write("")
 
 # Palabras clave automáticas
-keywords = ["CPI", "Core CPI", "PCE", "Core PCE", "Inflation", "Elon",
-    "GDP", "Trump", "Growth Rate",
-    "Unemployment", "Nonfarm Payrolls", "Jobless Claims", "Labor Market", "Employment Rate",
-    "FOMC", "Fed Minutes", "Interest Rate Decision", "breaking news", "Tapering",
-    "Rate Hike", "Rate Cut", "Treasury Yield", "Debt Ceiling", "Treasury Bonds", "Yield Curve",
-    "Consumer Sentiment", "ISM Manufacturing","upgrade", "stock buyback", 
-    "price target", "breaking news", "Apple", "Microsoft", "Google", "Amazon", 
+keywords = ["Elon ","@Trump", "Growth Rate",
+    "Unemployment",  "stock buyback", 
+    "Donald j Trump", "@POTUS", "Apple", "Microsoft", "Google", "Amazon", 
     "Meta", "Tesla", "NVDA"]
 
 # Inicializar estado
