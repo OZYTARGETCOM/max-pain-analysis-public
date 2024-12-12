@@ -1,5 +1,3 @@
-
-
 import streamlit as st  # Para la interfaz Streamlit
 import pandas as pd  # Para manipulación de datos tabulares
 import requests  # Para llamadas a la API Tradier
