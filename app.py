@@ -1305,9 +1305,9 @@ def fetch_instagram_posts(keywords):
 
 # Configuración de Streamlit
 st.title(" News Scanner ")
-st.write("""Rastreador de noticias de última hora basado en múltiples fuentes (Google, Bing, Instagram).""")
 
-keywords = st.text_input("Enter keywords (comma-separated):", "Trump, ElonMusk").split(",")
+
+keywords = st.text_input("Enter keywords (comma-separated Boludo!!!!):", "Trump, ElonMusk").split(",")
 keywords = [k.strip() for k in keywords if k.strip()]
 
 if "news_data" not in st.session_state:
