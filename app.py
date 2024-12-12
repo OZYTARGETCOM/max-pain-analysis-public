@@ -1332,3 +1332,31 @@ if latest_news:
             st.markdown("---")
 else:
     st.error("No recent news found from any source.")
+
+
+
+
+import streamlit as st
+import webbrowser
+
+def generate_ticker_search_url(ticker):
+    base_url = "https://x.com/search?q="
+    query = f"%24{ticker}"  # Agregar el prefijo '$' para tickers
+    return f"{base_url}{query}&f=live"
+
+# Configuración de Streamlit
+
+
+# Entrada de ticker
+ticker = st.text_input(
+    "Buscar en X ",
+    "",
+    placeholder="Escribe el ticker y presiona Enter..."
+).strip().upper()
+
+# Abrir automáticamente si se ingresa un ticker válido
+if ticker:
+    search_url = generate_ticker_search_url(ticker)
+    webbrowser.open_new_tab(search_url)  # Abrir el enlace en el navegador
+    st.stop()  # Detener la ejecución para evitar recargar
+
