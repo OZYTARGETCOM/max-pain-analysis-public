@@ -1,3 +1,4 @@
+
 import streamlit as st  # Para la interfaz Streamlit
 import pandas as pd  # Para manipulación de datos tabulares
 import requests  # Para llamadas a la API Tradier
@@ -5,7 +6,8 @@ import plotly.express as px  # Para gráficos interactivos sencillos
 import plotly.graph_objects as go  # Para gráficos avanzados
 from datetime import datetime, timedelta  # Para manejo de fechas
 import numpy as np  # Para cálculos matemáticos y manipulación de arrays
-
+from bs4 import BeautifulSoup
+import time
 
 
 # Configuración inicial de la página
@@ -1201,5 +1203,113 @@ else:
     else:
      st.warning("No se encontraron datos para los tickers ingresados.")
 
+
+
+
+
+
+
+
+# Función para buscar las últimas noticias
+def fetch_latest_news(keywords):
+    base_url = "https://www.google.com/search"
+    query = "+".join(keywords)
+    params = {"q": query, "tbm": "nws", "tbs": "qdr:m"}  # Último minuto
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    }
+
+    response = requests.get(base_url, params=params, headers=headers)
+    if response.status_code != 200:
+        return []
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    news = []
+
+    # Intentar múltiples selectores para compatibilidad
+    articles = soup.select("div.dbsr") or soup.select("div.Gx5Zad.fP1Qef.xpd.EtOod.pkphOe")
+    
+    for article in articles[:10]:  # Limitar a las 10 noticias más recientes
+        title_tag = article.select_one("div.JheGif.nDgy9d") or article.select_one("div.BNeawe.vvjwJb.AP7Wnd")
+        link_tag = article.a
+        if title_tag and link_tag:
+            title = title_tag.text.strip()
+            link = link_tag["href"]
+            time_tag = article.select_one("span.WG9SHc")
+            time_posted = time_tag.text if time_tag else "Just now"
+            news.append({"title": title, "link": link, "time": time_posted})
+    
+    return news
+
+# Función de respaldo con Bing News
+def fetch_backup_news(keywords):
+    base_url = "https://www.bing.com/news/search"
+    query = " ".join(keywords)
+    params = {"q": query, "qft": "+filterui:age-lt60"}  # Últimos 60 minutos
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    }
+
+    response = requests.get(base_url, params=params, headers=headers)
+    if response.status_code != 200:
+        return []
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    news = []
+
+    articles = soup.select("a.title")
+    for article in articles[:200]:
+        title = article.text.strip()
+        link = article["href"]
+        news.append({"title": title, "link": link, "time": "Recently"})
+    
+    return news
+
+# Configuración de Streamlit
+st.title("Live News Scanner")
+st.write("")
+
+# Palabras clave automáticas
+keywords = ["CPI", "Core CPI", "PCE", "Core PCE", "Inflation", "Elon",
+    "GDP", "Trump", "Growth Rate",
+    "Unemployment", "Nonfarm Payrolls", "Jobless Claims", "Labor Market", "Employment Rate",
+    "FOMC", "Fed Minutes", "Interest Rate Decision", "breaking news", "Tapering",
+    "Rate Hike", "Rate Cut", "Treasury Yield", "Debt Ceiling", "Treasury Bonds", "Yield Curve",
+    "Consumer Sentiment", "ISM Manufacturing","upgrade", "stock buyback", 
+    "price target", "breaking news", "Apple", "Microsoft", "Google", "Amazon", 
+    "Meta", "Tesla", "NVDA"]
+
+# Inicializar estado
+if "news_data" not in st.session_state:
+    st.session_state.news_data = []
+
+# Contenedor dinámico para mostrar las noticias
+news_placeholder = st.empty()
+
+# Loop para actualizar automáticamente cada 30 segundos
+while True:
+    # Obtener noticias desde Google
+    with st.spinner("Fetching breaking news..."):
+        latest_news = fetch_latest_news(keywords)
+    
+    # Si Google no devuelve resultados, usar Bing
+    if not latest_news:
+        latest_news = fetch_backup_news(keywords)
+
+    # Actualizar el contenedor con las noticias
+    if latest_news:
+        st.session_state.news_data = latest_news
+        with news_placeholder.container():
+            st.success(f"Latest news updated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}!")
+            for idx, article in enumerate(latest_news, 1):
+                st.markdown(f"### {idx}. [{article['title']}]({article['link']})")
+                st.markdown(f"**Published:** {article['time']}")
+    else:
+        st.error("No recent news found from any source.")
+
+    # Esperar 30 segundos antes de actualizar
+    time.sleep(30)
 
  
