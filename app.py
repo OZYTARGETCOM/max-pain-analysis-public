@@ -1206,107 +1206,131 @@ else:
 
 
 
-
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import time
 
-# Función para buscar las últimas noticias
-def fetch_latest_news(keywords):
+# Función para buscar noticias en Google
+def fetch_google_news(keywords):
     base_url = "https://www.google.com/search"
     query = "+".join(keywords)
-    params = {"q": query, "tbm": "nws", "tbs": "qdr:m"}  # Último minuto
+    params = {"q": query, "tbm": "nws", "tbs": "qdr:h"}  # Última hora
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
     }
 
-    response = requests.get(base_url, params=params, headers=headers)
-    if response.status_code != 200:
+    try:
+        response = requests.get(base_url, params=params, headers=headers, timeout=10)
+        if response.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        news = []
+
+        articles = soup.select("div.dbsr") or soup.select("div.Gx5Zad.fP1Qef.xpd.EtOod.pkphOe")
+
+        for article in articles[:20]:
+            title_tag = article.select_one("div.JheGif.nDgy9d") or article.select_one("div.BNeawe.vvjwJb.AP7Wnd")
+            link_tag = article.a
+            if title_tag and link_tag:
+                title = title_tag.text.strip()
+                link = link_tag["href"]
+                time_tag = article.select_one("span.WG9SHc")
+                time_posted = time_tag.text if time_tag else "Just now"
+                news.append({"title": title, "link": link, "time": time_posted})
+
+        return news
+    except Exception as e:
+        st.warning(f"Error fetching Google News: {e}")
         return []
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    news = []
-
-    # Intentar múltiples selectores para compatibilidad
-    articles = soup.select("div.dbsr") or soup.select("div.Gx5Zad.fP1Qef.xpd.EtOod.pkphOe")
-    
-    for article in articles[:20]:  # Limitar a las 10 noticias más recientes
-        title_tag = article.select_one("div.JheGif.nDgy9d") or article.select_one("div.BNeawe.vvjwJb.AP7Wnd")
-        link_tag = article.a
-        if title_tag and link_tag:
-            title = title_tag.text.strip()
-            link = link_tag["href"]
-            time_tag = article.select_one("span.WG9SHc")
-            time_posted = time_tag.text if time_tag else "Just now"
-            news.append({"title": title, "link": link, "time": time_posted})
-    
-    return news
-
-# Función de respaldo con Bing News
-def fetch_backup_news(keywords):
+# Función para buscar noticias en Bing
+def fetch_bing_news(keywords):
     base_url = "https://www.bing.com/news/search"
     query = " ".join(keywords)
-    params = {"q": query, "qft": "+filterui:age-lt60"}  # Últimos 60 minutos
+    params = {"q": query, "qft": "+filterui:age-lt24h"}  # Últimas 24 horas
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
     }
 
-    response = requests.get(base_url, params=params, headers=headers)
-    if response.status_code != 200:
+    try:
+        response = requests.get(base_url, params=params, headers=headers, timeout=10)
+        if response.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        news = []
+
+        articles = soup.select("a.title")
+        for article in articles[:20]:
+            title = article.text.strip()
+            link = article["href"]
+            news.append({"title": title, "link": link, "time": "Recently"})
+
+        return news
+    except Exception as e:
+        st.warning(f"Error fetching Bing News: {e}")
         return []
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    news = []
+# Función para buscar publicaciones en Instagram
+def fetch_instagram_posts(keywords):
+    base_url = "https://www.instagram.com/explore/tags/"
+    posts = []
 
-    articles = soup.select("a.title")
-    for article in articles[:200]:
-        title = article.text.strip()
-        link = article["href"]
-        news.append({"title": title, "link": link, "time": "Recently"})
-    
-    return news
+    for keyword in keywords:
+        if keyword.startswith("#"):
+            try:
+                url = f"{base_url}{keyword[1:]}/"
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+                }
+
+                response = requests.get(url, headers=headers, timeout=10)
+                if response.status_code != 200:
+                    continue
+
+                soup = BeautifulSoup(response.text, "html.parser")
+                articles = soup.select("div.v1Nh3.kIKUG._bz0w a")
+
+                for article in articles[:20]:
+                    link = "https://www.instagram.com" + article["href"]
+                    posts.append({"title": "Instagram Post", "link": link, "time": "Recently"})
+            except Exception as e:
+                st.warning(f"Error fetching Instagram posts for {keyword}: {e}")
+
+    return posts
 
 # Configuración de Streamlit
-st.title("Live News Scanner")
-st.write("")
+st.title("Live News Scanner GPT Style")
+st.write("""Rastreador de noticias de última hora basado en múltiples fuentes (Google, Bing, Instagram).""")
 
-# Palabras clave automáticas
-keywords = ["CPI", "Core CPI", "#trump", "Core PCE", "@donaldtrump", "Elon",
-    "GDP", "Trump", "Donald Trump", "Apple", "@msft", "@Googl", "@amzn", 
-    "@Meta", "@tsla", "@NVDA"]
+keywords = st.text_input("Enter keywords (comma-separated):", "Trump, ElonMusk").split(",")
+keywords = [k.strip() for k in keywords if k.strip()]
 
-# Inicializar estado
 if "news_data" not in st.session_state:
     st.session_state.news_data = []
 
-# Contenedor dinámico para mostrar las noticias
 news_placeholder = st.empty()
 
-# Loop para actualizar automáticamente cada 30 segundos
-while True:
-    # Obtener noticias desde Google
-    with st.spinner("Fetching breaking news..."):
-        latest_news = fetch_latest_news(keywords)
-    
-    # Si Google no devuelve resultados, usar Bing
-    if not latest_news:
-        latest_news = fetch_backup_news(keywords)
+with st.spinner("Fetching breaking news..."):
+    google_news = fetch_google_news(keywords)
+    bing_news = fetch_bing_news(keywords)
+    instagram_posts = fetch_instagram_posts(keywords)
 
-    # Actualizar el contenedor con las noticias
-    if latest_news:
-        st.session_state.news_data = latest_news
-        with news_placeholder.container():
-            st.success(f"Latest news updated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}!")
-            for idx, article in enumerate(latest_news, 1):
-                st.markdown(f"### {idx}. [{article['title']}]({article['link']})")
-                st.markdown(f"**Published:** {article['time']}")
-    else:
-        st.error("No recent news found from any source.")
+latest_news = google_news + bing_news + instagram_posts
 
-    # Esperar 30 segundos antes de actualizar
-    time.sleep(80)
+if latest_news:
+    st.session_state.news_data = latest_news
+    with news_placeholder.container():
+        st.success(f"Latest news updated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}!")
+        for idx, article in enumerate(latest_news, 1):
+            st.markdown(f"### {idx}. [{article['title']}]({article['link']})")
+            st.markdown(f"**Published:** {article['time']}\n")
+            st.markdown("---")
+else:
+    st.error("No recent news found from any source.")
 
