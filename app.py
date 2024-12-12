@@ -1205,7 +1205,6 @@ else:
 
 
 
-
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
@@ -1305,7 +1304,7 @@ def fetch_instagram_posts(keywords):
     return posts
 
 # Configuración de Streamlit
-st.title("Live News Scanner GPT Style")
+st.title(" News Scanner ")
 st.write("""Rastreador de noticias de última hora basado en múltiples fuentes (Google, Bing, Instagram).""")
 
 keywords = st.text_input("Enter keywords (comma-separated):", "Trump, ElonMusk").split(",")
@@ -1333,4 +1332,3 @@ if latest_news:
             st.markdown("---")
 else:
     st.error("No recent news found from any source.")
-
