@@ -6,11 +6,155 @@ import plotly.express as px  # Para gráficos interactivos sencillos
 import plotly.graph_objects as go  # Para gráficos avanzados
 from datetime import datetime, timedelta  # Para manejo de fechas
 import numpy as np  # Para cálculos matemáticos y manipulación de arrays
+import csv
+import requests
+import bcrypt
+import os
+
+
+
 
 
 
 # Configuración inicial de la página
-st.set_page_config(page_title="SCANNER ", layout="wide")
+st.set_page_config(page_title="SCANNER", layout="wide", page_icon="🔍")
+
+# Inicializar archivo `users.csv` si no existe
+def initialize_users_file():
+    if not os.path.exists("users.csv"):
+        with open("users.csv", mode="w", newline="") as file:
+            pass
+
+# Llamar al inicializador al iniciar la app
+initialize_users_file()
+
+# Función para cargar usuarios desde el archivo CSV
+def load_users():
+    users = {}
+    try:
+        with open("users.csv", mode="r") as file:
+            reader = csv.reader(file)
+            for row in reader:
+                email, hashed_password = row
+                users[email] = {"password": hashed_password}
+    except FileNotFoundError:
+        initialize_users_file()
+    return users
+
+# Registrar un nuevo usuario
+def register_user(email, password):
+    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    with open("users.csv", mode="a", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow([email, hashed_password])
+    return "Registro exitoso"
+
+# Autenticar usuario
+def authenticate_user(email, password):
+    users = load_users()
+    if email in users:
+        hashed_password = users[email]["password"]
+        return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
+    return False
+
+# Cargar usuarios desde el archivo
+users = load_users()
+
+# Inicializar el estado de sesión
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if "user_email" not in st.session_state:
+    st.session_state["user_email"] = None
+
+# Callback para manejar el registro de un nuevo usuario
+def register_callback():
+    email = st.session_state.get("register_email", "")
+    password = st.session_state.get("register_password", "")
+    if email and password:
+        if email in users:
+            st.warning("El correo ya está registrado. Por favor, inicia sesión.")
+        else:
+            with st.spinner("Registrando usuario..."):
+                message = register_user(email, password)
+                users.update(load_users())  # Recargar usuarios
+                st.success(message)
+                st.info("Ahora puedes iniciar sesión.")
+
+# Callback para manejar el inicio de sesión
+def login_callback():
+    email = st.session_state.get("login_email", "")
+    password = st.session_state.get("login_password", "")
+    if email and password:
+        with st.spinner("Verificando credenciales..."):
+            if authenticate_user(email, password):
+                st.session_state["authenticated"] = True
+                st.session_state["user_email"] = email
+            else:
+                st.error("Credenciales incorrectas.")
+
+# Si el usuario no está autenticado
+if not st.session_state["authenticated"]:
+    st.markdown(
+        """
+        <div style="
+            text-align: center;
+            padding: 20px;
+            border-radius: 10px;
+            background-color: #e3f2fd;
+            margin-top: 20px;
+            box-shadow: 0px 4px 8px rgba(0,0,0,0.1);">
+            <h1 style="color: #1565c0;">🔐 SCANNER</h1>
+            <p style="color: #0d47a1;">Ozytarget.com</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    col1, col2 = st.columns(2)
+
+    # Formulario de Registro
+    with col2:
+        st.markdown("### Register")
+        st.text_input("Correo electrónico", key="register_email", on_change=register_callback, placeholder="Ej: usuario@email.com")
+        st.text_input("Contraseña", type="password", key="register_password", on_change=register_callback, placeholder="Mínimo 8 caracteres")
+
+    # Formulario de Inicio de Sesión
+    with col1:
+        st.markdown("### Login")
+        st.text_input("Correo electrónico", key="login_email", on_change=login_callback, placeholder="usuario@email.com")
+        st.text_input("Contraseña", type="password", key="login_password", on_change=login_callback, placeholder="Tu contraseña segura")
+
+    st.stop()
+else:
+    st.success(f"VIP: {st.session_state['user_email']}!")
+    if st.button("Cerrar Sesión"):
+        st.session_state["authenticated"] = False
+        st.session_state["user_email"] = None
+
+   
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#######################################################
+
+
+# Configuración inicial de la página
+
 
 # Configuración de la API Tradier
 API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
