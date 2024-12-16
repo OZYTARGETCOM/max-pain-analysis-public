@@ -2,3 +2,4 @@ users.csv  # Archivo que contiene contraseñas encriptadas
 *.pyc
 __pycache__/
 users.csv
+.env
