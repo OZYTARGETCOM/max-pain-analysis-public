@@ -1,4 +1,3 @@
-
 import streamlit as st  # Para la interfaz Streamlit
 import pandas as pd  # Para manipulación de datos tabulares
 import requests  # Para llamadas a la API Tradier
@@ -15,11 +14,10 @@ import os
 
 
 
-
 # Configuración inicial de la página
 st.set_page_config(page_title="SCANNER", layout="wide", page_icon="🔍")
 
-# Inicializar archivo `users.csv` si no existe
+# Inicializar archivo users.csv si no existe
 def initialize_users_file():
     if not os.path.exists("users.csv"):
         with open("users.csv", mode="w", newline="") as file:
@@ -105,7 +103,7 @@ if not st.session_state["authenticated"]:
             margin-top: 20px;
             box-shadow: 0px 4px 8px rgba(0,0,0,0.1);">
             <h1 style="color: #1565c0;">🔐 SCANNER</h1>
-            <p style="color: #0d47a1;">Ozytarget.com</p>
+            <p style="color: #0d47a1;"></p>
         </div>
         """,
         unsafe_allow_html=True
@@ -116,14 +114,14 @@ if not st.session_state["authenticated"]:
     # Formulario de Registro
     with col2:
         st.markdown("### Register")
-        st.text_input("Correo electrónico", key="register_email", on_change=register_callback, placeholder="Ej: usuario@email.com")
-        st.text_input("Contraseña", type="password", key="register_password", on_change=register_callback, placeholder="Mínimo 8 caracteres")
+        st.text_input("EMAIL", key="register_email", on_change=register_callback, placeholder="Ej: user@email.com")
+        st.text_input("PASSWORD", type="password", key="register_password", on_change=register_callback, placeholder="")
 
     # Formulario de Inicio de Sesión
     with col1:
         st.markdown("### Login")
-        st.text_input("Correo electrónico", key="login_email", on_change=login_callback, placeholder="usuario@email.com")
-        st.text_input("Contraseña", type="password", key="login_password", on_change=login_callback, placeholder="Tu contraseña segura")
+        st.text_input("EMAIL", key="login_email", on_change=login_callback, placeholder="user@email.com")
+        st.text_input("PASSWORD", type="password", key="login_password", on_change=login_callback, placeholder="Your password!!")
 
     st.stop()
 else:
@@ -132,27 +130,7 @@ else:
         st.session_state["authenticated"] = False
         st.session_state["user_email"] = None
 
-   
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#######################################################
-
-
+###############################################APP>>>>>>>>>>>>>>>>>>>>>>>>>
 # Configuración inicial de la página
 
 
@@ -315,38 +293,122 @@ def gamma_exposure_chart_optimized(processed_data, current_price, max_pain):
 
 
 # Función para crear Heatmap
-def create_heatmap(processed_data):
+# Opción para colores personalizados
+default_colorscale = [
+    [0, "#5A0000"],  # Rojo oscuro
+    [0.25, "#3B528B"],  # Azul oscuro
+    [0.5, "#21918C"],  # Verde
+    [0.75, "#5DC863"],  # Verde claro
+    [1, "#FDE725"]  # Amarillo
+]
+
+# Función para crear el Heatmap
+def create_heatmap(processed_data, current_price, max_pain, custom_colorscale=None):
     strikes = sorted(processed_data.keys())
 
-    oi = [processed_data[s]["CALL"]["OI"] + processed_data[s]["PUT"]["OI"] for s in strikes]
+    # Calculamos métricas clave
+    volume = [
+        processed_data[s]["CALL"]["OI"] * processed_data[s]["CALL"]["Gamma"] +
+        processed_data[s]["PUT"]["OI"] * processed_data[s]["PUT"]["Gamma"] for s in strikes
+    ]
     gamma = [processed_data[s]["CALL"]["Gamma"] + processed_data[s]["PUT"]["Gamma"] for s in strikes]
-    volume = [processed_data[s]["CALL"]["OI"] * processed_data[s]["CALL"]["Gamma"] +
-              processed_data[s]["PUT"]["OI"] * processed_data[s]["PUT"]["Gamma"] for s in strikes]
+    oi = [processed_data[s]["CALL"]["OI"] + processed_data[s]["PUT"]["OI"] for s in strikes]
+    theta = [processed_data[s]["CALL"]["Theta"] + processed_data[s]["PUT"]["Theta"] for s in strikes]
+    delta = [processed_data[s]["CALL"]["Delta"] + processed_data[s]["PUT"]["Delta"] for s in strikes]
 
     data = pd.DataFrame({
-        'OI': oi,
+        'Volume': volume,
         'Gamma': gamma,
-        'Volume': volume
+        'OI': oi,
+        'Delta': delta,
+        'Theta': theta
     })
 
     data_normalized = data.apply(lambda x: (x - x.min()) / (x.max() - x.min()))
+
+    # Usar Viridis por defecto o la escala personalizada
+    colorscale = custom_colorscale if custom_colorscale else default_colorscale
 
     fig = go.Figure(data=go.Heatmap(
         z=data_normalized.T.values,
         x=strikes,
         y=data_normalized.columns,
-        colorscale='Viridis',
+        colorscale=colorscale,
         colorbar=dict(title='Normalized Value'),
+        hoverongaps=False
     ))
 
     fig.update_layout(
-        title="GEAR",
-        xaxis_title="GEAR",
+        title={
+            "text": f"GEAR | Current Price: ${current_price:.2f} | MM Objective${max_pain}",
+            "x": 0.5,
+            "xanchor": "center",
+            "yanchor": "top"
+        },
+        xaxis_title="Strike Prices",
         yaxis_title="Metrics",
         template="plotly_dark"
     )
 
+    # Añadir líneas de referencia
+    fig.add_shape(
+        type="line",
+        x0=current_price, x1=current_price,
+        y0=0, y1=len(data_normalized.columns) - 1,
+        line=dict(color="orange", dash="dot"),
+        name="Current Price"
+    )
+
+    fig.add_shape(
+        type="line",
+        x0=max_pain, x1=max_pain,
+        y0=0, y1=len(data_normalized.columns) - 1,
+        line=dict(color="green", dash="dash"),
+        name="Max Pain"
+    )
+
+    # Agregar marcadores para las áreas clave
+    targets = {
+        "Gamma": {"values": gamma, "color": "red", "symbol": "γ"},
+        "Volume": {"values": volume, "color": "blue", "symbol": "🔧"},
+        "Theta": {"values": theta, "color": "purple", "symbol": "θ"},
+        "Delta": {"values": delta, "color": "green", "symbol": "Δ"},
+        "OI": {"values": oi, "color": "orange", "symbol": "OI"}
+    }
+
+    for metric, details in targets.items():
+        metric_values = details["values"]
+        color = details["color"]
+        symbol = details["symbol"]
+
+        # Seleccionar el valor más relevante según lógica:
+        if metric in ["Theta", "Delta"]:
+            top_index = min(range(len(metric_values)), key=lambda i: metric_values[i])
+        else:
+            top_index = max(range(len(metric_values)), key=lambda i: metric_values[i])
+
+        strike = strikes[top_index]
+        fig.add_annotation(
+            x=strike,
+            y=metric,  # Posición dinámica en el eje Y
+            text=symbol,  # Símbolo del marcador
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=1,
+            arrowcolor=color,
+            ax=0,  # Offset horizontal
+            ay=-50,  # Offset vertical
+            font=dict(color=color, size=12),
+        )
+
     return fig
+
+
+
+
+
+
+
 
 # Función para crear Skew Analysis Chart
 def plot_skew_analysis_with_totals(options_data):
@@ -377,7 +439,7 @@ def plot_skew_analysis_with_totals(options_data):
     })
 
     # Crear gráfico interactivo con Plotly Express
-    title = f"IV Analysis<br><span style='font-size:16px;'> CALLS: {total_calls} | PUTS: {total_puts} | VC {total_volume_calls} | VP {total_volume_puts}</span>"
+    title = f"Analysis<br><span style='font-size:16px;'> C{total_calls} | P{total_puts} | VC {total_volume_calls} | VP {total_volume_puts}</span>"
     fig = px.scatter(
         skew_df,
         x="Strike",
@@ -427,6 +489,7 @@ time.sleep(0.2)  # Pausa de 200ms entre solicitudes
 
 
 # Calcular Max Pain con el cálculo mejorado
+# Calcular Max Pain con el cálculo mejorado
 max_pain = calculate_max_pain_optimized(options_data)
 
 # Procesar datos para gráficos con validaciones
@@ -437,18 +500,17 @@ for opt in options_data:
     if not opt or not isinstance(opt, dict):
         continue  # Ignorar valores inválidos
 
-    # Validar strike
+    # Validar y obtener valores seguros
     strike = opt.get("strike")
-    if strike is None:
-        continue  # Ignorar si no tiene strike
+    if not isinstance(strike, (int, float)):
+        continue  # Ignorar si el strike no es válido
 
-    # Validar option_type
     option_type = opt.get("option_type", "").upper()
     if option_type not in ["CALL", "PUT"]:
         continue  # Ignorar si el tipo de opción no es válido
 
-    # Obtener valores seguros
-    gamma = opt.get("greeks", {}).get("gamma", 0)
+    greeks = opt.get("greeks", {})
+    gamma = greeks.get("gamma", 0) if isinstance(greeks, dict) else 0
     open_interest = opt.get("open_interest", 0)
 
     # Inicializar estructura si no existe
@@ -456,9 +518,13 @@ for opt in options_data:
         processed_data[strike] = {"CALL": {"Gamma": 0, "OI": 0}, "PUT": {"Gamma": 0, "OI": 0}}
 
     # Actualizar datos
-    processed_data[strike][option_type]["Gamma"] = gamma
-    processed_data[strike][option_type]["OI"] = open_interest
+    processed_data[strike][option_type]["Gamma"] += gamma
+    processed_data[strike][option_type]["OI"] += open_interest
 
+# Validar si hay datos procesados
+if not processed_data:
+    st.error("No valid data to display Gamma Exposure.")
+    st.stop()
 
 # Mostrar gráficos
 st.subheader("Gamma Exposure")
@@ -467,10 +533,63 @@ st.plotly_chart(gamma_fig, use_container_width=True)
 st.write(f"**Max Pain Calculated:** ${max_pain}")
 st.write(f"**Current Price:** ${current_price:.2f}")
 
+############################################################
 
 
-st.subheader("Heatmap")
-heatmap_fig = create_heatmap(processed_data)
+
+
+# Interfaz de usuario
+
+
+
+
+
+
+# Procesar datos para gráficos
+processed_data = {}
+for opt in options_data:
+    strike = opt["strike"]
+    option_type = opt["option_type"].upper()
+    gamma = opt.get("greeks", {}).get("gamma", 0)
+    delta = opt.get("greeks", {}).get("delta", 0)
+    theta = opt.get("greeks", {}).get("theta", 0)
+    open_interest = opt.get("open_interest", 0)
+
+    if strike not in processed_data:
+        processed_data[strike] = {"CALL": {"Gamma": 0, "OI": 0, "Delta": 0, "Theta": 0}, "PUT": {"Gamma": 0, "OI": 0, "Delta": 0, "Theta": 0}}
+
+    processed_data[strike][option_type]["Gamma"] = gamma
+    processed_data[strike][option_type]["OI"] = open_interest
+    processed_data[strike][option_type]["Delta"] = delta
+    processed_data[strike][option_type]["Theta"] = theta
+
+# Calcular Max Pain
+def calculate_max_pain(options_data):
+    strikes = {}
+    for option in options_data:
+        strike = option["strike"]
+        oi = option.get("open_interest", 0) or 0
+        option_type = option["option_type"].upper()
+
+        if strike not in strikes:
+            strikes[strike] = {"CALL": 0, "PUT": 0}
+
+        strikes[strike][option_type] += oi
+
+    total_losses = {}
+    strike_prices = sorted(strikes.keys())
+
+    for strike in strike_prices:
+        loss_call = sum((strikes[s]["CALL"] * max(0, s - strike)) for s in strike_prices)
+        loss_put = sum((strikes[s]["PUT"] * max(0, strike - s)) for s in strike_prices)
+        total_losses[strike] = loss_call + loss_put
+
+    return min(total_losses, key=total_losses.get)
+
+max_pain = calculate_max_pain(options_data)
+
+# Crear y mostrar el Heatmap
+heatmap_fig = create_heatmap(processed_data, current_price, max_pain)
 st.plotly_chart(heatmap_fig, use_container_width=True)
 
 
@@ -568,16 +687,28 @@ def generate_winning_contract(options_data, current_price, iv_hv_ratio=1.2):
     winning_contracts = []
 
     for option in options_data:
-        strike = option["strike"]
-        delta = option.get("greeks", {}).get("delta", 0)
-        gamma = option.get("greeks", {}).get("gamma", 0)
-        theta = option.get("greeks", {}).get("theta", 0)
+        # Validaciones iniciales
+        if not option or not isinstance(option, dict):
+            continue  # Si option es None o no es un diccionario, ignorar
+
+        # Acceder a valores seguros
+        strike = option.get("strike")
+        greeks = option.get("greeks", {})
+        delta = greeks.get("delta", 0)
+        gamma = greeks.get("gamma", 0)
+        theta = greeks.get("theta", 0)
         iv = option.get("implied_volatility", 0) * 100
         hv = option.get("historical_volatility", 0) * 100
         volume = option.get("volume", 0)
         open_interest = option.get("open_interest", 0)
-        bid = option["bid"] or 0
-        ask = option["ask"] or 0
+        bid = option.get("bid") or 0
+        ask = option.get("ask") or 0
+
+        # Validar si strike es válido
+        if strike is None:
+            continue
+
+        # Calcular el precio medio
         mid_price = (bid + ask) / 2 if bid and ask else bid or ask
 
         # Condiciones del contrato ganador
@@ -592,6 +723,7 @@ def generate_winning_contract(options_data, current_price, iv_hv_ratio=1.2):
             max_gain = ((current_price - strike) / mid_price * 100) if delta < 0 else ((strike - current_price) / mid_price * 100)
             risk_reward = max_gain / mid_price if mid_price > 0 else 0
 
+            # Agregar contrato a la lista
             winning_contracts.append({
                 "Strike": strike,
                 "Type": "CALL" if delta > 0 else "PUT",
@@ -610,6 +742,7 @@ def generate_winning_contract(options_data, current_price, iv_hv_ratio=1.2):
     # Ordenar por el mayor Max Gain
     winning_contracts = sorted(winning_contracts, key=lambda x: x["Max Gain (%)"], reverse=True)
     return winning_contracts[:3]
+
 
 
 def display_support_resistance(support_resistance):
@@ -772,9 +905,9 @@ st.markdown(f"""
 # Tarjeta para el rango de beneficio máximo
 st.markdown(f"""
     <div style="border: 2px solid #28a745; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: #d4edda;">
-        <h3 style="color: #155724;">Range</h3>
-        <p style="color: {text_color};"><b>Desde:</b> {iron_condor['Max Profit Range'][0]:.2f}</p>
-        <p style="color: {text_color};"><b>Hasta:</b> {iron_condor['Max Profit Range'][1]:.2f}</p>
+        <h3 style="color: #155724;">Range Volume Market Now!!</h3>
+        <p style="color: {text_color};"><b>From:</b> {iron_condor['Max Profit Range'][0]:.2f}</p>
+        <p style="color: {text_color};"><b>To:</b> {iron_condor['Max Profit Range'][1]:.2f}</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -1209,17 +1342,23 @@ def fetch_batch_stock_data(tickers):
         st.error(f"Error al obtener datos: {response.status_code}")
         return []
 
+
+
 # Función para calcular top movers básicos
 def calculate_top_movers(data):
     df = pd.DataFrame(data)
     if df.empty:
         return pd.DataFrame()
 
-    df["IV"] = df["IV"].fillna(0).infer_objects(copy=False)
-    df["Average Volume"] = df["Average Volume"].replace(0, np.nan)
+    # Rellenar valores nulos y ajustar tipos
+    df["IV"] = pd.to_numeric(df["IV"], errors='coerce').fillna(0)
+    df["Average Volume"] = pd.to_numeric(df["Average Volume"], errors='coerce').replace(0, np.nan)
+    
+    # Calcular métricas
     df["Volumen Relativo"] = df["Volume"] / df["Average Volume"]
     df["Cambio Relativo"] = np.abs(df["Change (%)"]) / df["Change (%)"].mean()
 
+    # Ponderar el puntaje
     df["Score"] = (df["Volumen Relativo"] * 4) + (df["Cambio Relativo"] * 3) + df["IV"]
 
     return df.sort_values("Score", ascending=False).head(3)
@@ -1230,14 +1369,17 @@ def calculate_continuous_movers(data):
     if df.empty:
         return pd.DataFrame()
 
-    df["IV"] = df["IV"].fillna(0).infer_objects(copy=False)
-    df["HV"] = df["HV"].fillna(0).infer_objects(copy=False)
-    df["Average Volume"] = df["Average Volume"].replace(0, np.nan)
+    # Rellenar valores nulos y ajustar tipos
+    df["IV"] = pd.to_numeric(df["IV"], errors='coerce').fillna(0)
+    df["HV"] = pd.to_numeric(df["HV"], errors='coerce').fillna(0)
+    df["Average Volume"] = pd.to_numeric(df["Average Volume"], errors='coerce').replace(0, np.nan)
 
+    # Calcular métricas
     df["Volumen Relativo"] = df["Volume"] / df["Average Volume"]
     df["Momentum"] = np.abs(df["Price"] - df["Previous Close"]) / df["Previous Close"]
     df["Cambio Relativo"] = np.abs(df["Change (%)"]) / df["Change (%)"].mean()
 
+    # Ponderar el puntaje
     df["Score"] = (df["Volumen Relativo"] * 4) + (df["Momentum"] * 3) + (df["Cambio Relativo"] * 2) + (df["IV"] + df["HV"])
 
     return df.sort_values("Score", ascending=False).head(3)
@@ -1248,18 +1390,17 @@ def calculate_explosive_movers(data):
     if df.empty:
         return pd.DataFrame()
 
-    df["IV"] = df["IV"].fillna(0).infer_objects(copy=False)
-    df["HV"] = df["HV"].fillna(0).infer_objects(copy=False)
-    df["Average Volume"] = df["Average Volume"].replace(0, np.nan)
+    # Rellenar valores nulos y ajustar tipos
+    df["IV"] = pd.to_numeric(df["IV"], errors='coerce').fillna(0)
+    df["HV"] = pd.to_numeric(df["HV"], errors='coerce').fillna(0)
+    df["Average Volume"] = pd.to_numeric(df["Average Volume"], errors='coerce').replace(0, np.nan)
 
+    # Calcular métricas
     df["Volumen Relativo"] = df["Volume"] / df["Average Volume"]
     df["Explosión"] = df["Volumen Relativo"] * df["Change (%)"].abs()
     df["Score"] = df["Explosión"] + (df["IV"] * 0.5)
 
     return df.sort_values("Score", ascending=False).head(3)
-
-
-
 
 # Función para calcular actividad de opciones
 def calculate_options_activity(data):
@@ -1267,13 +1408,18 @@ def calculate_options_activity(data):
     if df.empty:
         return pd.DataFrame()
 
-    df["IV"] = df["IV"].fillna(0).astype(float)
+    # Rellenar valores nulos y ajustar tipos
+    df["IV"] = pd.to_numeric(df["IV"], errors='coerce').fillna(0)
+    df["Average Volume"] = pd.to_numeric(df["Average Volume"], errors='coerce').replace(0, np.nan)
+
+    # Calcular actividad de opciones
     df["Volumen Relativo"] = df["Volume"] / df["Average Volume"]
     df["Options Activity"] = df["Volumen Relativo"] * df["IV"]
 
     return df.sort_values("Options Activity", ascending=False).head(3)
 
 
+##################################################################################################################
 # Interfaz de usuario
 st.title("")
 
@@ -1503,4 +1649,3 @@ if ticker:
     search_url = generate_ticker_search_url(ticker)
     webbrowser.open_new_tab(search_url)  # Abrir el enlace en el navegador
     st.stop()  # Detener la ejecución para evitar recargar
-
