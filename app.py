@@ -230,64 +230,127 @@ def calculate_max_pain_optimized(options_data):
 
 # Modificar el gráfico de Gamma Exposure para usar el cálculo mejorado
 # Función para crear el gráfico de exposición gamma optimizado
-def gamma_exposure_chart_optimized(processed_data, current_price, max_pain):
-    strikes = sorted(processed_data.keys())
+# Función para obtener datos de opciones
+@st.cache_data(ttl=30)
+def get_options_data(ticker, expiration_date):
+    url = f"{BASE_URL}/markets/options/chains"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        return response.json().get("options", {}).get("option", [])
+    else:
+        st.error("Error fetching options data.")
+        return []
 
+# Función para obtener fechas de expiración
+@st.cache_data(ttl=30)
+def get_expiration_dates(ticker):
+    url = f"{BASE_URL}/markets/options/expirations"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        return response.json().get("expirations", {}).get("date", [])
+    else:
+        st.error("Error fetching expiration dates.")
+        return []
+
+# Función para obtener el precio actual
+@st.cache_data(ttl=30)
+def get_current_price(ticker):
+    url = f"{BASE_URL}/markets/quotes"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbols": ticker}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        quote = response.json().get("quotes", {}).get("quote", {})
+        return quote.get("last", 0)
+    else:
+        st.error("Error fetching current price.")
+        return 0
+
+# Función optimizada para calcular el Max Pain
+def calculate_max_pain_optimized(options_data):
+    if not options_data:
+        return None
+
+    strikes = {}
+    for option in options_data:
+        strike = option["strike"]
+        oi = option.get("open_interest", 0) or 0
+        volume = option.get("volume", 0) or 0
+        option_type = option["option_type"].upper()
+
+        if strike not in strikes:
+            strikes[strike] = {"CALL": {"OI": 0, "Volume": 0}, "PUT": {"OI": 0, "Volume": 0}}
+
+        # Acumular OI y Volumen
+        strikes[strike][option_type]["OI"] += oi
+        strikes[strike][option_type]["Volume"] += volume
+
+    strike_prices = sorted(strikes.keys())
+    total_losses = {}
+    for strike in strike_prices:
+        loss_call = sum((strikes[s]["CALL"]["OI"] + strikes[s]["CALL"]["Volume"]) * max(0, s - strike) for s in strike_prices)
+        loss_put = sum((strikes[s]["PUT"]["OI"] + strikes[s]["PUT"]["Volume"]) * max(0, strike - s) for s in strike_prices)
+        total_losses[strike] = loss_call + loss_put
+
+    return min(total_losses, key=total_losses.get)
+
+# Gráfico con Max Pain y Expiración
+def exposure_chart_with_max_pain(processed_data, current_price, max_pain, expiration_date):
+    strikes = sorted(processed_data.keys())
     gamma_calls = [processed_data[s]["CALL"]["OI"] * processed_data[s]["CALL"]["Gamma"] for s in strikes]
     gamma_puts = [-processed_data[s]["PUT"]["OI"] * processed_data[s]["PUT"]["Gamma"] for s in strikes]
 
     fig = go.Figure()
 
-    # Añadir barras de Gamma Calls y Gamma Puts
-    fig.add_trace(go.Bar(x=strikes, y=gamma_calls, name="Gamma CALL", marker_color="blue"))
-    fig.add_trace(go.Bar(x=strikes, y=gamma_puts, name="Gamma PUT", marker_color="red"))
+    # Gamma CALLs
+    fig.add_trace(go.Bar(
+        x=strikes, y=gamma_calls, name="Gamma CALL", marker_color="blue",
+        hovertemplate="<b>Strike:</b> %{x}<br><b>Gamma CALL:</b> %{y:.2f}<extra></extra>"
+    ))
+
+    # Gamma PUTs
+    fig.add_trace(go.Bar(
+        x=strikes, y=gamma_puts, name="Gamma PUT", marker_color="red",
+        hovertemplate="<b>Strike:</b> %{x}<br><b>Gamma PUT:</b> %{y:.2f}<extra></extra>"
+    ))
 
     # Línea de Precio Actual
-    fig.add_shape(
-        type="line",
-        x0=current_price, x1=current_price,
-        y0=min(gamma_calls + gamma_puts) * 1.1,
-        y1=max(gamma_calls + gamma_puts) * 1.1,
-        line=dict(color="orange", dash="dot", width=1),  # Línea más delgada
-    )
+    fig.add_shape(type="line", x0=current_price, x1=current_price,
+                  y0=min(gamma_puts) * 1.1, y1=max(gamma_calls) * 1.1,
+                  line=dict(color="orange", dash="dot", width=1))
 
     # Línea de Max Pain
-    fig.add_shape(
-        type="line",
-        x0=max_pain, x1=max_pain,
-        y0=min(gamma_calls + gamma_puts) * 1.1,
-        y1=max(gamma_calls + gamma_puts) * 1.1,
-        line=dict(color="green", dash="dash", width=1),  # Línea más delgada
+    fig.add_shape(type="line", x0=max_pain, x1=max_pain,
+                  y0=min(gamma_puts) * 1.1, y1=max(gamma_calls) * 1.1,
+                  line=dict(color="green", dash="solid", width=2))
+
+    # Anotación para Max Pain
+    fig.add_annotation(
+        x=max_pain, y=max(gamma_calls) * 1.05,
+        text=f"Max Pain: {max_pain}",
+        showarrow=True, arrowhead=2, arrowcolor="green",
+        font=dict(color="green", size=12)
     )
 
-    # Etiqueta para el Precio Actual
+    # Anotación para Fecha de Expiración
     fig.add_annotation(
-        x=current_price,
-        y=max(gamma_calls + gamma_puts) * 0.9,
-        text=f"Current Price: ${current_price:.2f}",
-        showarrow=True,
-        arrowhead=2,
-        arrowcolor="orange",
-        font=dict(color="orange", size=12),
-    )
-
-    # Etiqueta para Max Pain
-    fig.add_annotation(
-        x=max_pain,
-        y=max(gamma_calls + gamma_puts) * 0.8,
-        text=f"Max Pain: ${max_pain:.2f}",
-        showarrow=True,
-        arrowhead=2,
-        arrowcolor="green",
-        font=dict(color="green", size=12),
+        x=strikes[-1], y=max(gamma_calls) * 1.2,
+        text=f"Expiration: {expiration_date}",
+        showarrow=False,
+        font=dict(color="white", size=14)
     )
 
     fig.update_layout(
-        title="(Calls vs Puts)",
+        title="Gamma Exposure with Max Pain",
         xaxis_title="Strike Price",
-        yaxis_title="VOLUME E",
-        template="plotly_white",
-        legend=dict(title="Option Type"),
+        yaxis_title="Gamma Exposure",
+        template="plotly_dark",
+        hovermode="x unified",
+        legend=dict(title="Exposures")
     )
     return fig
 
@@ -340,7 +403,7 @@ def create_heatmap(processed_data, current_price, max_pain, custom_colorscale=No
 
     fig.update_layout(
         title={
-            "text": f"GEAR | Current Price: ${current_price:.2f} | MM Objective${max_pain}",
+            "text": f"GEAR Heatmap - Current Price: ${current_price:.2f} | Max Pain: ${max_pain}",
             "x": 0.5,
             "xanchor": "center",
             "yanchor": "top"
@@ -439,7 +502,7 @@ def plot_skew_analysis_with_totals(options_data):
     })
 
     # Crear gráfico interactivo con Plotly Express
-    title = f"Analysis<br><span style='font-size:16px;'> C{total_calls} | P{total_puts} | VC {total_volume_calls} | VP {total_volume_puts}</span>"
+    title = f"IV Analysis<br><span style='font-size:16px;'> CALLS: {total_calls} | PUTS: {total_puts} | VC {total_volume_calls} | VP {total_volume_puts}</span>"
     fig = px.scatter(
         skew_df,
         x="Strike",
@@ -527,11 +590,46 @@ if not processed_data:
     st.stop()
 
 # Mostrar gráficos
-st.subheader("Gamma Exposure")
-gamma_fig = gamma_exposure_chart_optimized(processed_data, current_price, max_pain)
-st.plotly_chart(gamma_fig, use_container_width=True)
-st.write(f"**Max Pain Calculated:** ${max_pain}")
-st.write(f"**Current Price:** ${current_price:.2f}")
+# Interfaz de Usuario
+st.title("Gamma Exposure + Max Pain Visualization")
+
+ticker = st.text_input("Enter Ticker:", value="AAPL").upper()
+expiration_dates = get_expiration_dates(ticker)
+if expiration_dates:
+    expiration_date = st.selectbox("Select Expiration Date:", expiration_dates)
+else:
+    st.stop()
+
+options_data = get_options_data(ticker, expiration_date)
+current_price = get_current_price(ticker)
+
+processed_data = {}
+if options_data:
+    for opt in options_data:
+        strike = opt["strike"]
+        option_type = opt["option_type"].upper()
+        oi = opt.get("open_interest", 0)
+        gamma = opt.get("greeks", {}).get("gamma", 0)
+
+        if strike not in processed_data:
+            processed_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
+
+        processed_data[strike][option_type]["OI"] += oi
+        processed_data[strike][option_type]["Gamma"] += gamma
+
+    # Calcular Max Pain
+    max_pain = calculate_max_pain_optimized(options_data)
+
+    # Generar gráfico
+    st.subheader("Gamma Exposure with Max Pain")
+    exposure_fig = exposure_chart_with_max_pain(processed_data, current_price, max_pain, expiration_date)
+    st.plotly_chart(exposure_fig, use_container_width=True)
+
+    st.write(f"**Max Pain Calculated:** ${max_pain}")
+    st.write(f"**Current Price:** ${current_price:.2f}")
+    st.write(f"**Expiration Date:** {expiration_date}")
+else:
+    st.error("No options data available.")
 
 ############################################################
 
@@ -905,9 +1003,9 @@ st.markdown(f"""
 # Tarjeta para el rango de beneficio máximo
 st.markdown(f"""
     <div style="border: 2px solid #28a745; border-radius: 10px; padding: 15px; margin-bottom: 10px; background-color: #d4edda;">
-        <h3 style="color: #155724;">Range Volume Market Now!!</h3>
-        <p style="color: {text_color};"><b>From:</b> {iron_condor['Max Profit Range'][0]:.2f}</p>
-        <p style="color: {text_color};"><b>To:</b> {iron_condor['Max Profit Range'][1]:.2f}</p>
+        <h3 style="color: #155724;">Range</h3>
+        <p style="color: {text_color};"><b>Desde:</b> {iron_condor['Max Profit Range'][0]:.2f}</p>
+        <p style="color: {text_color};"><b>Hasta:</b> {iron_condor['Max Profit Range'][1]:.2f}</p>
     </div>
 """, unsafe_allow_html=True)
 
