@@ -13,122 +13,134 @@ import os
 
 
 
+# Configuración inicial
+st.set_page_config(page_title="SCANNER", layout="centered", page_icon="🔐")
 
-# Configuración inicial de la página
-st.set_page_config(page_title="SCANNER", layout="wide", page_icon="🔍")
+# Archivo de usuarios
+USERS_FILE = "users.csv"
 
-# Inicializar archivo users.csv si no existe
+# Función para inicializar archivo si no existe
 def initialize_users_file():
-    if not os.path.exists("users.csv"):
-        with open("users.csv", mode="w", newline="") as file:
+    if not os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "w", newline="") as file:
             pass
 
-# Llamar al inicializador al iniciar la app
-initialize_users_file()
-
-# Función para cargar usuarios desde el archivo CSV
+# Funciones para manejar usuarios
 def load_users():
     users = {}
-    try:
-        with open("users.csv", mode="r") as file:
-            reader = csv.reader(file)
-            for row in reader:
+    with open(USERS_FILE, "r") as file:
+        reader = csv.reader(file)
+        for row in reader:
+            if len(row) == 2:
                 email, hashed_password = row
-                users[email] = {"password": hashed_password}
-    except FileNotFoundError:
-        initialize_users_file()
+                users[email] = hashed_password
     return users
 
-# Registrar un nuevo usuario
 def register_user(email, password):
-    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    with open("users.csv", mode="a", newline="") as file:
+    hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    with open(USERS_FILE, "a", newline="") as file:
         writer = csv.writer(file)
         writer.writerow([email, hashed_password])
-    return "Registro exitoso"
 
-# Autenticar usuario
 def authenticate_user(email, password):
     users = load_users()
     if email in users:
-        hashed_password = users[email]["password"]
-        return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
+        return bcrypt.checkpw(password.encode(), users[email].encode())
     return False
 
-# Cargar usuarios desde el archivo
-users = load_users()
+# Inicializar el archivo
+initialize_users_file()
 
-# Inicializar el estado de sesión
+# Manejo de estado de sesión
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
-
 if "user_email" not in st.session_state:
     st.session_state["user_email"] = None
 
-# Callback para manejar el registro de un nuevo usuario
-def register_callback():
-    email = st.session_state.get("register_email", "")
-    password = st.session_state.get("register_password", "")
-    if email and password:
-        if email in users:
-            st.warning("El correo ya está registrado. Por favor, inicia sesión.")
-        else:
-            with st.spinner("Registrando usuario..."):
-                message = register_user(email, password)
-                users.update(load_users())  # Recargar usuarios
-                st.success(message)
-                st.info("Ahora puedes iniciar sesión.")
+# CSS para diseño moderno
+st.markdown("""
+    <style>
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 2.5em;
+            font-weight: bold;
+            color: white;
+            background-color: #28a745;
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .form-box {
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            max-width: 400px;
+            margin: auto;
+        }
+        .btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 8px;
+            width: 100%;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #218838;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
-# Callback para manejar el inicio de sesión
-def login_callback():
-    email = st.session_state.get("login_email", "")
-    password = st.session_state.get("login_password", "")
-    if email and password:
-        with st.spinner("Verificando credenciales..."):
+# Mostrar formulario de Login/Registro
+def show_login_page():
+    st.markdown('<div class="header">🔒 SCANNER</div>', unsafe_allow_html=True)
+    st.markdown('<div class="form-box">', unsafe_allow_html=True)
+
+    option = st.radio("", ["Iniciar Sesión", "Registrarse"])
+
+    if option == "Iniciar Sesión":
+        email = st.text_input("Correo Electrónico", key="login_email")
+        password = st.text_input("Contraseña", type="password", key="login_password")
+        if st.button("Iniciar Sesión", key="login_btn", help="Iniciar sesión"):
             if authenticate_user(email, password):
                 st.session_state["authenticated"] = True
                 st.session_state["user_email"] = email
+                st.rerun()
             else:
-                st.error("Credenciales incorrectas.")
+                st.error("❌ Correo o contraseña incorrectos.")
 
-# Si el usuario no está autenticado
+    elif option == "Registrarse":
+        email = st.text_input("Nuevo Correo Electrónico", key="register_email")
+        password = st.text_input("Nueva Contraseña", type="password", key="register_password")
+        if st.button("Registrarse", key="register_btn", help="Crear cuenta"):
+            users = load_users()
+            if email in users:
+                st.warning("⚠️ El correo ya está registrado.")
+            else:
+                register_user(email, password)
+                st.success("✅ Registro exitoso. Ahora inicia sesión.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Bloquear la app si no está autenticado
 if not st.session_state["authenticated"]:
-    st.markdown(
-        """
-        <div style="
-            text-align: center;
-            padding: 20px;
-            border-radius: 10px;
-            background-color: #e3f2fd;
-            margin-top: 20px;
-            box-shadow: 0px 4px 8px rgba(0,0,0,0.1);">
-            <h1 style="color: #1565c0;">🔐 SCANNER</h1>
-            <p style="color: #0d47a1;"></p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    col1, col2 = st.columns(2)
-
-    # Formulario de Registro
-    with col2:
-        st.markdown("### Register")
-        st.text_input("EMAIL", key="register_email", on_change=register_callback, placeholder="Ej: user@email.com")
-        st.text_input("PASSWORD", type="password", key="register_password", on_change=register_callback, placeholder="")
-
-    # Formulario de Inicio de Sesión
-    with col1:
-        st.markdown("### Login")
-        st.text_input("EMAIL", key="login_email", on_change=login_callback, placeholder="user@email.com")
-        st.text_input("PASSWORD", type="password", key="login_password", on_change=login_callback, placeholder="Your password!!")
-
+    show_login_page()
     st.stop()
-else:
-    st.success(f"VIP: {st.session_state['user_email']}!")
-    if st.button("Cerrar Sesión"):
-        st.session_state["authenticated"] = False
-        st.session_state["user_email"] = None
+
+# Pantalla principal tras inicio de sesión
+
+st.success(f"🔐 **{st.session_state['user_email']}**")
+
+if st.button("Cerrar Sesión"):
+    st.session_state["authenticated"] = False
+    st.session_state["user_email"] = None
+    st.rerun()
+
+# Contenido de la app
+st.write("Aquí va tu contenido principal de la aplicación...")
 
 ###############################################APP>>>>>>>>>>>>>>>>>>>>>>>>>
 # Configuración inicial de la página
@@ -403,13 +415,13 @@ def create_heatmap(processed_data, current_price, max_pain, custom_colorscale=No
 
     fig.update_layout(
         title={
-            "text": f"GEAR Heatmap - Current Price: ${current_price:.2f} | Max Pain: ${max_pain}",
+            "text": f"GEAR|Price: ${current_price:.2f} |MM TARGET${max_pain}",
             "x": 0.5,
             "xanchor": "center",
             "yanchor": "top"
         },
-        xaxis_title="Strike Prices",
-        yaxis_title="Metrics",
+        xaxis_title="Strikes",
+        yaxis_title="GEAR",
         template="plotly_dark"
     )
 
@@ -590,15 +602,8 @@ if not processed_data:
     st.stop()
 
 # Mostrar gráficos
-# Interfaz de Usuario
-st.title("Gamma Exposure + Max Pain Visualization")
 
-ticker = st.text_input("Enter Ticker:", value="AAPL").upper()
-expiration_dates = get_expiration_dates(ticker)
-if expiration_dates:
-    expiration_date = st.selectbox("Select Expiration Date:", expiration_dates)
-else:
-    st.stop()
+
 
 options_data = get_options_data(ticker, expiration_date)
 current_price = get_current_price(ticker)
