@@ -170,6 +170,57 @@ import time
 time.sleep(0.2)  # Pausa de 200ms entre solicitudes
 
 
+
+
+@st.cache_data(ttl=30)
+def get_historical_data(ticker, days=10):
+    url = f"{BASE_URL}/markets/history"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker, "interval": "daily", "start": pd.Timestamp.now().date() - pd.Timedelta(days=days)}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        history = response.json().get("history", {}).get("day", [])
+        return [day["close"] for day in history]
+    else:
+        st.error("Error fetching historical data.")
+        return []
+
+@st.cache_data(ttl=30)
+def get_expiration_dates(ticker):
+    url = f"{BASE_URL}/markets/options/expirations"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        return response.json().get("expirations", {}).get("date", [])
+    else:
+        st.error("Error fetching expiration dates.")
+        return []
+
+@st.cache_data(ttl=30)
+def get_current_price(ticker):
+    url = f"{BASE_URL}/markets/quotes"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbols": ticker}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        quote = response.json().get("quotes", {}).get("quote", {})
+        return quote.get("last", 0)
+    else:
+        st.error("Error fetching current price.")
+        return 0
+
+# Detectar strikes tocados (sube y baja en 10 días)
+def detect_touched_strikes(strikes, historical_prices):
+    touched_strikes = set()
+    for strike in strikes:
+        for i in range(1, len(historical_prices)):
+            if (historical_prices[i-1] < strike <= historical_prices[i]) or (historical_prices[i-1] > strike >= historical_prices[i]):
+                touched_strikes.add(strike)
+    return touched_strikes
+
+
+
 # Función para obtener fechas de expiración
 @st.cache_data(ttl=30)
 def get_expiration_dates(ticker):
@@ -311,60 +362,81 @@ def calculate_max_pain_optimized(options_data):
     return min(total_losses, key=total_losses.get)
 
 # Gráfico con Max Pain y Expiración
-def exposure_chart_with_max_pain(processed_data, current_price, max_pain, expiration_date):
+# Gráfico dinámico de Gamma Exposure
+def gamma_exposure_chart(processed_data, current_price, touched_strikes):
     strikes = sorted(processed_data.keys())
-    gamma_calls = [processed_data[s]["CALL"]["OI"] * processed_data[s]["CALL"]["Gamma"] for s in strikes]
-    gamma_puts = [-processed_data[s]["PUT"]["OI"] * processed_data[s]["PUT"]["Gamma"] for s in strikes]
+    
+    # Calcular Gamma CALLs y PUTs
+    gamma_calls = [
+        processed_data[s]["CALL"]["OI"] * processed_data[s]["CALL"]["Gamma"] * current_price 
+        for s in strikes
+    ]
+    gamma_puts = [
+        -processed_data[s]["PUT"]["OI"] * processed_data[s]["PUT"]["Gamma"] * current_price 
+        for s in strikes
+    ]
+    
+    # Verificar los strikes tocados y asignar colores dinámicos
+    call_colors = ["grey" if s in touched_strikes else "#7DF9FF" for s in strikes]  # Gamma CALL
+    put_colors = ["orange" if s in touched_strikes else "red" for s in strikes]    # Gamma PUT
 
     fig = go.Figure()
 
-    # Gamma CALLs
+    # Añadir Gamma CALLs
     fig.add_trace(go.Bar(
-        x=strikes, y=gamma_calls, name="Gamma CALL", marker_color="blue",
+        x=strikes,
+        y=gamma_calls,
+        name="Gamma CALL",
+        marker=dict(color=call_colors),
         hovertemplate="<b>Strike:</b> %{x}<br><b>Gamma CALL:</b> %{y:.2f}<extra></extra>"
     ))
 
-    # Gamma PUTs
+    # Añadir Gamma PUTs
     fig.add_trace(go.Bar(
-        x=strikes, y=gamma_puts, name="Gamma PUT", marker_color="red",
+        x=strikes,
+        y=gamma_puts,
+        name="Gamma PUT",
+        marker=dict(color=put_colors),
         hovertemplate="<b>Strike:</b> %{x}<br><b>Gamma PUT:</b> %{y:.2f}<extra></extra>"
     ))
 
-    # Línea de Precio Actual
-    fig.add_shape(type="line", x0=current_price, x1=current_price,
-                  y0=min(gamma_puts) * 1.1, y1=max(gamma_calls) * 1.1,
-                  line=dict(color="orange", dash="dot", width=1))
-
-    # Línea de Max Pain
-    fig.add_shape(type="line", x0=max_pain, x1=max_pain,
-                  y0=min(gamma_puts) * 1.1, y1=max(gamma_calls) * 1.1,
-                  line=dict(color="green", dash="solid", width=2))
-
-    # Anotación para Max Pain
-    fig.add_annotation(
-        x=max_pain, y=max(gamma_calls) * 1.05,
-        text=f"Max Pain: {max_pain}",
-        showarrow=True, arrowhead=2, arrowcolor="green",
-        font=dict(color="green", size=12)
+    # Línea para el precio actual
+    fig.add_shape(
+        type="line",
+        x0=current_price, x1=current_price,
+        y0=min(gamma_calls + gamma_puts) * 1.1,
+        y1=max(gamma_calls + gamma_puts) * 1.1,
+        line=dict(color="#39FF14", dash="dot", width=1),  # Línea punteada
     )
 
-    # Anotación para Fecha de Expiración
+    # Etiqueta del precio actual
     fig.add_annotation(
-        x=strikes[-1], y=max(gamma_calls) * 1.2,
-        text=f"Expiration: {expiration_date}",
-        showarrow=False,
-        font=dict(color="white", size=14)
+        x=current_price,
+        y=max(gamma_calls + gamma_puts) * 1.05,
+        text=f"Current Price: {current_price:.2f}",
+        showarrow=True,
+        arrowhead=2,
+        arrowcolor="#39FF14",
+        font=dict(color="#39FF14", size=12)
     )
+
+    # Configuración de hover label visible
+    fig.update_traces(hoverlabel=dict(
+        bgcolor="rgba(30,30,30,0.9)",
+        bordercolor="white",
+        font=dict(color="white", size=12)
+    ))
 
     fig.update_layout(
-        title="Gamma Exposure with Max Pain",
+        title="Dynamic Gamma Exposure Heatmap",
         xaxis_title="Strike Price",
         yaxis_title="Gamma Exposure",
         template="plotly_dark",
-        hovermode="x unified",
-        legend=dict(title="Exposures")
+        hovermode="x unified"
     )
+
     return fig
+
 
 
 # Función para crear Heatmap
@@ -605,10 +677,17 @@ if not processed_data:
 
 
 
-options_data = get_options_data(ticker, expiration_date)
-current_price = get_current_price(ticker)
+# Interfaz de Usuario
 
+
+
+
+current_price = get_current_price(ticker)
+historical_prices = get_historical_data(ticker, days=10)
+
+options_data = get_options_data(ticker, expiration_date)
 processed_data = {}
+
 if options_data:
     for opt in options_data:
         strike = opt["strike"]
@@ -622,17 +701,12 @@ if options_data:
         processed_data[strike][option_type]["OI"] += oi
         processed_data[strike][option_type]["Gamma"] += gamma
 
-    # Calcular Max Pain
-    max_pain = calculate_max_pain_optimized(options_data)
+    # Detectar strikes tocados por cruce
+    touched_strikes = detect_touched_strikes(processed_data.keys(), historical_prices)
 
     # Generar gráfico
-    st.subheader("Gamma Exposure with Max Pain")
-    exposure_fig = exposure_chart_with_max_pain(processed_data, current_price, max_pain, expiration_date)
-    st.plotly_chart(exposure_fig, use_container_width=True)
-
-    st.write(f"**Max Pain Calculated:** ${max_pain}")
-    st.write(f"**Current Price:** ${current_price:.2f}")
-    st.write(f"**Expiration Date:** {expiration_date}")
+    gamma_fig = gamma_exposure_chart(processed_data, current_price, touched_strikes)
+    st.plotly_chart(gamma_fig, use_container_width=True)
 else:
     st.error("No options data available.")
 
