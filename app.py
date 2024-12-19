@@ -6,15 +6,19 @@ import plotly.graph_objects as go  # Para gráficos avanzados
 from datetime import datetime, timedelta  # Para manejo de fechas
 import numpy as np  # Para cálculos matemáticos y manipulación de arrays
 import csv
-import requests
 import bcrypt
 import os
+import plotly.graph_objects as go
+from sklearn.linear_model import LinearRegression
+
 
 
 
 
 # Configuración inicial
 st.set_page_config(page_title="SCANNER", layout="centered", page_icon="🔐")
+
+
 
 # Archivo de usuarios
 USERS_FILE = "users.csv"
@@ -94,10 +98,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+
+
+
+
+
 # Mostrar formulario de Login/Registro
 def show_login_page():
     st.markdown('<div class="header">🔒 SCANNER</div>', unsafe_allow_html=True)
     st.markdown('<div class="form-box">', unsafe_allow_html=True)
+
+    
 
     option = st.radio("", ["Iniciar Sesión", "Registrarse"])
 
@@ -111,6 +122,7 @@ def show_login_page():
                 st.rerun()
             else:
                 st.error("❌ Correo o contraseña incorrectos.")
+
 
     elif option == "Registrarse":
         email = st.text_input("Nuevo Correo Electrónico", key="register_email")
@@ -127,6 +139,27 @@ def show_login_page():
 
 # Bloquear la app si no está autenticado
 if not st.session_state["authenticated"]:
+    # Mostrar reglas de trading solo en la página de inicio de sesión
+    st.markdown(
+        """
+        <div style="background-color:black; padding:10px; border-radius:5px;">
+            <h3 style="color:yellow; text-align:center;">⚠️ Trading ⚠️</h3>
+            <ul style="color:yellow;">
+                <li>Siempre establecer un stop-loss antes de operar.</li>
+                <li>No arriesgar más del 2% del capital en una sola operación.</li>
+                <li>Analizar Gamma Exposure antes de entrar en el mercado.</li>
+                <li>Evitar operar en días de alta volatilidad sin estrategia clara.</li>
+                <li>Monitorear continuamente los niveles De los Blocks.</li>
+            </ul>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+
+
+# Bloquear la app si no está autenticado
+if not st.session_state["authenticated"]:
     show_login_page()
     st.stop()
 
@@ -140,10 +173,232 @@ if st.button("Cerrar Sesión"):
     st.rerun()
 
 # Contenido de la app
-st.write("Aquí va tu contenido principal de la aplicación...")
 
-###############################################APP>>>>>>>>>>>>>>>>>>>>>>>>>
-# Configuración inicial de la página
+
+
+
+
+
+###########################################APP>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+# Configuración inicial
+
+# Configuración de la API Tradier
+API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
+BASE_URL = "https://api.tradier.com/v1"
+
+# Funciones para obtener datos
+@st.cache_data(ttl=30)
+def get_options_data(ticker, expiration_date):
+    url = f"{BASE_URL}/markets/options/chains"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        return response.json().get("options", {}).get("option", [])
+    else:
+        st.error("Error fetching options data.")
+        return []
+
+@st.cache_data(ttl=30)
+def get_historical_data(ticker, interval="daily", days=10):
+    if interval == "5min":
+        url = f"{BASE_URL}/markets/timesales"
+        params = {"symbol": ticker, "interval": "5min", "session_filter": "all"}
+    elif interval == "daily":
+        url = f"{BASE_URL}/markets/history"
+        params = {"symbol": ticker, "interval": "daily", "start": pd.Timestamp.now().date() - pd.Timedelta(days=days)}
+    else:
+        raise ValueError("Unsupported interval. Use 'daily' or '5min'.")
+
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        if interval == "5min":
+            return [data["close"] for data in response.json().get("series", {}).get("data", [])]
+        elif interval == "daily":
+            return [day["close"] for day in response.json().get("history", {}).get("day", [])]
+    else:
+        st.warning(f"No historical data available for {interval}.")
+        return []
+
+@st.cache_data(ttl=30)
+def get_expiration_dates(ticker):
+    url = f"{BASE_URL}/markets/options/expirations"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbol": ticker}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        return response.json().get("expirations", {}).get("date", [])
+    else:
+        st.error("Error fetching expiration dates.")
+        return []
+
+@st.cache_data(ttl=30)
+def get_current_price(ticker):
+    url = f"{BASE_URL}/markets/quotes"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    params = {"symbols": ticker}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        return response.json().get("quotes", {}).get("quote", {}).get("last", 0)
+    else:
+        st.error("Error fetching current price.")
+        return 0
+
+# Predicción de Gamma Exposure
+def predict_gamma_trend(historical_data):
+    X = np.arange(len(historical_data)).reshape(-1, 1)
+    y = np.array(historical_data)
+    model = LinearRegression()
+    model.fit(X, y)
+    future = model.predict(np.array([[len(historical_data) + 1]]))
+    return future[0]
+
+# Gráfico dinámico de Gamma Exposure
+def gamma_exposure_chart(processed_data, current_price, touched_strikes_10d, touched_strikes_today):
+    strikes = sorted(processed_data.keys())
+    gamma_calls = [processed_data[s]["CALL"]["OI"] * processed_data[s]["CALL"]["Gamma"] * current_price for s in strikes]
+    gamma_puts = [-processed_data[s]["PUT"]["OI"] * processed_data[s]["PUT"]["Gamma"] * current_price for s in strikes]
+
+    # Totales de Gamma
+    total_gamma_calls = sum(gamma_calls)
+    total_gamma_puts = sum(gamma_puts)
+    total_gamma = total_gamma_calls + total_gamma_puts
+
+    # Colores dinámicos
+    call_colors = ["yellow" if s in touched_strikes_today else ("grey" if s in touched_strikes_10d else "#7DF9FF") for s in strikes]
+    put_colors = ["yellow" if s in touched_strikes_today else ("grey" if s in touched_strikes_10d else "red") for s in strikes]
+
+    # Gráfico
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(x=strikes, y=gamma_calls, name="Gamma CALL", marker_color=call_colors))
+    fig.add_trace(go.Bar(x=strikes, y=gamma_puts, name="Gamma PUT", marker_color=put_colors))
+
+    # Anotaciones
+    fig.add_annotation(text=f"CALLs: {total_gamma_calls:,.2f}", xref="paper", yref="paper", x=0.01, y=0.95, showarrow=False, font=dict(size=12, color="#7DF9FF"))
+    fig.add_annotation(text=f"PUTs: {total_gamma_puts:,.2f}", xref="paper", yref="paper", x=0.01, y=0.90, showarrow=False, font=dict(size=12, color="red"))
+    fig.add_annotation(text=f"Total: {total_gamma:,.2f}", xref="paper", yref="paper", x=0.01, y=0.85, showarrow=False, font=dict(size=12, color="white"))
+
+    # Línea para el precio actual
+    fig.add_shape(
+        type="line",
+        x0=current_price, x1=current_price,
+        y0=min(gamma_calls + gamma_puts) * 1.1,
+        y1=max(gamma_calls + gamma_puts) * 1.1,
+        line=dict(color="cyan", dash="dot", width=1),
+    )
+
+    # Etiqueta del precio actual
+    fig.add_annotation(
+        x=current_price,
+        y=max(gamma_calls + gamma_puts) * 1.05,
+        text=f"Current Price: {current_price:.2f}",
+        showarrow=True,
+        arrowhead=2,
+        arrowcolor="cyan",
+        font=dict(color="cyan", size=12)
+    )
+
+    # Layout
+    fig.update_layout(title="", xaxis_title="VOL", yaxis_title="VOLUME", template="plotly_dark", hovermode="x unified")
+    return fig
+
+# Interfaz de Usuario
+st.title("|MULTIPLE SCANNER|")
+
+# Entrada para múltiples tickers
+tickers = st.text_input("(e.g., AAPL, MSFT)", value="SPY,VIX").split(",")
+
+# Procesar cada ticker
+data_available = False
+for ticker in tickers:
+    ticker = ticker.strip().upper()
+    st.subheader(f"| {ticker}")
+
+    expiration_dates = get_expiration_dates(ticker)
+    if expiration_dates:
+        expiration_date = expiration_dates[0]  # Seleccionar la primera fecha por defecto
+    else:
+        st.warning(f"No hay fechas de expiración disponibles para {ticker}.")
+        continue
+
+    current_price = get_current_price(ticker)
+    historical_prices_10d = get_historical_data(ticker, days=10)
+    historical_prices_today = get_historical_data(ticker, interval="5min")
+
+    if historical_prices_10d:
+        predicted_gamma = predict_gamma_trend(historical_prices_10d)
+        st.info(f"Possible Target| {ticker}: {predicted_gamma:.2f}")
+
+    options_data = get_options_data(ticker, expiration_date)
+    if options_data:
+        processed_data = {}
+        for opt in options_data:
+            strike = opt.get("strike")
+            option_type = opt.get("option_type", "").upper()
+            oi = opt.get("open_interest", 0)
+            gamma = opt.get("greeks", {}).get("gamma", 0)
+
+            if strike not in processed_data:
+                processed_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
+
+            processed_data[strike][option_type]["OI"] += oi
+            processed_data[strike][option_type]["Gamma"] += gamma
+
+        touched_strikes_10d = [strike for strike in processed_data if historical_prices_10d and min(historical_prices_10d) <= strike <= max(historical_prices_10d)]
+        touched_strikes_today = [strike for strike in processed_data if historical_prices_today and min(historical_prices_today) <= strike <= max(historical_prices_today)]
+
+        gamma_fig = gamma_exposure_chart(processed_data, current_price, touched_strikes_10d, touched_strikes_today)
+        st.plotly_chart(gamma_fig, use_container_width=True)
+        data_available = True
+    else:
+        st.warning(f"No se encontraron datos de opciones para {ticker}.")
+
+if not data_available:
+    st.error("No hay datos disponibles para los tickers ingresados.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # Configuración de la API Tradier
@@ -428,9 +683,9 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes):
     ))
 
     fig.update_layout(
-        title="Dynamic Gamma Exposure Heatmap",
-        xaxis_title="Strike Price",
-        yaxis_title="Gamma Exposure",
+        title="|SCANNER|",
+        xaxis_title="VOL",
+        yaxis_title="VOLUME",
         template="plotly_dark",
         hovermode="x unified"
     )
