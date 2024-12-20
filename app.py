@@ -186,6 +186,10 @@ if st.button("Cerrar Sesión"):
 API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
 BASE_URL = "https://api.tradier.com/v1"
 
+# Configuración de la API Tradier
+API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
+BASE_URL = "https://api.tradier.com/v1"
+
 # Funciones para obtener datos
 @st.cache_data(ttl=30)
 def get_options_data(ticker, expiration_date):
@@ -255,7 +259,7 @@ def predict_gamma_trend(historical_data):
     return future[0]
 
 # Gráfico dinámico de Gamma Exposure
-def gamma_exposure_chart(processed_data, current_price, touched_strikes_10d, touched_strikes_today):
+def gamma_exposure_chart(processed_data, current_price, touched_strikes_10d, touched_strikes_today, max_today, min_today):
     strikes = sorted(processed_data.keys())
     gamma_calls = [processed_data[s]["CALL"]["OI"] * processed_data[s]["CALL"]["Gamma"] * current_price for s in strikes]
     gamma_puts = [-processed_data[s]["PUT"]["OI"] * processed_data[s]["PUT"]["Gamma"] * current_price for s in strikes]
@@ -264,6 +268,12 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes_10d, tou
     total_gamma_calls = sum(gamma_calls)
     total_gamma_puts = sum(gamma_puts)
     total_gamma = total_gamma_calls + total_gamma_puts
+
+    # Totales de Volumen y Primas
+    total_volume_calls = sum(processed_data[s]["CALL"].get("Volume", 0) for s in strikes)
+    total_volume_puts = sum(processed_data[s]["PUT"].get("Volume", 0) for s in strikes)
+    max_call_premium = max(processed_data[s]["CALL"].get("Premium", 0) for s in strikes)
+    max_put_premium = max(processed_data[s]["PUT"].get("Premium", 0) for s in strikes)
 
     # Colores dinámicos
     call_colors = ["yellow" if s in touched_strikes_today else ("grey" if s in touched_strikes_10d else "#7DF9FF") for s in strikes]
@@ -275,11 +285,20 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes_10d, tou
     fig.add_trace(go.Bar(x=strikes, y=gamma_calls, name="Gamma CALL", marker_color=call_colors))
     fig.add_trace(go.Bar(x=strikes, y=gamma_puts, name="Gamma PUT", marker_color=put_colors))
 
+    
     # Anotaciones
     fig.add_annotation(text=f"CALLs: {total_gamma_calls:,.2f}", xref="paper", yref="paper", x=0.01, y=0.95, showarrow=False, font=dict(size=12, color="#7DF9FF"))
     fig.add_annotation(text=f"PUTs: {total_gamma_puts:,.2f}", xref="paper", yref="paper", x=0.01, y=0.90, showarrow=False, font=dict(size=12, color="red"))
     fig.add_annotation(text=f"Total: {total_gamma:,.2f}", xref="paper", yref="paper", x=0.01, y=0.85, showarrow=False, font=dict(size=12, color="white"))
+    fig.add_annotation(text=f"Volumen CALLs: {total_volume_calls:,}", xref="paper", yref="paper", x=0.01, y=0.80, showarrow=False, font=dict(size=12, color="#7DF9FF"))
+    fig.add_annotation(text=f"Volumen PUTs: {total_volume_puts:,}", xref="paper", yref="paper", x=0.01, y=0.75, showarrow=False, font=dict(size=12, color="red"))
+    fig.add_annotation(text=f"Máx Prima CALL: {max_call_premium:,.2f}", xref="paper", yref="paper", x=0.01, y=0.70, showarrow=False, font=dict(size=10, color="#7DF9FF"))
+    fig.add_annotation(text=f"Máx Prima PUT: {max_put_premium:,.2f}", xref="paper", yref="paper", x=0.01, y=0.65, showarrow=False, font=dict(size=10, color="red"))
 
+    # Máximo y mínimo Gamma CALL/PUT del día
+    fig.add_annotation(text=f"🔺 Max Gamma CALL (Today): {max_today}", xref="paper", yref="paper", x=0.01, y=0.60, showarrow=False, font=dict(size=10, color="orange"))
+    fig.add_annotation(text=f"🔻 Min Gamma PUT (Today): {min_today}", xref="paper", yref="paper", x=0.01, y=0.55, showarrow=False, font=dict(size=10, color="yellow"))
+    
     # Línea para el precio actual
     fig.add_shape(
         type="line",
@@ -301,20 +320,20 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes_10d, tou
     )
 
     # Layout
-    fig.update_layout(title="", xaxis_title="VOL", yaxis_title="VOLUME", template="plotly_dark", hovermode="x unified")
+    fig.update_layout(title="VOLUME", xaxis_title="Strikes", yaxis_title="VOLUME", template="plotly_dark", hovermode="x unified")
     return fig
 
 # Interfaz de Usuario
 st.title("|MULTIPLE SCANNER|")
 
 # Entrada para múltiples tickers
-tickers = st.text_input("(e.g., AAPL, MSFT)", value="SPY,VIX").split(",")
+tickers = st.text_input("(e.g., AAPL, MSFT)", value="AAPL, MSFT").split(",")
 
 # Procesar cada ticker
 data_available = False
 for ticker in tickers:
     ticker = ticker.strip().upper()
-    st.subheader(f"| {ticker}")
+    st.subheader(f"|{ticker}")
 
     expiration_dates = get_expiration_dates(ticker)
     if expiration_dates:
@@ -327,39 +346,43 @@ for ticker in tickers:
     historical_prices_10d = get_historical_data(ticker, days=10)
     historical_prices_today = get_historical_data(ticker, interval="5min")
 
+    if historical_prices_today:
+        max_today = max(historical_prices_today)
+        min_today = min(historical_prices_today)
+    else:
+        max_today, min_today = "N/A", "N/A"
+
     if historical_prices_10d:
         predicted_gamma = predict_gamma_trend(historical_prices_10d)
-        st.info(f"Possible Target| {ticker}: {predicted_gamma:.2f}")
+        st.info(f"📈{ticker}: {predicted_gamma:.2f}")
 
     options_data = get_options_data(ticker, expiration_date)
     if options_data:
         processed_data = {}
         for opt in options_data:
-            strike = opt.get("strike")
-            option_type = opt.get("option_type", "").upper()
+            strike = opt["strike"]
+            option_type = opt["option_type"].upper()
             oi = opt.get("open_interest", 0)
             gamma = opt.get("greeks", {}).get("gamma", 0)
+            volume = opt.get("volume", 0)
+            premium = opt.get("bid", 0) + opt.get("ask", 0)
 
             if strike not in processed_data:
-                processed_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
+                processed_data[strike] = {"CALL": {"OI": 0, "Gamma": 0, "Volume": 0, "Premium": 0},
+                                          "PUT": {"OI": 0, "Gamma": 0, "Volume": 0, "Premium": 0}}
 
             processed_data[strike][option_type]["OI"] += oi
             processed_data[strike][option_type]["Gamma"] += gamma
+            processed_data[strike][option_type]["Volume"] += volume
+            processed_data[strike][option_type]["Premium"] += premium
 
-        touched_strikes_10d = [strike for strike in processed_data if historical_prices_10d and min(historical_prices_10d) <= strike <= max(historical_prices_10d)]
-        touched_strikes_today = [strike for strike in processed_data if historical_prices_today and min(historical_prices_today) <= strike <= max(historical_prices_today)]
+        touched_strikes_10d = {s for s in processed_data.keys() if min(historical_prices_10d) <= s <= max(historical_prices_10d)}
+        touched_strikes_today = {s for s in processed_data.keys() if min(historical_prices_today) <= s <= max(historical_prices_today)}
 
-        gamma_fig = gamma_exposure_chart(processed_data, current_price, touched_strikes_10d, touched_strikes_today)
+        gamma_fig = gamma_exposure_chart(processed_data, current_price, touched_strikes_10d, touched_strikes_today, max_today, min_today)
         st.plotly_chart(gamma_fig, use_container_width=True)
-        data_available = True
     else:
-        st.warning(f"No se encontraron datos de opciones para {ticker}.")
-
-if not data_available:
-    st.error("No hay datos disponibles para los tickers ingresados.")
-
-
-
+        st.warning(f"No hay datos de opciones disponibles para {ticker}.")
 
 
 
