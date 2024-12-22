@@ -396,7 +396,7 @@ def create_chart(data, current_price, max_pain):
 
     # Layout final
     fig.update_layout(
-        title="Market Maker Insights - MM Advantage Zones",
+        title="MM Insights",
         xaxis_title="Strike Prices",
         yaxis_title="Value",
         template="plotly_dark",
@@ -493,7 +493,7 @@ tickers_input = st.text_input("Enter tickers (comma-separated):", "VIX")
 tickers = [ticker.strip().upper() for ticker in tickers_input.split(",")]
 
 for ticker in tickers:
-    st.header(f"Analysis for {ticker}")
+    st.header(f"|{ticker}")
     process_ticker(ticker)
 
 
