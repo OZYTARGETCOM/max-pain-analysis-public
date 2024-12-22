@@ -8,12 +8,10 @@ import numpy as np  # Para cálculos matemáticos y manipulación de arrays
 import csv
 import bcrypt
 import os
-import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
-
-
-
-
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # Configuración inicial
 st.set_page_config(page_title="SCANNER", layout="centered", page_icon="🔐")
@@ -179,13 +177,7 @@ if st.button("Cerrar Sesión"):
 
 
 
-###########################################APP>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# Configuración inicial
-
-# Configuración de la API Tradier
-API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
-BASE_URL = "https://api.tradier.com/v1"
-
+#############################################################SEGURIDAD  ARRIVA     
 # Configuración de la API Tradier
 API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
 BASE_URL = "https://api.tradier.com/v1"
@@ -322,12 +314,190 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes_10d, tou
     # Layout
     fig.update_layout(title="VOLUME", xaxis_title="Strikes", yaxis_title="VOLUME", template="plotly_dark", hovermode="x unified")
     return fig
+    
 
-# Interfaz de Usuario
+# Calcular Max Pain
+def calculate_max_pain(data):
+    strikes = data["Strike"]
+    total_loss = {}
+    for strike in strikes:
+        loss = sum(data["OI_CALL"] * np.maximum(strikes - strike, 0)) + sum(data["OI_PUT"] * np.maximum(strike - strikes, 0))
+        total_loss[strike] = loss
+    max_pain_strike = min(total_loss, key=total_loss.get)
+    return max_pain_strike
+
+# Crear el gráfico principal con marcadores de interés
+# Crear el gráfico principal con marcadores de interés y etiquetas alineadas
+def create_chart(data, current_price, max_pain):
+    fig = go.Figure()
+
+    # Línea de Current Price
+    fig.add_shape(type="line", x0=current_price, x1=current_price, y0=0, y1=1, xref="x", yref="paper",
+                  line=dict(color="cyan", dash="dot"), name="Current Price")
+    fig.add_annotation(x=current_price, y=1.05, text=f"Current: {current_price:.2f}", showarrow=False,
+                       font=dict(color="cyan", size=12))
+
+    # Línea de Max Pain
+    fig.add_shape(type="line", x0=max_pain, x1=max_pain, y0=0, y1=1, xref="x", yref="paper",
+                  line=dict(color="limegreen", dash="dot"), name="Max Pain")
+    fig.add_annotation(x=max_pain, y=1.05, text=f"Max Pain: {max_pain:.2f}", showarrow=False,
+                       font=dict(color="limegreen", size=12))
+
+    # Graficar Delta, Gamma, Theta y Vega
+    fig.add_trace(go.Scatter(x=data["Strike"], y=data["Delta"], mode="lines+markers", name="Delta",
+                             line=dict(color="blue"),
+                             marker=dict(size=6, color=np.abs(data["Delta"]), colorscale="Viridis", showscale=True),
+                             hovertemplate="Delta: %{y:.2f}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=data["Strike"], y=data["Gamma"], mode="lines+markers", name="Gamma",
+                             line=dict(color="red"),
+                             marker=dict(size=6, color=data["Gamma"], colorscale="Cividis", showscale=True),
+                             hovertemplate="Gamma: %{y:.2f}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=data["Strike"], y=data["Theta"], mode="lines+markers", name="Theta",
+                             line=dict(color="orange"),
+                             marker=dict(size=6, color=data["Theta"], colorscale="Plasma", showscale=True),
+                             hovertemplate="Theta: %{y:.2f}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=data["Strike"], y=data["Vega"], mode="lines+markers", name="Vega",
+                             line=dict(color="purple"),
+                             marker=dict(size=6, color=data["Vega"], colorscale="Magma", showscale=True),
+                             hovertemplate="Vega: %{y:.2f}<extra></extra>"))
+
+    # Etiquetas pequeñas alineadas con las líneas
+    fig.add_annotation(x=data["Strike"].iloc[-1], y=data["Delta"].iloc[-1],
+                       text="Delta", showarrow=False, font=dict(size=10, color="blue"))
+    fig.add_annotation(x=data["Strike"].iloc[-1], y=data["Gamma"].iloc[-1],
+                       text="Gamma", showarrow=False, font=dict(size=10, color="red"))
+    fig.add_annotation(x=data["Strike"].iloc[-1], y=data["Theta"].iloc[-1],
+                       text="Theta", showarrow=False, font=dict(size=10, color="orange"))
+    fig.add_annotation(x=data["Strike"].iloc[-1], y=data["Vega"].iloc[-1],
+                       text="Vega", showarrow=False, font=dict(size=10, color="purple"))
+
+    # Puntos clave donde el MM ganaría más
+    fig.add_trace(go.Scatter(x=[max_pain], y=[0], mode="markers", name="Max Pain Zone",
+                             marker=dict(size=15, color="limegreen", symbol="circle"),
+                             hovertemplate="Max Pain Zone: %{x}<extra></extra>"))
+
+    high_theta = data.loc[data["Theta"].idxmax()]
+    fig.add_trace(go.Scatter(x=[high_theta["Strike"]], y=[high_theta["Theta"]],
+                             mode="markers", name="High Theta (MM Advantage)",
+                             marker=dict(size=12, color="orange", symbol="star"),
+                             hovertemplate="High Theta: %{y:.2f}<extra></extra>"))
+
+    low_gamma = data.loc[data["Gamma"].idxmin()]
+    fig.add_trace(go.Scatter(x=[low_gamma["Strike"]], y=[low_gamma["Gamma"]],
+                             mode="markers", name="Low Gamma (MM Stability)",
+                             marker=dict(size=12, color="red", symbol="triangle-down"),
+                             hovertemplate="Low Gamma: %{y:.2f}<extra></extra>"))
+
+    low_delta = data.loc[data["Delta"].abs().idxmin()]
+    fig.add_trace(go.Scatter(x=[low_delta["Strike"]], y=[low_delta["Delta"]],
+                             mode="markers", name="Low Delta (MM Risk Reduction)",
+                             marker=dict(size=12, color="blue", symbol="circle"),
+                             hovertemplate="Low Delta: %{y:.2f}<extra></extra>"))
+
+    # Layout final
+    fig.update_layout(
+        title="Market Maker Insights - MM Advantage Zones",
+        xaxis_title="Strike Prices",
+        yaxis_title="Value",
+        template="plotly_dark",
+        hovermode="x unified"  # Hover en todas las líneas al mismo tiempo
+    )
+    return fig
+
+
+
+
+
+
+
+
+
+
+
+# Función de recomendaciones
+def generate_recommendations(data, current_price, max_pain):
+    recommendations = []
+    if current_price > max_pain:
+        recommendations.append("🔻 Current price is ABOVE Max Pain. Consider SELLING CALLs or buying PUTs.")
+    elif current_price < max_pain:
+        recommendations.append("🔺 Current price is BELOW Max Pain. Consider BUYING CALLs or selling PUTs.")
+    else:
+        recommendations.append("✅ Current price is NEAR Max Pain. Maintain neutral position.")
+
+    high_delta = data.loc[data["Delta"].abs().idxmax()]
+    recommendations.append(f"⚡ Highest Delta at Strike {high_delta['Strike']}: {high_delta['Delta']:.2f}. Hedge accordingly.")
+
+    high_theta = data.loc[data["Theta"].idxmax()]
+    recommendations.append(f"💰 Maximize Theta Decay at Strike {high_theta['Strike']} for best time decay benefits.")
+
+    high_gamma = data.loc[data["Gamma"].idxmax()]
+    recommendations.append(f"🚀 High Gamma at Strike {high_gamma['Strike']}: {high_gamma['Gamma']:.2f}. Watch for price sensitivity.")
+
+    high_vega = data.loc[data["Vega"].idxmax()]
+    recommendations.append(f"📈 High Vega at Strike {high_vega['Strike']}: {high_vega['Vega']:.2f}. Consider impact of volatility.")
+
+    recommendations.append(
+        """
+        **Resumen Clave:**
+
+- **Delta:** Mide sensibilidad al precio del subyacente. Delta alto => más riesgo.
+- **Theta:** Beneficio o pérdida por paso del tiempo. Theta positivo es ideal para ingresos pasivos.
+- **Gamma:** Mide la tasa de cambio de Delta. Gamma alto => mayor volatilidad (desafiante para MM); Gamma bajo => estabilidad (beneficia al MM).
+- **Vega:** Mide sensibilidad a la volatilidad. Vega alto => mayor impacto de cambios en volatilidad.
+- **Max Pain:** Precio donde los compradores de opciones pierden más, y el MM obtiene la mayor ganancia.
+- **Theta Alto:** Beneficio derivado del paso del tiempo, ideal para ingresos pasivos.
+- **Gamma Bajo:** Indica menor volatilidad, lo que beneficia al MM al reducir la necesidad de ajustes frecuentes.
+- **Delta Bajo:** Menor sensibilidad al movimiento del precio subyacente, lo que reduce el riesgo para el MM.
+
+        
+        """
+    )
+    return recommendations
+
+# Procesar cada ticker
+def process_ticker(ticker):
+    expiration_dates = get_expiration_dates(ticker)
+    if not expiration_dates:
+        st.warning(f"No expiration dates available for {ticker}.")
+        return
+
+    expiration_date = st.selectbox(f"Select expiration for {ticker}", expiration_dates)
+    options_data = get_options_data(ticker, expiration_date)
+
+    if not options_data:
+        st.warning(f"No options data available for {ticker}.")
+        return
+
+    current_price = get_current_price(ticker)
+    processed_data = pd.DataFrame([{
+        "Strike": option["strike"],
+        "Delta": option.get("greeks", {}).get("delta", 0),
+        "Gamma": option.get("greeks", {}).get("gamma", 0),
+        "Theta": option.get("greeks", {}).get("theta", 0),
+        "OI_CALL": option["open_interest"] if option["option_type"] == "call" else 0,
+        "OI_PUT": option["open_interest"] if option["option_type"] == "put" else 0,
+        "Vega": option.get("greeks", {}).get("vega", 0),
+    } for option in options_data])
+
+    max_pain = calculate_max_pain(processed_data)
+    chart = create_chart(processed_data, current_price, max_pain)
+
+    st.plotly_chart(chart, use_container_width=True)
+    recommendations = generate_recommendations(processed_data, current_price, max_pain)
+    for rec in recommendations:
+        st.write(rec)
+
+# Interfaz principal
 st.title("|MULTIPLE SCANNER|")
+tickers_input = st.text_input("Enter tickers (comma-separated):", "VIX")
+tickers = [ticker.strip().upper() for ticker in tickers_input.split(",")]
 
-# Entrada para múltiples tickers
-tickers = st.text_input("(e.g., AAPL, MSFT)", value="AAPL, MSFT").split(",")
+for ticker in tickers:
+    st.header(f"Analysis for {ticker}")
+    process_ticker(ticker)
+
+
+
 
 # Procesar cada ticker
 data_available = False
@@ -727,7 +897,7 @@ default_colorscale = [
     [1, "#FDE725"]  # Amarillo
 ]
 
-# Función para crear el Heatmap
+# Función para crear el Heatmap sin Theta y Delta
 def create_heatmap(processed_data, current_price, max_pain, custom_colorscale=None):
     strikes = sorted(processed_data.keys())
 
@@ -738,21 +908,17 @@ def create_heatmap(processed_data, current_price, max_pain, custom_colorscale=No
     ]
     gamma = [processed_data[s]["CALL"]["Gamma"] + processed_data[s]["PUT"]["Gamma"] for s in strikes]
     oi = [processed_data[s]["CALL"]["OI"] + processed_data[s]["PUT"]["OI"] for s in strikes]
-    theta = [processed_data[s]["CALL"]["Theta"] + processed_data[s]["PUT"]["Theta"] for s in strikes]
-    delta = [processed_data[s]["CALL"]["Delta"] + processed_data[s]["PUT"]["Delta"] for s in strikes]
 
     data = pd.DataFrame({
         'Volume': volume,
         'Gamma': gamma,
-        'OI': oi,
-        'Delta': delta,
-        'Theta': theta
+        'OI': oi
     })
 
     data_normalized = data.apply(lambda x: (x - x.min()) / (x.max() - x.min()))
 
     # Usar Viridis por defecto o la escala personalizada
-    colorscale = custom_colorscale if custom_colorscale else default_colorscale
+    colorscale = custom_colorscale if custom_colorscale else "Viridis"
 
     fig = go.Figure(data=go.Heatmap(
         z=data_normalized.T.values,
@@ -796,8 +962,6 @@ def create_heatmap(processed_data, current_price, max_pain, custom_colorscale=No
     targets = {
         "Gamma": {"values": gamma, "color": "red", "symbol": "γ"},
         "Volume": {"values": volume, "color": "blue", "symbol": "🔧"},
-        "Theta": {"values": theta, "color": "purple", "symbol": "θ"},
-        "Delta": {"values": delta, "color": "green", "symbol": "Δ"},
         "OI": {"values": oi, "color": "orange", "symbol": "OI"}
     }
 
@@ -807,10 +971,7 @@ def create_heatmap(processed_data, current_price, max_pain, custom_colorscale=No
         symbol = details["symbol"]
 
         # Seleccionar el valor más relevante según lógica:
-        if metric in ["Theta", "Delta"]:
-            top_index = min(range(len(metric_values)), key=lambda i: metric_values[i])
-        else:
-            top_index = max(range(len(metric_values)), key=lambda i: metric_values[i])
+        top_index = max(range(len(metric_values)), key=lambda i: metric_values[i])
 
         strike = strikes[top_index]
         fig.add_annotation(
@@ -827,7 +988,6 @@ def create_heatmap(processed_data, current_price, max_pain, custom_colorscale=No
         )
 
     return fig
-
 
 
 
