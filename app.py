@@ -13,6 +13,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+
+
 # Configuración inicial
 st.set_page_config(page_title="SCANNER", layout="centered", page_icon="🔐")
 
@@ -171,7 +173,6 @@ if st.button("Cerrar Sesión"):
     st.rerun()
 
 # Contenido de la app
-
 
 
 
