@@ -9,10 +9,6 @@ import csv
 import bcrypt
 import os
 from sklearn.linear_model import LinearRegression
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-
 
 
 # Configuración inicial
