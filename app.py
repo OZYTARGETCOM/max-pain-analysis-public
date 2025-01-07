@@ -9,168 +9,121 @@ import csv
 import bcrypt
 import os
 from sklearn.linear_model import LinearRegression
+from bs4 import BeautifulSoup
+import socket
+
+# Archivo para contraseñas
+PASSWORDS_FILE = "passwords.csv"
+
+# Inicializar archivo de contraseñas con 20 contraseñas predefinidas
+def initialize_passwords_file():
+    if not os.path.exists(PASSWORDS_FILE):
+        with open(PASSWORDS_FILE, "w", newline="") as file:
+            writer = csv.writer(file)
+            passwords = [
+                ["abc123", 0, ""],
+                ["def456", 0, ""],
+                ["ghi789", 0, ""],
+                ["jkl012", 0, ""],
+                ["mno345", 0, ""],
+                ["pqr678", 0, ""],
+                ["stu901", 0, ""],
+                ["vwx234", 0, ""],
+                ["yz1234", 0, ""],
+                ["abcd56", 0, ""],
+                ["efgh78", 0, ""],
+                ["ijkl90", 0, ""],
+                ["mnop12", 0, ""],
+                ["qrst34", 0, ""],
+                ["uvwx56", 0, ""],
+                ["yzab78", 0, ""],
+                ["cdef90", 0, ""],
+                ["ghij12", 0, ""],
+                ["klmn34", 0, ""],
+                ["opqr56", 0, ""],
+            ]
+            writer.writerows(passwords)
+
+# Obtener la dirección IP local
+def get_local_ip():
+    try:
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        return local_ip
+    except Exception as e:
+        return None
+
+# Cargar contraseñas
+def load_passwords():
+    passwords = {}
+    try:
+        with open(PASSWORDS_FILE, "r") as file:
+            reader = csv.reader(file)
+            for row in reader:
+                if len(row) == 3:  # Validar formato correcto
+                    password, status, ip = row
+                    passwords[password] = {"status": int(status), "ip": ip}
+    except Exception:
+        pass
+    return passwords
+
+# Guardar contraseñas
+def save_passwords(passwords):
+    with open(PASSWORDS_FILE, "w", newline="") as file:
+        writer = csv.writer(file)
+        for password, data in passwords.items():
+            writer.writerow([password, data["status"], data["ip"]])
+
+# Autenticar contraseña
+def authenticate_password(input_password):
+    local_ip = get_local_ip()
+    if not local_ip:
+        st.error("No se pudo obtener la IP local.")
+        return False
+
+    passwords = load_passwords()
+
+    if input_password in passwords:
+        password_data = passwords[input_password]
+        if password_data["status"] == 0:
+            # Primera vez que se usa la contraseña
+            passwords[input_password]["status"] = 1
+            passwords[input_password]["ip"] = local_ip
+            save_passwords(passwords)
+            return True
+        elif password_data["status"] == 1 and password_data["ip"] == local_ip:
+            # Contraseña ya usada, pero desde la misma IP
+            return True
+        elif password_data["status"] == 1 and password_data["ip"] != local_ip:
+            st.warning("⚠️ Esta contraseña ya ha sido usada desde otra dirección IP.")
+            return False
+    return False  # Contraseña incorrecta
+
+# Inicializar archivo de contraseñas
+initialize_passwords_file()
+
+# Manejo de sesión
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+# Pantalla de autenticación
+if not st.session_state["authenticated"]:
+    st.title("🔒 Acceso Restringido")
+    password = st.text_input("Ingresa tu contraseña", type="password")
+    if st.button("Iniciar Sesión"):
+        if authenticate_password(password):
+            st.session_state["authenticated"] = True
+    else:
+        st.error("❌ Contraseña incorrecta.")
+    st.stop()  # Detener la ejecución si no está autenticado
+
+# Contenido principal de la aplicación (solo si está autenticado)
+
+
 
 
 # Configuración inicial
 st.set_page_config(page_title="SCANNER", layout="centered", page_icon="🔐")
-
-
-
-# Archivo de usuarios
-USERS_FILE = "users.csv"
-
-# Función para inicializar archivo si no existe
-def initialize_users_file():
-    if not os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "w", newline="") as file:
-            pass
-
-# Funciones para manejar usuarios
-def load_users():
-    users = {}
-    with open(USERS_FILE, "r") as file:
-        reader = csv.reader(file)
-        for row in reader:
-            if len(row) == 2:
-                email, hashed_password = row
-                users[email] = hashed_password
-    return users
-
-def register_user(email, password):
-    hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    with open(USERS_FILE, "a", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow([email, hashed_password])
-
-def authenticate_user(email, password):
-    users = load_users()
-    if email in users:
-        return bcrypt.checkpw(password.encode(), users[email].encode())
-    return False
-
-# Inicializar el archivo
-initialize_users_file()
-
-# Manejo de estado de sesión
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-if "user_email" not in st.session_state:
-    st.session_state["user_email"] = None
-
-# CSS para diseño moderno
-st.markdown("""
-    <style>
-        .header {
-            text-align: center;
-            margin-bottom: 20px;
-            font-size: 2.5em;
-            font-weight: bold;
-            color: white;
-            background-color: #28a745;
-            border-radius: 10px;
-            padding: 20px;
-        }
-        .form-box {
-            background: #ffffff;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-            max-width: 400px;
-            margin: auto;
-        }
-        .btn {
-            background-color: #28a745;
-            color: white;
-            border: none;
-            padding: 10px;
-            border-radius: 8px;
-            width: 100%;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        .btn:hover {
-            background-color: #218838;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-
-
-
-
-
-# Mostrar formulario de Login/Registro
-def show_login_page():
-    st.markdown('<div class="header">🔒 SCANNER</div>', unsafe_allow_html=True)
-    st.markdown('<div class="form-box">', unsafe_allow_html=True)
-
-    
-
-    option = st.radio("", ["Iniciar Sesión", "Registrarse"])
-
-    if option == "Iniciar Sesión":
-        email = st.text_input("Correo Electrónico", key="login_email")
-        password = st.text_input("Contraseña", type="password", key="login_password")
-        if st.button("Iniciar Sesión", key="login_btn", help="Iniciar sesión"):
-            if authenticate_user(email, password):
-                st.session_state["authenticated"] = True
-                st.session_state["user_email"] = email
-                st.rerun()
-            else:
-                st.error("❌ Correo o contraseña incorrectos.")
-
-
-    elif option == "Registrarse":
-        email = st.text_input("Nuevo Correo Electrónico", key="register_email")
-        password = st.text_input("Nueva Contraseña", type="password", key="register_password")
-        if st.button("Registrarse", key="register_btn", help="Crear cuenta"):
-            users = load_users()
-            if email in users:
-                st.warning("⚠️ El correo ya está registrado.")
-            else:
-                register_user(email, password)
-                st.success("✅ Registro exitoso. Ahora inicia sesión.")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Bloquear la app si no está autenticado
-if not st.session_state["authenticated"]:
-    # Mostrar reglas de trading solo en la página de inicio de sesión
-    st.markdown(
-        """
-        <div style="background-color:black; padding:10px; border-radius:5px;">
-            <h3 style="color:yellow; text-align:center;">⚠️ Trading ⚠️</h3>
-            <ul style="color:yellow;">
-                <li>Siempre establecer un stop-loss antes de operar.</li>
-                <li>No arriesgar más del 2% del capital en una sola operación.</li>
-                <li>Analizar Gamma Exposure antes de entrar en el mercado.</li>
-                <li>Evitar operar en días de alta volatilidad sin estrategia clara.</li>
-                <li>Monitorear continuamente los niveles De los Blocks.</li>
-            </ul>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
-
-
-# Bloquear la app si no está autenticado
-if not st.session_state["authenticated"]:
-    show_login_page()
-    st.stop()
-
-# Pantalla principal tras inicio de sesión
-
-st.success(f"🔐 **{st.session_state['user_email']}**")
-
-if st.button("Cerrar Sesión"):
-    st.session_state["authenticated"] = False
-    st.session_state["user_email"] = None
-    st.rerun()
-
-# Contenido de la app
-
-
 
 
 
