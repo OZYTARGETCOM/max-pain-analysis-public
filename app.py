@@ -14,6 +14,7 @@ import socket
 
 
 
+
 # Archivo para contraseñas
 PASSWORDS_FILE = "passwords.csv"
 
@@ -132,6 +133,7 @@ if not st.session_state["authenticated"]:
 ################################################app
 
 
+
 # Tradier API Configuration
 API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
 BASE_URL = "https://api.tradier.com/v1"
@@ -199,25 +201,12 @@ def analyze_contracts(ticker, expiration, current_price):
     return df
 
 # Function: Style and sort table with the requested column order
-# Function: Style and sort table with the requested column order
-# Function: Style and sort table with top 10 contracts
 def style_and_sort_table(df):
-    """
-    Reorders and styles the table:
-    - Displays only the top 10 contracts based on IV and volume.
-    - Prioritized column order as requested.
-    """
-    # Define column order (ensure uniqueness)
     ordered_columns = ['strike', 'option_type', 'open_interest', 'volume', 'trade_date', 
                        'bid', 'ask', 'last_volume', 'bid_exchange', 'delta', 'gamma', 'break_even']
-
-    # Sort and filter top 10 by IV and volume
     df = df.sort_values(by=['volume', 'open_interest'], ascending=[False, False]).head(10)
-
-    # Reorder columns
     df = df[ordered_columns]
 
-    # Style the table
     def highlight_row(row):
         color = 'background-color: green; color: white;' if row['option_type'] == 'call' else 'background-color: red; color: white;'
         return [color] * len(row)
@@ -233,33 +222,20 @@ def style_and_sort_table(df):
         'break_even': '${:.2f}'
     })
 
-
-
 # Function: Select recommended contracts
 def select_best_contracts(df, current_price):
-    """
-    Selects:
-    - Closest contract to the current price.
-    - Economic contract with potential (out-of-the-money).
-    """
     if df.empty:
         return None, None
-
-    # Calculate difference between strike and current price
     df['strike_diff'] = abs(df['strike'] - current_price)
-
-    # Select the closest contract to the current price
     closest_contract = df.sort_values(
         by=['strike_diff', 'volume', 'open_interest'],
         ascending=[True, False, False]
     ).iloc[0]
 
-    # Select economic contracts (out-of-the-money)
     otm_calls = df[(df['option_type'] == 'call') & (df['strike'] > current_price) & (df['ask'] < 5)]
     otm_puts = df[(df['option_type'] == 'put') & (df['strike'] < current_price) & (df['ask'] < 5)]
 
     if not otm_calls.empty or not otm_puts.empty:
-        # Combine and select the best economic contract
         economic_df = pd.concat([otm_calls, otm_puts])
         economic_contract = economic_df.sort_values(
             by=['volume', 'open_interest'], ascending=[False, False]
@@ -269,41 +245,49 @@ def select_best_contracts(df, current_price):
 
     return closest_contract, economic_contract
 
+# Function: Calculate Max Pain
+def calculate_max_pain(df):
+    strikes = df['strike'].unique()
+    max_pain_data = []
+
+    for strike in strikes:
+        call_losses = ((strike - df[df['option_type'] == 'call']['strike']).clip(lower=0) * 
+                       df[df['option_type'] == 'call']['open_interest']).sum()
+        put_losses = ((df[df['option_type'] == 'put']['strike'] - strike).clip(lower=0) * 
+                      df[df['option_type'] == 'put']['open_interest']).sum()
+        total_loss = call_losses + put_losses
+        max_pain_data.append({'strike': strike, 'total_loss': total_loss})
+
+    max_pain_df = pd.DataFrame(max_pain_data)
+    max_pain_strike = max_pain_df.loc[max_pain_df['total_loss'].idxmin()]
+    return max_pain_strike, max_pain_df.sort_values(by='total_loss', ascending=True)
+
+
 # Streamlit Interface
 
-# Visual separator
 st.divider()
 
 # Step 1: Enter Ticker
 st.header("1️⃣ Enter Ticker")
 ticker = st.text_input("🔎 Enter the underlying ticker symbol:", value="SPY")
 if ticker:
-    # Step 2: Retrieve Expiration Dates
     st.header("2️⃣ Select Expiration Date")
     st.write("Retrieving expiration dates...")
     expirations = get_expiration_dates(ticker)
 
     if expirations:
-        # Display expiration dates in a dropdown menu
         selected_expiration = st.selectbox("📅 Select an expiration date:", expirations)
-
-        # Step 3: Retrieve Current Price
         st.header("3️⃣ Current Underlying Price")
         current_price = get_current_price(ticker)
         st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
 
-        # Step 4: Analyze Contracts
         st.header("4️⃣ Analysis Results")
         if st.button("📊 Analyze Contracts"):
-            st.write("Processing contract analysis...")
             df = analyze_contracts(ticker, selected_expiration, current_price)
-
             if not df.empty:
-                # Display the sorted and styled table
                 st.subheader("🔝 Sorted Option Contracts")
                 st.dataframe(style_and_sort_table(df))
 
-                # Select and display recommended contracts
                 closest_contract, economic_contract = select_best_contracts(df, current_price)
 
                 if closest_contract is not None:
@@ -315,7 +299,7 @@ if ticker:
                         **Ask:** ${closest_contract['ask']:.2f}  
                         **Delta:** {closest_contract['delta']:.2f}  
                         **Gamma:** {closest_contract['gamma']:.2f}  
-                        **Max-Target:** ${closest_contract['break_even']:.2f}  
+                        **Break-Even:** ${closest_contract['break_even']:.2f}  
                         **% Movement Needed:** {((closest_contract['break_even'] - current_price) / current_price * 100):.2f}%
                     """)
 
@@ -328,14 +312,28 @@ if ticker:
                         **Ask:** ${economic_contract['ask']:.2f}  
                         **Delta:** {economic_contract['delta']:.2f}  
                         **Gamma:** {economic_contract['gamma']:.2f}  
-                        **Max-Target:** ${economic_contract['break_even']:.2f}  
+                        **Break-Even:** ${economic_contract['break_even']:.2f}  
                         **% Movement Needed:** {((economic_contract['break_even'] - current_price) / current_price * 100):.2f}%
                     """)
                 else:
                     st.warning("No economic contracts found.")
+                st.header("6️⃣ Max Pain Calculation")
+                max_pain_strike, max_pain_table = calculate_max_pain(df)
+                st.markdown(f"**🎯 Max Pain Strike:** {max_pain_strike['strike']}")
+
+                # Plot histogram with Plotly
+                fig = px.bar(
+                    max_pain_table,
+                    x='total_loss',
+                    y='strike',
+                    orientation='h',
+                    title="Max Pain Histogram",
+                    labels={'total_loss': 'Total Loss', 'strike': 'Strike Price'},
+                    text='total_loss'
+                )
+                st.plotly_chart(fig)
             else:
                 st.warning("No relevant contracts found.")
-
 
 
 #############################################################SEGURIDAD  ARRIVA     
