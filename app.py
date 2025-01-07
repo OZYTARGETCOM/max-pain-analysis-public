@@ -131,6 +131,7 @@ if not st.session_state["authenticated"]:
 
 ################################################app
 
+
 # Tradier API Configuration
 API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
 BASE_URL = "https://api.tradier.com/v1"
@@ -147,10 +148,10 @@ def get_expiration_dates(ticker):
     if response.status_code == 200:
         return response.json().get("expirations", {}).get("date", [])
     else:
-        st.error("Error fetching expiration dates.")
+        st.error("Error retrieving expiration dates.")
         return []
 
-# Function: Get current price
+# Function: Get current underlying price
 def get_current_price(ticker):
     url = f"{BASE_URL}/markets/quotes"
     params = {"symbols": ticker}
@@ -158,10 +159,10 @@ def get_current_price(ticker):
     if response.status_code == 200:
         return response.json().get("quotes", {}).get("quote", {}).get("last", 0)
     else:
-        st.error("Error fetching current price.")
+        st.error("Error retrieving the current price.")
         return 0
 
-# Function: Analyze relevant contracts
+# Function: Analyze relevant option contracts
 def analyze_contracts(ticker, expiration, current_price):
     url = f"{BASE_URL}/markets/options/chains"
     params = {
@@ -171,141 +172,125 @@ def analyze_contracts(ticker, expiration, current_price):
     }
     response = requests.get(url, headers=HEADERS, params=params)
     if response.status_code != 200:
-        st.error("Error fetching contracts.")
+        st.error("Error retrieving option contracts.")
         return pd.DataFrame()
 
     options = response.json().get("options", {}).get("option", [])
     if not options:
-        st.warning("No contracts found.")
+        st.warning("No contracts available.")
         return pd.DataFrame()
 
     # Convert to DataFrame
     df = pd.DataFrame(options)
 
-    # Handle missing important columns
-    for col in ['strike', 'option_type', 'last', 'iv', 'volume', 'delta', 'gamma', 'theta', 'vega']:
+    # Handle missing critical columns
+    for col in ['strike', 'option_type', 'open_interest', 'volume', 'bid', 'ask', 'last_volume',
+                'trade_date', 'bid_exchange', 'delta', 'gamma', 'break_even']:
         if col not in df.columns:
-            df[col] = 0
+            df[col] = 0  # Assign default if missing
 
-    # Filter top 10 contracts by IV and volume
-    df['strike_diff'] = abs(df['strike'] - current_price)
-    df = df.sort_values(by=["iv", "volume"], ascending=[False, False]).head(10)
-
-    return df
-
-# Function: Calculate movement potential
-def calculate_potential(df, current_price):
-    """
-    Adds columns for:
-    - Break-even point
-    - Percentage of required movement
-    """
-    if df.empty:
-        return df
-
-    # Calculate break-even point
+    # Add placeholder data for missing fields
+    df['trade_date'] = datetime.now().strftime('%Y-%m-%d')  # Placeholder trade date
     df['break_even'] = df.apply(
-        lambda row: row['strike'] + row['last'] if row['option_type'] == 'call' else row['strike'] - row['last'],
+        lambda row: row['strike'] + row['bid'] if row['option_type'] == 'call' else row['strike'] - row['bid'],
         axis=1
     )
 
-    # Calculate required movement to reach break-even
-    df['% movement'] = ((df['break_even'] - current_price) / current_price * 100).round(2)
-
     return df
 
-# Function: Style the table to highlight Calls and Puts
-def style_table(df):
+# Function: Style and sort table with the requested column order
+# Function: Style and sort table with the requested column order
+# Function: Style and sort table with top 10 contracts
+def style_and_sort_table(df):
+    """
+    Reorders and styles the table:
+    - Displays only the top 10 contracts based on IV and volume.
+    - Prioritized column order as requested.
+    """
+    # Define column order (ensure uniqueness)
+    ordered_columns = ['strike', 'option_type', 'open_interest', 'volume', 'trade_date', 
+                       'bid', 'ask', 'last_volume', 'bid_exchange', 'delta', 'gamma', 'break_even']
+
+    # Sort and filter top 10 by IV and volume
+    df = df.sort_values(by=['volume', 'open_interest'], ascending=[False, False]).head(10)
+
+    # Reorder columns
+    df = df[ordered_columns]
+
+    # Style the table
     def highlight_row(row):
         color = 'background-color: green; color: white;' if row['option_type'] == 'call' else 'background-color: red; color: white;'
         return [color] * len(row)
 
     return df.style.apply(highlight_row, axis=1).format({
         'strike': '{:.2f}',
-        'last': '${:.2f}',
-        'iv': '{:.2%}',
-        'volume': '{:,}',
+        'bid': '${:.2f}',
+        'ask': '${:.2f}',
+        'last_volume': '{:,}',
+        'open_interest': '{:,}',
         'delta': '{:.2f}',
-        'gamma': '{:.6f}',
-        'theta': '{:.2f}',
-        'vega': '{:.2f}',
-        'break_even': '${:.2f}',
-        '% movement': '{:.2f}%'
+        'gamma': '{:.2f}',
+        'break_even': '${:.2f}'
     })
 
-# Function: Select suggested contracts
+
+
+# Function: Select recommended contracts
 def select_best_contracts(df, current_price):
+    """
+    Selects:
+    - Closest contract to the current price.
+    - Economic contract with potential (out-of-the-money).
+    """
     if df.empty:
         return None, None
 
-    # Closest contract to the current price
+    # Calculate difference between strike and current price
     df['strike_diff'] = abs(df['strike'] - current_price)
+
+    # Select the closest contract to the current price
     closest_contract = df.sort_values(
-        by=['strike_diff', 'iv', 'volume'],
+        by=['strike_diff', 'volume', 'open_interest'],
         ascending=[True, False, False]
     ).iloc[0]
 
-    # Economical contract with potential
-    otm_df = df[(df['strike'] > current_price) & (df['last'] < 5)]
-    economic_contract = (
-        otm_df.sort_values(by=['iv', 'volume'], ascending=[False, False]).iloc[0]
-        if not otm_df.empty else None
-    )
+    # Select economic contracts (out-of-the-money)
+    otm_calls = df[(df['option_type'] == 'call') & (df['strike'] > current_price) & (df['ask'] < 5)]
+    otm_puts = df[(df['option_type'] == 'put') & (df['strike'] < current_price) & (df['ask'] < 5)]
+
+    if not otm_calls.empty or not otm_puts.empty:
+        # Combine and select the best economic contract
+        economic_df = pd.concat([otm_calls, otm_puts])
+        economic_contract = economic_df.sort_values(
+            by=['volume', 'open_interest'], ascending=[False, False]
+        ).iloc[0]
+    else:
+        economic_contract = None
 
     return closest_contract, economic_contract
 
-# Function: Summarize contracts (Calls vs Puts)
-def summarize_contracts(df):
-    if df.empty:
-        return {
-            'Total Calls': 0,
-            'Total Puts': 0,
-            'Total Call Premium': 0.0,
-            'Total Put Premium': 0.0
-        }
-
-    calls = df[df['option_type'] == 'call']
-    puts = df[df['option_type'] == 'put']
-
-    def format_large_number(value):
-        if value >= 1e9:
-            return f"{value / 1e9:.2f}B"
-        elif value >= 1e6:
-            return f"{value / 1e6:.2f}M"
-        else:
-            return f"{value:.6f}"
-
-    summary = {
-        'Total Calls': len(calls),
-        'Total Puts': len(puts),
-        'Total Call Premium': format_large_number(calls['last'].sum() if not calls['last'].isnull().all() else 0.0),
-        'Total Put Premium': format_large_number(puts['last'].sum() if not puts['last'].isnull().all() else 0.0)
-    }
-
-    return summary
-
+# Streamlit Interface
 
 # Visual separator
 st.divider()
 
 # Step 1: Enter Ticker
 st.header("1️⃣ Enter Ticker")
-ticker = st.text_input("🔎 Enter the underlying ticker:", value="SPY")
-
+ticker = st.text_input("🔎 Enter the underlying ticker symbol:", value="SPY")
 if ticker:
-    # Step 2: Automatically Fetch Expiration Dates
+    # Step 2: Retrieve Expiration Dates
     st.header("2️⃣ Select Expiration Date")
-    st.write("Fetching expiration dates...")
+    st.write("Retrieving expiration dates...")
     expirations = get_expiration_dates(ticker)
 
     if expirations:
-        # Display expiration dates in a dropdown
+        # Display expiration dates in a dropdown menu
         selected_expiration = st.selectbox("📅 Select an expiration date:", expirations)
 
-        # Step 3: Get Current Price of Underlying
-        st.header("3️⃣ Current Price")
+        # Step 3: Retrieve Current Price
+        st.header("3️⃣ Current Underlying Price")
         current_price = get_current_price(ticker)
-        st.markdown(f"**💰 Current Price:** **${current_price:.2f}**")
+        st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
 
         # Step 4: Analyze Contracts
         st.header("4️⃣ Analysis Results")
@@ -314,51 +299,42 @@ if ticker:
             df = analyze_contracts(ticker, selected_expiration, current_price)
 
             if not df.empty:
-                # Add potential calculations to the DataFrame
-                df = calculate_potential(df, current_price)
+                # Display the sorted and styled table
+                st.subheader("🔝 Sorted Option Contracts")
+                st.dataframe(style_and_sort_table(df))
 
-                # Contract Summary
-                summary = summarize_contracts(df)
-                st.subheader("📊 Contract Summary")
-                st.markdown(f"""
-                - **Total Calls:** {summary['Total Calls']}  
-                - **Total Puts:** {summary['Total Puts']}  
-                - **Total Call Premium:** {summary['Total Call Premium']}  
-                - **Total Put Premium:** {summary['Total Put Premium']}
-                """)
-
-                # Display styled table with additional calculations
-                st.subheader("🔝 Top Options Contracts")
-                st.dataframe(style_table(df))
-
-                # Suggested contracts
+                # Select and display recommended contracts
                 closest_contract, economic_contract = select_best_contracts(df, current_price)
 
                 if closest_contract is not None:
-                    st.subheader("✅ POTENTIAL  OPTIONS")
+                    st.subheader("✅ Closest Contract to Current Price")
                     st.markdown(f"""
                         **Strike:** {closest_contract['strike']}  
                         **Type:** {closest_contract['option_type']}  
-                        **Contract Price:** ${closest_contract['last']:.2f}  
+                        **Bid:** ${closest_contract['bid']:.2f}  
+                        **Ask:** ${closest_contract['ask']:.2f}  
+                        **Delta:** {closest_contract['delta']:.2f}  
+                        **Gamma:** {closest_contract['gamma']:.2f}  
                         **Break-Even:** ${closest_contract['break_even']:.2f}  
-                        **% Required Movement:** {closest_contract['% movement']:.2f}%
+                        **% Movement Needed:** {((closest_contract['break_even'] - current_price) / current_price * 100):.2f}%
                     """)
 
                 if economic_contract is not None:
-                    st.subheader("💡 Economical Contract with Potential")
+                    st.subheader("💡 Economic Contract with Potential")
                     st.markdown(f"""
                         **Strike:** {economic_contract['strike']}  
                         **Type:** {economic_contract['option_type']}  
-                        **Contract Price:** ${economic_contract['last']:.2f}  
+                        **Bid:** ${economic_contract['bid']:.2f}  
+                        **Ask:** ${economic_contract['ask']:.2f}  
+                        **Delta:** {economic_contract['delta']:.2f}  
+                        **Gamma:** {economic_contract['gamma']:.2f}  
                         **Break-Even:** ${economic_contract['break_even']:.2f}  
-                        **% Required Movement:** {economic_contract['% movement']:.2f}%
+                        **% Movement Needed:** {((economic_contract['break_even'] - current_price) / current_price * 100):.2f}%
                     """)
                 else:
-                    st.warning("No economical contracts found.")
+                    st.warning("No economic contracts found.")
             else:
                 st.warning("No relevant contracts found.")
-
-
 
 
 
