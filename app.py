@@ -315,7 +315,7 @@ if ticker:
                         **Ask:** ${closest_contract['ask']:.2f}  
                         **Delta:** {closest_contract['delta']:.2f}  
                         **Gamma:** {closest_contract['gamma']:.2f}  
-                        **Break-Even:** ${closest_contract['break_even']:.2f}  
+                        **Max-Target:** ${closest_contract['break_even']:.2f}  
                         **% Movement Needed:** {((closest_contract['break_even'] - current_price) / current_price * 100):.2f}%
                     """)
 
@@ -328,7 +328,7 @@ if ticker:
                         **Ask:** ${economic_contract['ask']:.2f}  
                         **Delta:** {economic_contract['delta']:.2f}  
                         **Gamma:** {economic_contract['gamma']:.2f}  
-                        **Break-Even:** ${economic_contract['break_even']:.2f}  
+                        **Max-Target:** ${economic_contract['break_even']:.2f}  
                         **% Movement Needed:** {((economic_contract['break_even'] - current_price) / current_price * 100):.2f}%
                     """)
                 else:
