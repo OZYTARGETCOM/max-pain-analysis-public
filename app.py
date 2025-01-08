@@ -310,7 +310,7 @@ def plot_max_pain_histogram_with_support_resistance(max_pain_table):
         template="plotly_white",
         font=dict(size=14, family="Open Sans"),
         title=dict(
-            text="📊 Max Pain Analysis with Support and Resistance",
+            text="📊 MARKET LOSS",
             font=dict(size=18),
             x=0.5
         ),
@@ -387,7 +387,7 @@ if ticker:
                 closest_contract, economic_contract = select_best_contracts(df, current_price)
 
                 if closest_contract is not None:
-                    st.subheader("✅ Closest Contract to Current Price")
+                    st.subheader("✅ OPTION")
                     st.markdown(f"""
                         **Strike:** {closest_contract['strike']}  
                         **Type:** {closest_contract['option_type']}  
@@ -400,7 +400,7 @@ if ticker:
                     """)
 
                 if economic_contract is not None:
-                    st.subheader("💡 Economic Contract with Potential")
+                    st.subheader("💡 Economic Option")
                     st.markdown(f"""
                         **Strike:** {economic_contract['strike']}  
                         **Type:** {economic_contract['option_type']}  
@@ -414,7 +414,7 @@ if ticker:
                 
                     
                 max_pain_strike, max_pain_table = calculate_max_pain(df)
-                st.markdown(f"**🎯 Max Pain Strike:** {max_pain_strike['strike']}")
+                st.markdown(f"**🎯 TARGET:** {max_pain_strike['strike']}")
 
                 # Calculate support and resistance levels
                 support_level, resistance_level = calculate_support_resistance(max_pain_table)
