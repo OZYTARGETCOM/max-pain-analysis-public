@@ -11,7 +11,8 @@ import os
 from sklearn.linear_model import LinearRegression
 from bs4 import BeautifulSoup
 import socket
-
+import plotly.express as px
+import plotly.graph_objects as go
 
 
 
@@ -129,10 +130,7 @@ if not st.session_state["authenticated"]:
 
 
 
-
 ################################################app
-
-
 
 # Tradier API Configuration
 API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
@@ -176,6 +174,9 @@ def analyze_contracts(ticker, expiration, current_price):
     if response.status_code != 200:
         st.error("Error retrieving option contracts.")
         return pd.DataFrame()
+    
+
+    
 
     options = response.json().get("options", {}).get("option", [])
     if not options:
@@ -262,9 +263,104 @@ def calculate_max_pain(df):
     max_pain_strike = max_pain_df.loc[max_pain_df['total_loss'].idxmin()]
     return max_pain_strike, max_pain_df.sort_values(by='total_loss', ascending=True)
 
+# Function: Calculate Support and Resistance
+def calculate_support_resistance(max_pain_table):
+    max_pain_table = max_pain_table.sort_values(by='strike')
+    gradients = np.gradient(max_pain_table['total_loss'])
 
-# Streamlit Interface
+    # Support: Maximum negative gradient
+    support_index = np.argmin(gradients)
+    support_level = max_pain_table.iloc[support_index]['strike']
 
+    # Resistance: Maximum positive gradient
+    resistance_index = np.argmax(gradients)
+    resistance_level = max_pain_table.iloc[resistance_index]['strike']
+
+    return support_level, resistance_level
+
+# Function: Plot Histogram with Support and Resistance
+def plot_max_pain_histogram_with_support_resistance(max_pain_table):
+    support_level, resistance_level = calculate_support_resistance(max_pain_table)
+
+    max_pain_table['loss_category'] = max_pain_table['total_loss'].apply(
+        lambda x: 'High Loss' if x > max_pain_table['total_loss'].quantile(0.75) else
+                  ('Low Loss' if x < max_pain_table['total_loss'].quantile(0.25) else 'Neutral')
+    )
+
+    color_map = {
+        'High Loss': '#FF5733',
+        'Low Loss': '#28A745',
+        'Neutral': 'rgba(128,128,128,0.3)'
+    }
+
+    fig = px.bar(
+        max_pain_table,
+        x='total_loss',
+        y='strike',
+        orientation='h',
+        title="Max Pain Histogram with Support and Resistance",
+        labels={'total_loss': 'Total Loss', 'strike': 'Strike Price'},
+        color='loss_category',
+        color_discrete_map=color_map
+    )
+
+    fig.update_layout(
+        xaxis_title="Total Loss",
+        yaxis_title="Strike Price",
+        template="plotly_white",
+        font=dict(size=14, family="Open Sans"),
+        title=dict(
+            text="📊 Max Pain Analysis with Support and Resistance",
+            font=dict(size=18),
+            x=0.5
+        ),
+        hovermode="y",
+        xaxis=dict(
+            showspikes=True,
+            spikemode="across",
+            spikesnap="cursor",
+            spikecolor="#FFFF00",
+            spikethickness=1.5
+        )
+    )
+
+    mean_loss = max_pain_table['total_loss'].mean()
+    fig.add_vline(
+        x=mean_loss,
+        line_width=1,
+        line_dash="dash",
+        line_color="#00FF00",
+        annotation_text=f"Mean Loss: {mean_loss:.2f}",
+        annotation_position="top right",
+        annotation_font=dict(color="#00FF00", size=12)
+    )
+
+    fig.add_hline(
+        y=support_level,
+        line_width=2,
+        line_dash="dot",
+        line_color="#1E90FF",
+        annotation_text=f"Support: {support_level:.2f}",
+        annotation_position="bottom right",
+        annotation_font=dict(color="#1E90FF", size=12)
+    )
+
+    fig.add_hline(
+        y=resistance_level,
+        line_width=1,
+        line_dash="dot",
+        line_color="#FF4500",
+        annotation_text=f"Resistance: {resistance_level:.2f}",
+        annotation_position="top right",
+        annotation_font=dict(color="#FF4500", size=12)
+    )
+
+    return fig
+
+
+
+
+# Streamlit Interfa
 st.divider()
 
 # Step 1: Enter Ticker
@@ -299,7 +395,7 @@ if ticker:
                         **Ask:** ${closest_contract['ask']:.2f}  
                         **Delta:** {closest_contract['delta']:.2f}  
                         **Gamma:** {closest_contract['gamma']:.2f}  
-                        **Break-Even:** ${closest_contract['break_even']:.2f}  
+                        **Target:** ${closest_contract['break_even']:.2f}  
                         **% Movement Needed:** {((closest_contract['break_even'] - current_price) / current_price * 100):.2f}%
                     """)
 
@@ -312,29 +408,27 @@ if ticker:
                         **Ask:** ${economic_contract['ask']:.2f}  
                         **Delta:** {economic_contract['delta']:.2f}  
                         **Gamma:** {economic_contract['gamma']:.2f}  
-                        **Break-Even:** ${economic_contract['break_even']:.2f}  
+                        **Target:** ${economic_contract['break_even']:.2f}  
                         **% Movement Needed:** {((economic_contract['break_even'] - current_price) / current_price * 100):.2f}%
                     """)
-                else:
-                    st.warning("No economic contracts found.")
-                st.header("6️⃣ Max Pain Calculation")
+                
+                    
                 max_pain_strike, max_pain_table = calculate_max_pain(df)
                 st.markdown(f"**🎯 Max Pain Strike:** {max_pain_strike['strike']}")
 
-                # Plot histogram with Plotly
-                fig = px.bar(
-                    max_pain_table,
-                    x='total_loss',
-                    y='strike',
-                    orientation='h',
-                    title="Max Pain Histogram",
-                    labels={'total_loss': 'Total Loss', 'strike': 'Strike Price'},
-                    text='total_loss'
-                )
+                # Calculate support and resistance levels
+                support_level, resistance_level = calculate_support_resistance(max_pain_table)
+
+                # Plot histogram with support and resistance lines
+                # Mostrar niveles calculados
+                st.markdown(f"**🔹 Support Level:** {support_level:.2f}")
+                st.markdown(f"**🔹 Resistance Level:** {resistance_level:.2f}")
+               
+
+                fig = plot_max_pain_histogram_with_support_resistance(max_pain_table)
                 st.plotly_chart(fig)
             else:
                 st.warning("No relevant contracts found.")
-
 
 #############################################################SEGURIDAD  ARRIVA     
 
