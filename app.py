@@ -112,13 +112,13 @@ if "authenticated" not in st.session_state:
 
 # Pantalla de autenticación
 if not st.session_state["authenticated"]:
-    st.title("🔒 Acceso Restringido")
+    st.title("🔒 Acceso VIP")
     password = st.text_input("Ingresa tu contraseña", type="password")
     if st.button("Iniciar Sesión"):
         if authenticate_password(password):
             st.session_state["authenticated"] = True
     else:
-        st.error("❌ Contraseña incorrecta.")
+        st.error("❌ VIP access only with Monitor/Indicator clients.")
     st.stop()  # Detener la ejecución si no está autenticado
 
 # Contenido principal de la aplicación (solo si está autenticado)
