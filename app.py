@@ -174,9 +174,6 @@ def analyze_contracts(ticker, expiration, current_price):
     if response.status_code != 200:
         st.error("Error retrieving option contracts.")
         return pd.DataFrame()
-    
-
-    
 
     options = response.json().get("options", {}).get("option", [])
     if not options:
@@ -263,24 +260,33 @@ def calculate_max_pain(df):
     max_pain_strike = max_pain_df.loc[max_pain_df['total_loss'].idxmin()]
     return max_pain_strike, max_pain_df.sort_values(by='total_loss', ascending=True)
 
-# Function: Calculate Support and Resistance
-def calculate_support_resistance(max_pain_table):
-    max_pain_table = max_pain_table.sort_values(by='strike')
-    gradients = np.gradient(max_pain_table['total_loss'])
+# Function: Calculate Support, Resistance, and Mid Level
+def calculate_support_resistance_mid(max_pain_table, current_price):
+    # Filtrar puts y calls
+    puts = max_pain_table[max_pain_table['strike'] <= current_price]
+    calls = max_pain_table[max_pain_table['strike'] > current_price]
 
-    # Support: Maximum negative gradient
-    support_index = np.argmin(gradients)
-    support_level = max_pain_table.iloc[support_index]['strike']
+    # Identificar soporte basado en interés abierto de puts
+    if not puts.empty:
+        support_level = puts.loc[puts['total_loss'].idxmin()]['strike']
+    else:
+        support_level = current_price  # Por defecto al precio actual si no hay datos
 
-    # Resistance: Maximum positive gradient
-    resistance_index = np.argmax(gradients)
-    resistance_level = max_pain_table.iloc[resistance_index]['strike']
+    # Identificar resistencia basada en interés abierto de calls
+    if not calls.empty:
+        resistance_level = calls.loc[calls['total_loss'].idxmin()]['strike']
+    else:
+        resistance_level = current_price  # Por defecto al precio actual si no hay datos
 
-    return support_level, resistance_level
+    # Calcular nivel medio
+    mid_level = (support_level + resistance_level) / 2
 
-# Function: Plot Histogram with Support and Resistance
-def plot_max_pain_histogram_with_support_resistance(max_pain_table):
-    support_level, resistance_level = calculate_support_resistance(max_pain_table)
+    return support_level, resistance_level, mid_level
+
+
+# Function: Plot Histogram with Support, Resistance, and Mid Level
+def plot_max_pain_histogram_with_levels(max_pain_table, current_price):
+    support_level, resistance_level, mid_level = calculate_support_resistance_mid(max_pain_table, current_price)
 
     max_pain_table['loss_category'] = max_pain_table['total_loss'].apply(
         lambda x: 'High Loss' if x > max_pain_table['total_loss'].quantile(0.75) else
@@ -298,7 +304,7 @@ def plot_max_pain_histogram_with_support_resistance(max_pain_table):
         x='total_loss',
         y='strike',
         orientation='h',
-        title="Max Pain Histogram with Support and Resistance",
+        title="Max Pain Histogram with Levels",
         labels={'total_loss': 'Total Loss', 'strike': 'Strike Price'},
         color='loss_category',
         color_discrete_map=color_map
@@ -310,7 +316,7 @@ def plot_max_pain_histogram_with_support_resistance(max_pain_table):
         template="plotly_white",
         font=dict(size=14, family="Open Sans"),
         title=dict(
-            text="📊 MARKET LOSS",
+            text="📊 Max Pain Analysis ",
             font=dict(size=18),
             x=0.5
         ),
@@ -337,12 +343,12 @@ def plot_max_pain_histogram_with_support_resistance(max_pain_table):
 
     fig.add_hline(
         y=support_level,
-        line_width=2,
+        line_width=1,
         line_dash="dot",
         line_color="#1E90FF",
         annotation_text=f"Support: {support_level:.2f}",
         annotation_position="bottom right",
-        annotation_font=dict(color="#1E90FF", size=12)
+        annotation_font=dict(color="#1E90FF", size=10)
     )
 
     fig.add_hline(
@@ -352,23 +358,116 @@ def plot_max_pain_histogram_with_support_resistance(max_pain_table):
         line_color="#FF4500",
         annotation_text=f"Resistance: {resistance_level:.2f}",
         annotation_position="top right",
-        annotation_font=dict(color="#FF4500", size=12)
+        annotation_font=dict(color="#FF4500", size=10)
+    )
+
+    fig.add_hline(
+        y=mid_level,
+        line_width=1,
+        line_dash="solid",
+        line_color="#FFD700",
+        annotation_text=f"Mid Level: {mid_level:.2f}",
+        annotation_position="top right",
+        annotation_font=dict(color="#FFD700", size=8)
     )
 
     return fig
+# Function: Get option chains
+def get_option_chains(ticker, expiration):
+    url = f"{BASE_URL}/markets/options/chains"
+    params = {
+        "symbol": ticker,
+        "expiration": expiration,
+        "greeks": True
+    }
+    response = requests.get(url, headers=HEADERS, params=params)
+    if response.status_code == 200:
+        return response.json().get("options", {}).get("option", [])
+    else:
+        st.error("Error retrieving option chains.")
+        return []
+
+# Function: Calculate Score
+def calculate_score(df, current_price, volatility=0.2):
+    df['score'] = (df['open_interest'] * df['volume']) / (abs(df['strike'] - current_price) + volatility)
+    return df.sort_values(by='score', ascending=False)
+
+# Function: Display Cards
+def display_cards(df):
+    st.markdown("### Top 5")
+    for i, row in df.iterrows():
+        st.markdown(f"""
+        **Strike:** {row['strike']}  
+        **Type:** {'Call' if row['option_type'] == 'call' else 'Put'}  
+        **Volume:** {row['volume']}  
+        **Open Interest:** {row['open_interest']}  
+        **Score:** {row['score']:.2f}  
+        """)
+
+# Function: Plot Histogram with Enhanced Visualization
+def plot_histogram(df):
+    fig = px.bar(
+        df,
+        x='strike',
+        y='score',
+        color='option_type',
+        title="Score by Strike (Calls and Puts)",
+        labels={'score': 'Relevance Score', 'strike': 'Strike Price'},
+        text='score',
+        color_discrete_map={
+            'call': '#00FF00',  # Fosforescente verde para Calls
+            'put': '#FF00FF'   # Fosforescente magenta para Puts
+        }
+    )
+    fig.update_traces(
+        texttemplate='%{text:.2f}', 
+        textposition='outside', 
+        marker=dict(line=dict(width=0.5, color='black'))  # Bordes delgados
+    )
+    fig.update_layout(
+        plot_bgcolor='black',  # Fondo negro para resaltar colores
+        font=dict(color='white', size=12),  # Fuente blanca para contraste
+        xaxis=dict(showgrid=True, gridcolor='gray'),
+        yaxis=dict(showgrid=True, gridcolor='gray'),
+        xaxis_title="Strike Price",
+        yaxis_title="Relevance Score"
+    )
+
+    # Líneas de soporte y resistencia
+    support_level = df['strike'].iloc[0]  # Ejemplo: primer strike como soporte
+    resistance_level = df['strike'].iloc[-1]  # Ejemplo: último strike como resistencia
+
+    fig.add_hline(
+        y=support_level, 
+        line_width=1,  # Línea más delgada
+        line_dash="dot", 
+        line_color="#1E90FF",
+        annotation_text=f"Support: {support_level:.2f}",
+        annotation_position="bottom left",
+        annotation_font=dict(size=10, color="#1E90FF")
+    )
+    fig.add_hline(
+        y=resistance_level, 
+        line_width=1,  # Línea más delgada
+        line_dash="dot", 
+        line_color="#FF4500",
+        annotation_text=f"Resistance: {resistance_level:.2f}",
+        annotation_position="top left",
+        annotation_font=dict(size=10, color="#FF4500")
+    )
+
+    st.plotly_chart(fig)
 
 
-
-
-# Streamlit Interfa
+# Streamlit Interface
 st.divider()
 
 # Step 1: Enter Ticker
-st.header("1️⃣ Enter Ticker")
+st.header("1️⃣ Enter")
 ticker = st.text_input("🔎 Enter the underlying ticker symbol:", value="SPY")
 if ticker:
-    st.header("2️⃣ Select Expiration Date")
-    st.write("Retrieving expiration dates...")
+    st.header("2️⃣  Expiration")
+    
     expirations = get_expiration_dates(ticker)
 
     if expirations:
@@ -381,54 +480,89 @@ if ticker:
         if st.button("📊 Analyze Contracts"):
             df = analyze_contracts(ticker, selected_expiration, current_price)
             if not df.empty:
-                st.subheader("🔝 Sorted Option Contracts")
+                st.subheader("🔝 OPTIONS")
+                st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
                 st.dataframe(style_and_sort_table(df))
 
                 closest_contract, economic_contract = select_best_contracts(df, current_price)
 
                 if closest_contract is not None:
                     st.subheader("✅ OPTION")
+                    st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
                     st.markdown(f"""
                         **Strike:** {closest_contract['strike']}  
                         **Type:** {closest_contract['option_type']}  
                         **Bid:** ${closest_contract['bid']:.2f}  
                         **Ask:** ${closest_contract['ask']:.2f}  
-                        **Delta:** {closest_contract['delta']:.2f}  
-                        **Gamma:** {closest_contract['gamma']:.2f}  
+                          
                         **Target:** ${closest_contract['break_even']:.2f}  
                         **% Movement Needed:** {((closest_contract['break_even'] - current_price) / current_price * 100):.2f}%
                     """)
 
                 if economic_contract is not None:
-                    st.subheader("💡 Economic Option")
+                    st.subheader("💡 ECONOMIC OPTION")
+                    st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
                     st.markdown(f"""
                         **Strike:** {economic_contract['strike']}  
                         **Type:** {economic_contract['option_type']}  
                         **Bid:** ${economic_contract['bid']:.2f}  
                         **Ask:** ${economic_contract['ask']:.2f}  
-                        **Delta:** {economic_contract['delta']:.2f}  
-                        **Gamma:** {economic_contract['gamma']:.2f}  
+                         
                         **Target:** ${economic_contract['break_even']:.2f}  
                         **% Movement Needed:** {((economic_contract['break_even'] - current_price) / current_price * 100):.2f}%
                     """)
-                
-                    
+
                 max_pain_strike, max_pain_table = calculate_max_pain(df)
-                st.markdown(f"**🎯 TARGET:** {max_pain_strike['strike']}")
+                st.markdown(f"**🎯MM TARGET :** {max_pain_strike['strike']}")
+                st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
 
                 # Calculate support and resistance levels
-                support_level, resistance_level = calculate_support_resistance(max_pain_table)
+                #support_level, resistance_level, mid_level = calculate_support_resistance_mid(max_pain_table)
+                support_level, resistance_level, mid_level = calculate_support_resistance_mid(max_pain_table, current_price)
 
-                # Plot histogram with support and resistance lines
-                # Mostrar niveles calculados
+
+
+                # Display calculated levels
                 st.markdown(f"**🔹 Support Level:** {support_level:.2f}")
                 st.markdown(f"**🔹 Resistance Level:** {resistance_level:.2f}")
-               
+                st.markdown(f"**🔹 Mid Level:** {mid_level:.2f}")
 
-                fig = plot_max_pain_histogram_with_support_resistance(max_pain_table)
+                # Plot histogram with support and resistance lines
+                fig = plot_max_pain_histogram_with_levels(max_pain_table, current_price)
+
                 st.plotly_chart(fig)
+        
+
+if ticker:
+    st.write(f"Fetching data for: {ticker}")
+
+    # Fetch expirations
+    url = f"{BASE_URL}/markets/options/expirations"
+    params = {"symbol": ticker}
+    response = requests.get(url, headers=HEADERS, params=params)
+    if response.status_code == 200:
+        expirations = response.json().get("expirations", {}).get("date", [])
+       # selected_expiration = st.selectbox("Select Expiration Date:", expirations)
+
+        # Fetch and process options
+        if selected_expiration:
+            st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
+            options = get_option_chains(ticker, selected_expiration)
+
+            if options:
+                df = pd.DataFrame(options)
+                current_price = 150  # Mocked for now, replace with API data.
+
+                df = calculate_score(df, current_price)
+                top_contracts = df.head(5)
+
+                # Display results
+                display_cards(top_contracts)
+                plot_histogram(df)
             else:
-                st.warning("No relevant contracts found.")
+                st.warning("No options data found.")
+    else:
+        st.error("Failed to retrieve expiration dates.")
 
 #############################################################SEGURIDAD  ARRIVA     
 
