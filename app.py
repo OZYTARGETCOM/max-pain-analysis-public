@@ -25,23 +25,23 @@ def initialize_passwords_file():
         with open(PASSWORDS_FILE, "w", newline="") as file:
             writer = csv.writer(file)
             passwords = [
-                ["abc123", 0, ""],
-                ["def456", 0, ""],
-                ["ghi789", 0, ""],
-                ["jkl010", 0, ""],
-                ["mno345", 0, ""],
-                ["pqr678", 0, ""],
-                ["stu901", 0, ""],
-                ["vwx234", 0, ""],
-                ["yz1234", 0, ""],
-                ["abcd56", 0, ""],
+                ["abc123", 0, ""],#ozy
+                ["def456", 0, ""],#hector
+                ["ghi789", 0, ""],#silvana
+                ["jkl010", 0, ""],#pereira
+                ["mno345", 0, ""],#joege
+                ["pqr678", 0, ""],#sandra
+                ["stu901", 0, ""],#minu
+                ["vwx234", 0, ""],#
+                ["yz1234", 0, ""],#
+                ["abcd56", 0, ""],#
                 ["efgh78", 0, ""],
                 ["ijkl90", 0, ""],
                 ["mnop12", 0, ""],
                 ["qrst34", 0, ""],
                 ["uvwx56", 0, ""],
                 ["yzab78", 0, ""],
-                ["cdef90", 0, ""],
+                ["cdef90", 0, ""],#mary
                 ["ghij12", 0, ""],
                 ["klmn34", 0, ""],
                 ["opqr56", 0, ""],
