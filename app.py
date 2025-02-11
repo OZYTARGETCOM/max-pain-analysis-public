@@ -34,7 +34,7 @@ def initialize_passwords_file():
                 ["stu901", 0, ""],#minu
                 ["vwx234", 0, ""],#
                 ["yz1234", 0, ""],#
-                ["abcd56", 0, ""],#
+                ["abcd56", 0, ""],#gusman
                 ["efgh78", 0, ""],
                 ["ijkl90", 0, ""],
                 ["mnop12", 0, ""],#MARCK
