@@ -37,7 +37,7 @@ def initialize_passwords_file():
                 ["abcd56", 0, ""],#
                 ["efgh78", 0, ""],
                 ["ijkl90", 0, ""],
-                ["mnop12", 0, ""],
+                ["mnop12", 0, ""],#MARCK
                 ["qrst34", 0, ""],
                 ["uvwx56", 0, ""],
                 ["yzab78", 0, ""],
