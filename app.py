@@ -43,7 +43,7 @@ def initialize_passwords_file():
                 ["yzab78", 0, ""],
                 ["cdef90", 0, ""],#mary
                 ["ghij12", 0, ""],
-                ["news34", 0, ""],#SILVANA
+                ["news34", 0, ""],#
                 ["opqr56", 0, ""],
             ]
             writer.writerows(passwords)
