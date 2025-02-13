@@ -6,4 +6,4 @@ numpy
 beautifulsoup4
 bcrypt
 scikit-learn
-
+matplotlib>=3.5.0
