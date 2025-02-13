@@ -568,9 +568,6 @@ if ticker:
 
 
 
-
-################################################app
-
 # Tradier API Configuration
 API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
 BASE_URL = "https://api.tradier.com/v1"
