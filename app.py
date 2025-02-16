@@ -132,8 +132,6 @@ if not st.session_state["authenticated"]:
 
 ################################################app
 
-
-
 ################################################app
 
 # Tradier API Configuration
@@ -468,22 +466,14 @@ st.divider()
 
 # Step 1: Enter Ticker
 st.header("1️⃣ Enter")
-ticker = st.text_input(
-    "🔎 Enter the underlying ticker symbol:", 
-    value="SPY", 
-    key="ticker_input"  # Clave única
-)
+ticker = st.text_input("🔎 Enter the underlying ticker symbol:", value="SPY")
 if ticker:
     st.header("2️⃣  Expiration")
     
     expirations = get_expiration_dates(ticker)
 
     if expirations:
-        selected_expiration = st.selectbox(
-    "📅 Select an expiration date:", 
-    expirations, 
-    key="expiration_selectbox"  # Clave única
-)
+        selected_expiration = st.selectbox("📅 Select an expiration date:", expirations)
         st.header("3️⃣ Current Underlying Price")
         current_price = get_current_price(ticker)
         st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
@@ -1073,7 +1063,7 @@ def plot_skew_analysis_with_totals(options_data):
 # Interfaz de usuario
 st.title("SCANNER")
 
-#ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
+ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
 expiration_dates = get_expiration_dates(ticker)
 if expiration_dates:
     expiration_date = st.selectbox("Expiration Date", expiration_dates, key="expiration_date")
@@ -1405,6 +1395,13 @@ def plot_gamma_oi(key_levels):
 
 
 
+
+
+
+
+
+
+
 all_tickers = [
     # 100 Tickers de NASDAQ
     "AAPL", "MSFT", "NVDA", "GOOG", "AMZN", "META", "TSLA", "ADBE", "INTC", "NFLX",
@@ -1471,12 +1468,6 @@ def fetch_batch_stock_data(tickers):
 
 
 
-
-
-
-
-
-
 # Función para calcular potencial explosivo
 def calculate_explosive_movers(data):
     df = pd.DataFrame(data)
@@ -1513,6 +1504,135 @@ def calculate_options_activity(data):
 
 
 ##################################################################################################################
+
+
+import streamlit as st
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime
+import time
+
+# Función para buscar noticias en Google
+def fetch_google_news(keywords):
+    base_url = "https://www.google.com/search"
+    query = "+".join(keywords)
+    params = {"q": query, "tbm": "nws", "tbs": "qdr:h"}  # Última hora
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    }
+
+    try:
+        response = requests.get(base_url, params=params, headers=headers, timeout=10)
+        if response.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        news = []
+
+        articles = soup.select("div.dbsr") or soup.select("div.Gx5Zad.fP1Qef.xpd.EtOod.pkphOe")
+
+        for article in articles[:20]:
+            title_tag = article.select_one("div.JheGif.nDgy9d") or article.select_one("div.BNeawe.vvjwJb.AP7Wnd")
+            link_tag = article.a
+            if title_tag and link_tag:
+                title = title_tag.text.strip()
+                link = link_tag["href"]
+                time_tag = article.select_one("span.WG9SHc")
+                time_posted = time_tag.text if time_tag else "Just now"
+                news.append({"title": title, "link": link, "time": time_posted})
+
+        return news
+    except Exception as e:
+        st.warning(f"Error fetching Google News: {e}")
+        return []
+
+# Función para buscar noticias en Bing
+def fetch_bing_news(keywords):
+    base_url = "https://www.bing.com/news/search"
+    query = " ".join(keywords)
+    params = {"q": query, "qft": "+filterui:age-lt24h"}  # Últimas 24 horas
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    }
+
+    try:
+        response = requests.get(base_url, params=params, headers=headers, timeout=10)
+        if response.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        news = []
+
+        articles = soup.select("a.title")
+        for article in articles[:20]:
+            title = article.text.strip()
+            link = article["href"]
+            news.append({"title": title, "link": link, "time": "Recently"})
+
+        return news
+    except Exception as e:
+        st.warning(f"Error fetching Bing News: {e}")
+        return []
+
+# Función para buscar publicaciones en Instagram
+def fetch_instagram_posts(keywords):
+    base_url = "https://www.instagram.com/explore/tags/"
+    posts = []
+
+    for keyword in keywords:
+        if keyword.startswith("#"):
+            try:
+                url = f"{base_url}{keyword[1:]}/"
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+                }
+
+                response = requests.get(url, headers=headers, timeout=10)
+                if response.status_code != 200:
+                    continue
+
+                soup = BeautifulSoup(response.text, "html.parser")
+                articles = soup.select("div.v1Nh3.kIKUG._bz0w a")
+
+                for article in articles[:20]:
+                    link = "https://www.instagram.com" + article["href"]
+                    posts.append({"title": "Instagram Post", "link": link, "time": "Recently"})
+            except Exception as e:
+                st.warning(f"Error fetching Instagram posts for {keyword}: {e}")
+
+    return posts
+
+# Configuración de Streamlit
+st.title(" News Scanner ")
+
+
+keywords = st.text_input("Enter keywords (comma-separated Boludo!!!!):", "Trump, ElonMusk").split(",")
+keywords = [k.strip() for k in keywords if k.strip()]
+
+if "news_data" not in st.session_state:
+    st.session_state.news_data = []
+
+news_placeholder = st.empty()
+
+with st.spinner("Fetching breaking news..."):
+    google_news = fetch_google_news(keywords)
+    bing_news = fetch_bing_news(keywords)
+    instagram_posts = fetch_instagram_posts(keywords)
+
+latest_news = google_news + bing_news + instagram_posts
+
+if latest_news:
+    st.session_state.news_data = latest_news
+    with news_placeholder.container():
+        st.success(f"Latest news updated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}!")
+        for idx, article in enumerate(latest_news, 1):
+            st.markdown(f"### {idx}. [{article['title']}]({article['link']})")
+            st.markdown(f"**Published:** {article['time']}\n")
+            st.markdown("---")
+else:
+    st.error("No recent news found from any source.")
 
 
 
@@ -1723,24 +1843,20 @@ col1, col2 = st.columns([1, 1])  # Dividimos la pantalla en dos columnas para or
 
 with col1:
     scan_type = st.radio(
-    "Select Scan Type:",
-    ["Bullish (Upward Momentum)", "Bearish (Downward Momentum)", 
-     "Breakouts", "Abnormal Volume"],
-    index=0,
-    key="scan_type_radio"  # Clave única
-)
+        "Select Scan Type:",
+        ["Bullish (Upward Momentum)", "Bearish (Downward Momentum)", 
+         "Breakouts", "Abnormal Volume"],
+        index=0
+    )
+
 with col2:
-    max_results = st.slider(
-    "Max Stocks to Display:", 
-    1, 200, 30, 
-    key="max_results_slider"  # Clave única
-)
+    max_results = st.slider("Max Stocks to Display:", 1, 200, 30)
     if scan_type == "Breakouts":
         breakout_period = st.slider("Breakout Period (Days):", 5, 30, 10)
 
 # Main Input (Botón centrado)
 st.markdown('<div class="centered">', unsafe_allow_html=True)
-if st.button("🚀 Start Scan", key="start_scan_button"):  # Clave única
+if st.button("🚀 Start Scan", key="scan_button", help="Click to start scanning the market"):
     st.info("ℹ️ Scanning the market...")
     # Fetch Filtered Stock List
     stock_list = get_stock_list()
@@ -1822,156 +1938,4 @@ if "results" in locals() and results:
         file_name="quantum_scanner_results.csv",
         mime="text/csv"
     )
-
-
-
-
-
-
-
-
-    ##############################################news
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
-import streamlit as st
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
-import time
-
-# Función para buscar noticias en Google
-def fetch_google_news(keywords):
-    base_url = "https://www.google.com/search"
-    query = "+".join(keywords)
-    params = {"q": query, "tbm": "nws", "tbs": "qdr:h"}  # Última hora
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-    }
-
-    try:
-        response = requests.get(base_url, params=params, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return []
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        news = []
-
-        articles = soup.select("div.dbsr") or soup.select("div.Gx5Zad.fP1Qef.xpd.EtOod.pkphOe")
-
-        for article in articles[:20]:
-            title_tag = article.select_one("div.JheGif.nDgy9d") or article.select_one("div.BNeawe.vvjwJb.AP7Wnd")
-            link_tag = article.a
-            if title_tag and link_tag:
-                title = title_tag.text.strip()
-                link = link_tag["href"]
-                time_tag = article.select_one("span.WG9SHc")
-                time_posted = time_tag.text if time_tag else "Just now"
-                news.append({"title": title, "link": link, "time": time_posted})
-
-        return news
-    except Exception as e:
-        st.warning(f"Error fetching Google News: {e}")
-        return []
-
-# Función para buscar noticias en Bing
-def fetch_bing_news(keywords):
-    base_url = "https://www.bing.com/news/search"
-    query = " ".join(keywords)
-    params = {"q": query, "qft": "+filterui:age-lt24h"}  # Últimas 24 horas
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-    }
-
-    try:
-        response = requests.get(base_url, params=params, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return []
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        news = []
-
-        articles = soup.select("a.title")
-        for article in articles[:20]:
-            title = article.text.strip()
-            link = article["href"]
-            news.append({"title": title, "link": link, "time": "Recently"})
-
-        return news
-    except Exception as e:
-        st.warning(f"Error fetching Bing News: {e}")
-        return []
-
-# Función para buscar publicaciones en Instagram
-def fetch_instagram_posts(keywords):
-    base_url = "https://www.instagram.com/explore/tags/"
-    posts = []
-
-    for keyword in keywords:
-        if keyword.startswith("#"):
-            try:
-                url = f"{base_url}{keyword[1:]}/"
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-                }
-
-                response = requests.get(url, headers=headers, timeout=10)
-                if response.status_code != 200:
-                    continue
-
-                soup = BeautifulSoup(response.text, "html.parser")
-                articles = soup.select("div.v1Nh3.kIKUG._bz0w a")
-
-                for article in articles[:20]:
-                    link = "https://www.instagram.com" + article["href"]
-                    posts.append({"title": "Instagram Post", "link": link, "time": "Recently"})
-            except Exception as e:
-                st.warning(f"Error fetching Instagram posts for {keyword}: {e}")
-
-    return posts
-
-# Configuración de Streamlit
-st.title(" News Scanner ")
-
-
-keywords = st.text_input("Enter keywords (comma-separated Boludo!!!!):", "Trump").split(",")
-keywords = [k.strip() for k in keywords if k.strip()]
-
-if "news_data" not in st.session_state:
-    st.session_state.news_data = []
-
-news_placeholder = st.empty()
-
-with st.spinner("Fetching breaking news..."):
-    google_news = fetch_google_news(keywords)
-    bing_news = fetch_bing_news(keywords)
-    instagram_posts = fetch_instagram_posts(keywords)
-
-latest_news = google_news + bing_news + instagram_posts
-
-if latest_news:
-    st.session_state.news_data = latest_news
-    with news_placeholder.container():
-        st.success(f"Latest news updated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}!")
-        for idx, article in enumerate(latest_news, 1):
-            st.markdown(f"### {idx}. [{article['title']}]({article['link']})")
-            st.markdown(f"**Published:** {article['time']}\n")
-            st.markdown("---")
-else:
-    st.error("No recent news found from any source.")
-
-
 
