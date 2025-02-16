@@ -1517,21 +1517,16 @@ def fetch_google_news(keywords):
     base_url = "https://www.google.com/search"
     query = "+".join(keywords)
     params = {"q": query, "tbm": "nws", "tbs": "qdr:h"}  # Última hora
-
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
     }
-
     try:
         response = requests.get(base_url, params=params, headers=headers, timeout=10)
         if response.status_code != 200:
             return []
-
         soup = BeautifulSoup(response.text, "html.parser")
         news = []
-
         articles = soup.select("div.dbsr") or soup.select("div.Gx5Zad.fP1Qef.xpd.EtOod.pkphOe")
-
         for article in articles[:20]:
             title_tag = article.select_one("div.JheGif.nDgy9d") or article.select_one("div.BNeawe.vvjwJb.AP7Wnd")
             link_tag = article.a
@@ -1541,7 +1536,6 @@ def fetch_google_news(keywords):
                 time_tag = article.select_one("span.WG9SHc")
                 time_posted = time_tag.text if time_tag else "Just now"
                 news.append({"title": title, "link": link, "time": time_posted})
-
         return news
     except Exception as e:
         st.warning(f"Error fetching Google News: {e}")
@@ -1552,25 +1546,20 @@ def fetch_bing_news(keywords):
     base_url = "https://www.bing.com/news/search"
     query = " ".join(keywords)
     params = {"q": query, "qft": "+filterui:age-lt24h"}  # Últimas 24 horas
-
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
     }
-
     try:
         response = requests.get(base_url, params=params, headers=headers, timeout=10)
         if response.status_code != 200:
             return []
-
         soup = BeautifulSoup(response.text, "html.parser")
         news = []
-
         articles = soup.select("a.title")
         for article in articles[:20]:
             title = article.text.strip()
             link = article["href"]
             news.append({"title": title, "link": link, "time": "Recently"})
-
         return news
     except Exception as e:
         st.warning(f"Error fetching Bing News: {e}")
@@ -1580,7 +1569,6 @@ def fetch_bing_news(keywords):
 def fetch_instagram_posts(keywords):
     base_url = "https://www.instagram.com/explore/tags/"
     posts = []
-
     for keyword in keywords:
         if keyword.startswith("#"):
             try:
@@ -1588,25 +1576,20 @@ def fetch_instagram_posts(keywords):
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
                 }
-
                 response = requests.get(url, headers=headers, timeout=10)
                 if response.status_code != 200:
                     continue
-
                 soup = BeautifulSoup(response.text, "html.parser")
                 articles = soup.select("div.v1Nh3.kIKUG._bz0w a")
-
                 for article in articles[:20]:
                     link = "https://www.instagram.com" + article["href"]
                     posts.append({"title": "Instagram Post", "link": link, "time": "Recently"})
             except Exception as e:
                 st.warning(f"Error fetching Instagram posts for {keyword}: {e}")
-
     return posts
 
 # Configuración de Streamlit
-st.title(" News Scanner ")
-
+st.title("News Scanner")
 
 keywords = st.text_input("Enter keywords (comma-separated Boludo!!!!):", "Trump, ElonMusk").split(",")
 keywords = [k.strip() for k in keywords if k.strip()]
@@ -1627,10 +1610,14 @@ if latest_news:
     st.session_state.news_data = latest_news
     with news_placeholder.container():
         st.success(f"Latest news updated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}!")
-        for idx, article in enumerate(latest_news, 1):
-            st.markdown(f"### {idx}. [{article['title']}]({article['link']})")
-            st.markdown(f"**Published:** {article['time']}\n")
-            st.markdown("---")
+        
+        # Agregar un expander para las noticias
+        with st.expander("📰 Latest News"):
+            st.write("Click to expand and view the latest news.")
+            for idx, article in enumerate(latest_news, 1):
+                st.markdown(f"### {idx}. [{article['title']}]({article['link']})")
+                st.markdown(f"**Published:** {article['time']}\n")
+                st.markdown("---")
 else:
     st.error("No recent news found from any source.")
 
