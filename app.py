@@ -131,7 +131,6 @@ if not st.session_state["authenticated"]:
 
 
 ################################################app
-
 ################################################app
 
 # Tradier API Configuration
@@ -1505,7 +1504,6 @@ def calculate_options_activity(data):
 
 ##################################################################################################################
 
-
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
@@ -1620,9 +1618,6 @@ if latest_news:
                 st.markdown("---")
 else:
     st.error("No recent news found from any source.")
-
-
-
 
 
 
@@ -1925,4 +1920,3 @@ if "results" in locals() and results:
         file_name="quantum_scanner_results.csv",
         mime="text/csv"
     )
-
