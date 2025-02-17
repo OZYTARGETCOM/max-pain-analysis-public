@@ -134,7 +134,7 @@ if not st.session_state["authenticated"]:
 ################################################app
 
 # Tradier API Configuration
-API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
+API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
 BASE_URL = "https://api.tradier.com/v1"
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
@@ -602,7 +602,7 @@ if ticker:
 
 
 # Configuración de la API Tradier
-API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
+API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
 BASE_URL = "https://api.tradier.com/v1"
 
 # Función para obtener datos de opciones
@@ -1634,7 +1634,7 @@ import logging
 logging.getLogger("streamlit.runtime.scriptrunner").setLevel(logging.ERROR)
 
 # --- API Configuration ---
-TRADIER_API_KEY = "wMG8GrrZMBFeZMCWJTqTzZns7B4w"
+TRADIER_API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
 FMP_API_KEY = "bQ025fPNVrYcBN4KaExd1N3Xczyk44wM"
 
 TRADIER_BASE_URL = "https://api.tradier.com/v1"
