@@ -132,8 +132,6 @@ if not st.session_state["authenticated"]:
 
 ################################################app
 ################################################app
-
-
 # Tradier API Configuration
 API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
 BASE_URL = "https://api.tradier.com/v1"
@@ -1611,7 +1609,7 @@ with col1:
     scan_type = st.radio(
         "Select Scan Type:",
         ["Bullish (Upward Momentum)", "Bearish (Downward Momentum)", 
-         "Breakouts", "Volume Unusual"],
+         "Breakouts", "Abnormal Volume"],
         index=0
     )
 
