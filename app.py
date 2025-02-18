@@ -132,6 +132,7 @@ if not st.session_state["authenticated"]:
 
 ################################################app
 ################################################app
+
 # Tradier API Configuration
 API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
 BASE_URL = "https://api.tradier.com/v1"
@@ -919,14 +920,28 @@ processed_data = {}
 
 if options_data:
     for opt in options_data:
-        strike = opt["strike"]
-        option_type = opt["option_type"].upper()
-        oi = opt.get("open_interest", 0)
-        gamma = opt.get("greeks", {}).get("gamma", 0)
+        # Verificar que opt no sea None y sea un diccionario
+        if not opt or not isinstance(opt, dict):
+            continue  # Ignorar valores inválidos
 
+        # Validar y obtener valores seguros
+        strike = opt.get("strike")
+        if not isinstance(strike, (int, float)):
+            continue  # Ignorar si el strike no es válido
+
+        option_type = opt.get("option_type", "").upper()
+        if option_type not in ["CALL", "PUT"]:
+            continue  # Ignorar si el tipo de opción no es válido
+
+        oi = opt.get("open_interest", 0)
+        greeks = opt.get("greeks")
+        gamma = greeks.get("gamma", 0) if isinstance(greeks, dict) else 0
+
+        # Inicializar estructura si no existe
         if strike not in processed_data:
             processed_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
 
+        # Actualizar datos
         processed_data[strike][option_type]["OI"] += oi
         processed_data[strike][option_type]["Gamma"] += gamma
 
@@ -953,21 +968,39 @@ else:
 
 # Procesar datos para gráficos
 processed_data = {}
+
 for opt in options_data:
-    strike = opt["strike"]
-    option_type = opt["option_type"].upper()
-    gamma = opt.get("greeks", {}).get("gamma", 0)
-    delta = opt.get("greeks", {}).get("delta", 0)
-    theta = opt.get("greeks", {}).get("theta", 0)
+    # Verificar si el elemento es válido
+    if not opt or not isinstance(opt, dict):
+        continue  # Ignorar valores inválidos
+
+    # Validar y obtener valores seguros
+    strike = opt.get("strike")
+    if not isinstance(strike, (int, float)):
+        continue  # Ignorar si el strike no es válido
+
+    option_type = opt.get("option_type", "").upper()
+    if option_type not in ["CALL", "PUT"]:
+        continue  # Ignorar si el tipo de opción no es válido
+
+    greeks = opt.get("greeks", {})
+    gamma = greeks.get("gamma", 0) if isinstance(greeks, dict) else 0
+    delta = greeks.get("delta", 0) if isinstance(greeks, dict) else 0
+    theta = greeks.get("theta", 0) if isinstance(greeks, dict) else 0
     open_interest = opt.get("open_interest", 0)
 
+    # Inicializar estructura si no existe
     if strike not in processed_data:
-        processed_data[strike] = {"CALL": {"Gamma": 0, "OI": 0, "Delta": 0, "Theta": 0}, "PUT": {"Gamma": 0, "OI": 0, "Delta": 0, "Theta": 0}}
+        processed_data[strike] = {
+            "CALL": {"Gamma": 0, "OI": 0, "Delta": 0, "Theta": 0},
+            "PUT": {"Gamma": 0, "OI": 0, "Delta": 0, "Theta": 0}
+        }
 
-    processed_data[strike][option_type]["Gamma"] = gamma
-    processed_data[strike][option_type]["OI"] = open_interest
-    processed_data[strike][option_type]["Delta"] = delta
-    processed_data[strike][option_type]["Theta"] = theta
+    # Actualizar datos
+    processed_data[strike][option_type]["Gamma"] += gamma
+    processed_data[strike][option_type]["OI"] += open_interest
+    processed_data[strike][option_type]["Delta"] += delta
+    processed_data[strike][option_type]["Theta"] += theta
 
 # Calcular Max Pain
 def calculate_max_pain(options_data):
@@ -1715,6 +1748,7 @@ if "results" in locals() and results:
 
 
 
+#############################################SCANNER
 
 
 
@@ -1724,7 +1758,7 @@ if "results" in locals() and results:
 
 
 
-    import streamlit as st
+import streamlit as st
 import requests
 import pandas as pd
 import numpy as np
@@ -1797,7 +1831,7 @@ def get_option_data(symbol, expiration_date):
             }
             options.append(option_data)
         if not options:
-            st.error("Datos de opciones.")
+            st.error("La respuesta de la API no contiene datos de opciones.")
             return pd.DataFrame()
         return pd.DataFrame(options)
     except ET.ParseError:
