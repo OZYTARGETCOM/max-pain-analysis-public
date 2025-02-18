@@ -132,7 +132,6 @@ if not st.session_state["authenticated"]:
 
 ################################################app
 ################################################app
-
 # Tradier API Configuration
 API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
 BASE_URL = "https://api.tradier.com/v1"
@@ -1798,7 +1797,7 @@ def get_option_data(symbol, expiration_date):
             }
             options.append(option_data)
         if not options:
-            st.error("La respuesta de la API no contiene datos de opciones.")
+            st.error("Datos de opciones.")
             return pd.DataFrame()
         return pd.DataFrame(options)
     except ET.ParseError:
