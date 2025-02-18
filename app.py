@@ -1609,7 +1609,7 @@ with col1:
     scan_type = st.radio(
         "Select Scan Type:",
         ["Bullish (Upward Momentum)", "Bearish (Downward Momentum)", 
-         "Breakouts", "Abnormal Volume"],
+         "Breakouts", "Volume Unusual"],
         index=0
     )
 
