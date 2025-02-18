@@ -1990,6 +1990,7 @@ st.title("📈 SCANNER PRO")
 
 # Input: Stock Ticker
 stock = st.text_input("Enter Stock Ticker (e.g., AAPL, MSFT):", value="AAPL").upper()
+selected_expiration = st.selectbox("Select an Expiration Date:", expiration_dates)
 
 if stock:
     # Fetch Data
@@ -2027,7 +2028,7 @@ if stock:
         st.stop()
 
     # Seleccionar una fecha de vencimiento
-    selected_expiration = st.selectbox("Select an Expiration Date:", expiration_dates)
+    
 
     # Obtener datos de opciones para la fecha seleccionada
     option_data = get_option_data(stock, selected_expiration)
