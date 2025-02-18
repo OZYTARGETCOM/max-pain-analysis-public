@@ -464,131 +464,12 @@ def plot_histogram(df):
 st.divider()
 
 # Step 1: Enter Ticker
-st.header("1️⃣ Enter")
-ticker = st.text_input("🔎 Enter the underlying ticker symbol:", value="SPY")
-if ticker:
-    st.header("2️⃣  Expiration")
-    
-    expirations = get_expiration_dates(ticker)
 
-    if expirations:
-        selected_expiration = st.selectbox("📅 Select an expiration date:", expirations)
-        st.header("3️⃣ Current Underlying Price")
-        current_price = get_current_price(ticker)
-        st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
-
-        st.header("4️⃣ Analysis Results")
-        if st.button("📊 Analyze Contracts"):
-            df = analyze_contracts(ticker, selected_expiration, current_price)
-            if not df.empty:
-                st.subheader("🔝 OPTIONS")
-                st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
-                st.dataframe(style_and_sort_table(df))
-
-                closest_contract, economic_contract = select_best_contracts(df, current_price)
-
-                if closest_contract is not None:
-                    st.subheader("✅ OPTION")
-                    st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
-                    st.markdown(f"""
-                        **Strike:** {closest_contract['strike']}  
-                        **Type:** {closest_contract['option_type']}  
-                        **Bid:** ${closest_contract['bid']:.2f}  
-                        **Ask:** ${closest_contract['ask']:.2f}  
-                          
-                        **Target:** ${closest_contract['break_even']:.2f}  
-                        **% Movement Needed:** {((closest_contract['break_even'] - current_price) / current_price * 100):.2f}%
-                    """)
-
-                if economic_contract is not None:
-                    st.subheader("💡 ECONOMIC OPTION")
-                    st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
-                    st.markdown(f"""
-                        **Strike:** {economic_contract['strike']}  
-                        **Type:** {economic_contract['option_type']}  
-                        **Bid:** ${economic_contract['bid']:.2f}  
-                        **Ask:** ${economic_contract['ask']:.2f}  
-                         
-                        **Target:** ${economic_contract['break_even']:.2f}  
-                        **% Movement Needed:** {((economic_contract['break_even'] - current_price) / current_price * 100):.2f}%
-                    """)
-
-                max_pain_strike, max_pain_table = calculate_max_pain(df)
-                st.markdown(f"**🎯MM TARGET :** {max_pain_strike['strike']}")
-                st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
-
-                # Calculate support and resistance levels
-                #support_level, resistance_level, mid_level = calculate_support_resistance_mid(max_pain_table)
-                support_level, resistance_level, mid_level = calculate_support_resistance_mid(max_pain_table, current_price)
-
-
-
-                # Display calculated levels
-                st.markdown(f"**🔹 Support Level:** {support_level:.2f}")
-                st.markdown(f"**🔹 Resistance Level:** {resistance_level:.2f}")
-                st.markdown(f"**🔹 Mid Level:** {mid_level:.2f}")
-
-                # Plot histogram with support and resistance lines
-                fig = plot_max_pain_histogram_with_levels(max_pain_table, current_price)
-
-                st.plotly_chart(fig)
         
 
-if ticker:
-    st.write(f"Fetching data for: {ticker}")
 
-    # Fetch expirations
-    url = f"{BASE_URL}/markets/options/expirations"
-    params = {"symbol": ticker}
-    response = requests.get(url, headers=HEADERS, params=params)
-    if response.status_code == 200:
-        expirations = response.json().get("expirations", {}).get("date", [])
-       # selected_expiration = st.selectbox("Select Expiration Date:", expirations)
-
-        # Fetch and process options
-        if selected_expiration:
-            st.markdown(f"**💰 Current price:** **${current_price:.2f}**")
-            options = get_option_chains(ticker, selected_expiration)
-
-            if options:
-                df = pd.DataFrame(options)
-                current_price = 150  # Mocked for now, replace with API data.
-
-                df = calculate_score(df, current_price)
-                top_contracts = df.head(5)
-
-                # Display results
-                display_cards(top_contracts)
-                plot_histogram(df)
-            else:
-                st.warning("No options data found.")
-    else:
-        st.error("Failed to retrieve expiration dates.")
 
 #############################################################SEGURIDAD  ARRIVA     
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -895,106 +776,10 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes):
 
 
 # Función para crear Heatmap
-# Opción para colores personalizados
-default_colorscale = [
-    [0, "#5A0000"],  # Rojo oscuro
-    [0.25, "#3B528B"],  # Azul oscuro
-    [0.5, "#21918C"],  # Verde
-    [0.75, "#5DC863"],  # Verde claro
-    [1, "#FDE725"]  # Amarillo
-]
+
 
 # Función para crear el Heatmap sin Theta y Delta
-def create_heatmap(processed_data, current_price, max_pain, custom_colorscale=None):
-    strikes = sorted(processed_data.keys())
 
-    # Calculamos métricas clave
-    volume = [
-        processed_data[s]["CALL"]["OI"] * processed_data[s]["CALL"]["Gamma"] +
-        processed_data[s]["PUT"]["OI"] * processed_data[s]["PUT"]["Gamma"] for s in strikes
-    ]
-    gamma = [processed_data[s]["CALL"]["Gamma"] + processed_data[s]["PUT"]["Gamma"] for s in strikes]
-    oi = [processed_data[s]["CALL"]["OI"] + processed_data[s]["PUT"]["OI"] for s in strikes]
-
-    data = pd.DataFrame({
-        'Volume': volume,
-        'Gamma': gamma,
-        'OI': oi
-    })
-
-    data_normalized = data.apply(lambda x: (x - x.min()) / (x.max() - x.min()))
-
-    # Usar Viridis por defecto o la escala personalizada
-    colorscale = custom_colorscale if custom_colorscale else "Viridis"
-
-    fig = go.Figure(data=go.Heatmap(
-        z=data_normalized.T.values,
-        x=strikes,
-        y=data_normalized.columns,
-        colorscale=colorscale,
-        colorbar=dict(title='Normalized Value'),
-        hoverongaps=False
-    ))
-
-    fig.update_layout(
-        title={
-            "text": f"GEAR|Price: ${current_price:.2f} |MM TARGET${max_pain}",
-            "x": 0.5,
-            "xanchor": "center",
-            "yanchor": "top"
-        },
-        xaxis_title="Strikes",
-        yaxis_title="GEAR",
-        template="plotly_dark"
-    )
-
-    # Añadir líneas de referencia
-    fig.add_shape(
-        type="line",
-        x0=current_price, x1=current_price,
-        y0=0, y1=len(data_normalized.columns) - 1,
-        line=dict(color="orange", dash="dot"),
-        name="Current Price"
-    )
-
-    fig.add_shape(
-        type="line",
-        x0=max_pain, x1=max_pain,
-        y0=0, y1=len(data_normalized.columns) - 1,
-        line=dict(color="green", dash="dash"),
-        name="Max Pain"
-    )
-
-    # Agregar marcadores para las áreas clave
-    targets = {
-        "Gamma": {"values": gamma, "color": "red", "symbol": "γ"},
-        "Volume": {"values": volume, "color": "blue", "symbol": "🔧"},
-        "OI": {"values": oi, "color": "orange", "symbol": "OI"}
-    }
-
-    for metric, details in targets.items():
-        metric_values = details["values"]
-        color = details["color"]
-        symbol = details["symbol"]
-
-        # Seleccionar el valor más relevante según lógica:
-        top_index = max(range(len(metric_values)), key=lambda i: metric_values[i])
-
-        strike = strikes[top_index]
-        fig.add_annotation(
-            x=strike,
-            y=metric,  # Posición dinámica en el eje Y
-            text=symbol,  # Símbolo del marcador
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=1,
-            arrowcolor=color,
-            ax=0,  # Offset horizontal
-            ay=-50,  # Offset vertical
-            font=dict(color=color, size=12),
-        )
-
-    return fig
 
 
 
@@ -1211,8 +996,6 @@ def calculate_max_pain(options_data):
 max_pain = calculate_max_pain(options_data)
 
 # Crear y mostrar el Heatmap
-heatmap_fig = create_heatmap(processed_data, current_price, max_pain)
-st.plotly_chart(heatmap_fig, use_container_width=True)
 
 
 
@@ -1589,7 +1372,7 @@ def fetch_instagram_posts(keywords):
 # Configuración de Streamlit
 st.title("News Scanner")
 
-keywords = st.text_input("Enter keywords (comma-separated Boludo!!!!):", "Trump, ElonMusk").split(",")
+keywords = st.text_input("Enter keywords (comma-separated Boludo!!!!):", "Trump").split(",")
 keywords = [k.strip() for k in keywords if k.strip()]
 
 if "news_data" not in st.session_state:
@@ -1791,7 +1574,7 @@ def scan_stock(symbol, scan_type, breakout_period=10, volume_threshold=2.0):
                 "Volume": current_volume,
                 "Possible Change (%)": round(possible_change, 2) if possible_change else None
             }
-    elif scan_type == "Abnormal Volume" and current_volume > volume_threshold * avg_volume:
+    elif scan_type == "Unusual Volume" and current_volume > volume_threshold * avg_volume:
         return {
             "Symbol": symbol,
             "Volume": current_volume,
@@ -1920,3 +1703,397 @@ if "results" in locals() and results:
         file_name="quantum_scanner_results.csv",
         mime="text/csv"
     )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    import streamlit as st
+import requests
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import xml.etree.ElementTree as ET  # Para manejar respuestas XML
+from typing import Dict, List, Optional  # Para especificar tipos de datos
+
+# --- Suprimir Advertencias ---
+import logging
+logging.getLogger("streamlit.runtime.scriptrunner").setLevel(logging.ERROR)
+
+# --- API Configuration ---
+TRADIER_API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
+TRADIER_BASE_URL = "https://api.tradier.com/v1"
+FMP_API_KEY = "bQ025fPNVrYcBN4KaExd1N3Xczyk44wM"
+FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+
+# --- Función para obtener fechas de vencimiento desde Tradier (XML) ---
+def get_expiration_dates(symbol):
+    response = requests.get(
+        f"{TRADIER_BASE_URL}/markets/options/expirations",
+        params={"symbol": symbol},
+        headers={"Authorization": f"Bearer {TRADIER_API_KEY}"},
+    )
+    if response.status_code != 200:
+        st.error(f"Error al obtener las fechas de vencimiento. Código de estado: {response.status_code}")
+        st.write("Respuesta de la API:", response.text)
+        return []
+    
+    try:
+        root = ET.fromstring(response.text)
+        expiration_dates = [date.text for date in root.findall(".//date")]
+        if not expiration_dates:
+            st.error("La respuesta de la API no contiene fechas de vencimiento.")
+            return []
+        return expiration_dates
+    except ET.ParseError:
+        st.error("La respuesta de la API no es un XML válido.")
+        st.write("Respuesta de la API:", response.text)
+        return []
+
+# --- Función para obtener datos de opciones desde Tradier (XML) ---
+def get_option_data(symbol, expiration_date):
+    response = requests.get(
+        f"{TRADIER_BASE_URL}/markets/options/chains",
+        params={"symbol": symbol, "expiration": expiration_date},
+        headers={"Authorization": f"Bearer {TRADIER_API_KEY}"},
+    )
+    if response.status_code != 200:
+        st.error(f"Error al obtener los datos de opciones. Código de estado: {response.status_code}")
+        st.write("Respuesta de la API:", response.text)
+        return pd.DataFrame()
+    
+    try:
+        root = ET.fromstring(response.text)
+        options = []
+        for option in root.findall(".//option"):
+            # Determinar acción basada en bid y ask
+            bid = float(option.find("bid").text) if option.find("bid").text else 0
+            ask = float(option.find("ask").text) if option.find("ask").text else 0
+            action = "buy" if bid > 0 and ask > 0 else "sell"
+
+            option_data = {
+                "symbol": option.find("symbol").text,
+                "description": option.find("description").text,
+                "type": option.find("option_type").text,
+                "strike": float(option.find("strike").text),
+                "open_interest": int(option.find("open_interest").text),
+                "action": action,
+            }
+            options.append(option_data)
+        if not options:
+            st.error("La respuesta de la API no contiene datos de opciones.")
+            return pd.DataFrame()
+        return pd.DataFrame(options)
+    except ET.ParseError:
+        st.error("La respuesta de la API no es un XML válido.")
+        st.write("Respuesta de la API:", response.text)
+        return pd.DataFrame()
+
+# --- Cache to Avoid Repeated API Calls ---
+@st.cache_data(ttl=3600)
+def get_financial_metrics(symbol: str) -> Dict[str, float]:
+    """Fetch financial metrics like EBITDA, ROE, etc."""
+    try:
+        income_statement = requests.get(f"{FMP_BASE_URL}/income-statement/{symbol}?apikey={FMP_API_KEY}").json()
+        balance_sheet = requests.get(f"{FMP_BASE_URL}/balance-sheet-statement/{symbol}?apikey={FMP_API_KEY}").json()
+        cash_flow = requests.get(f"{FMP_BASE_URL}/cash-flow-statement/{symbol}?apikey={FMP_API_KEY}").json()
+        key_metrics = requests.get(f"{FMP_BASE_URL}/key-metrics/{symbol}?apikey={FMP_API_KEY}").json()
+        quote = requests.get(f"{FMP_BASE_URL}/quote/{symbol}?apikey={FMP_API_KEY}").json()
+        if not income_statement or not balance_sheet or not cash_flow or not key_metrics or not quote:
+            return {}
+        latest_income = income_statement[0] if income_statement else {}
+        latest_balance = balance_sheet[0] if balance_sheet else {}
+        latest_cash_flow = cash_flow[0] if cash_flow else {}
+        latest_metrics = key_metrics[0] if key_metrics else {}
+        latest_quote = quote[0] if quote else {} 
+        return {
+            "Current Price": latest_quote.get("price", 0),
+            "EBITDA": latest_income.get("ebitda", 0),
+            "Revenue": latest_income.get("revenue", 0),
+            "Net Income": latest_income.get("netIncome", 0),
+            "ROA": latest_metrics.get("roa", 0),
+            "ROE": latest_metrics.get("roe", 0),
+            "Beta": latest_metrics.get("beta", 0),
+            "PE Ratio": latest_metrics.get("peRatio", 0),
+            "Debt-to-Equity Ratio": latest_metrics.get("debtToEquity", 0),
+            "Dividend Yield": latest_metrics.get("dividendYield", 0),
+            "Working Capital": latest_balance.get("totalCurrentAssets", 0) - latest_balance.get("totalCurrentLiabilities", 0),
+            "Total Assets": latest_balance.get("totalAssets", 0),
+            "Retained Earnings": latest_balance.get("retainedEarnings", 0),
+            "EBIT": latest_income.get("ebit", 0),
+            "Market Cap": latest_metrics.get("marketCap", 0),
+            "Total Liabilities": latest_balance.get("totalLiabilities", 0),
+            "Operating Cash Flow": latest_cash_flow.get("operatingCashFlow", 0),
+            "Current Ratio": latest_metrics.get("currentRatio", 0),
+            "Long Term Debt": latest_balance.get("longTermDebt", 0),
+            "Shares Outstanding": latest_metrics.get("sharesOutstanding", 0),
+            "Gross Margin": latest_metrics.get("grossProfitMargin", 0),
+            "Asset Turnover": latest_metrics.get("assetTurnover", 0),
+            "Capital Expenditure": latest_cash_flow.get("capitalExpenditure", 0),
+            "Free Cash Flow": latest_cash_flow.get("freeCashFlow", 0),
+            "Weighted Average Shares Diluted": latest_income.get("weightedAverageShsOutDil", 0),
+            "Property Plant Equipment Net": latest_balance.get("propertyPlantEquipmentNet", 0),
+            "Cash and Cash Equivalents": latest_balance.get("cashAndCashEquivalents", 0),
+            "Total Debt": latest_balance.get("totalDebt", 0),
+            "Interest Expense": latest_income.get("interestExpense", 0),
+            "Dividend Paid": latest_cash_flow.get("dividendPaid", 0),
+            "Short Term Debt": latest_balance.get("shortTermDebt", 0),
+            "Intangible Assets": latest_balance.get("intangibleAssets", 0),
+            "Accounts Receivable": latest_balance.get("accountsReceivable", 0),
+            "Inventory": latest_balance.get("inventory", 0),
+            "Accounts Payable": latest_balance.get("accountsPayable", 0),
+            "COGS": latest_income.get("costOfRevenue", 0),
+            "Tax Rate": latest_income.get("incomeTaxExpense", 0) / latest_income.get("incomeBeforeTax", 1) if latest_income.get("incomeBeforeTax", 1) != 0 else 0,
+        }
+    except Exception as e:
+        st.warning(f"⚠️ Error fetching financial metrics for {symbol}: {str(e)}")
+        return {}
+
+@st.cache_data(ttl=3600)
+def get_historical_prices(symbol: str, period: str = "daily", limit: int = 30) -> (List[float], List[int]):
+    """Fetch historical prices."""
+    try:
+        response = requests.get(
+            f"{FMP_BASE_URL}/historical-price-full/{symbol}?apikey={FMP_API_KEY}&timeseries={limit}"
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not data or "historical" not in data:
+            return [], []
+        prices = [day["close"] for day in data["historical"]]
+        volumes = [day["volume"] for day in data["historical"]]
+        return prices, volumes
+    except Exception as e:
+        st.warning(f"⚠️ Error fetching historical data for {symbol}: {str(e)}")
+        return [], []
+
+def calculate_sma(prices: List[float], period: int = 20) -> Optional[float]:
+    """Calculate Simple Moving Average (SMA)."""
+    if len(prices) < period:
+        return None
+    return np.mean(prices[-period:])
+
+def calculate_rsi(prices: List[float], period: int = 14) -> Optional[float]:
+    """Calculate Relative Strength Index (RSI)."""
+    if len(prices) < period + 1:
+        return None
+    deltas = np.diff(prices)
+    gains = [delta if delta > 0 else 0 for delta in deltas]
+    losses = [-delta if delta < 0 else 0 for delta in deltas]
+    avg_gain = np.mean(gains[:period])
+    avg_loss = np.mean(losses[:period])
+    rs = avg_gain / avg_loss if avg_loss != 0 else float('inf')
+    rsi = 100 - (100 / (1 + rs)) if rs != float('inf') else 100
+    return rsi
+
+def speculate_next_day_movement(metrics: Dict[str, float], prices: List[float], volumes: List[int]) -> (str, float, Optional[float]):
+    """
+    Speculate the next day's price movement based on financial metrics and historical data.
+    """
+    sma = calculate_sma(prices, period=50)
+    rsi = calculate_rsi(prices, period=14)
+    recent_high = max(prices[-10:]) if len(prices) >= 10 else None
+    recent_low = min(prices[-10:]) if len(prices) >= 10 else None
+    last_price = prices[-1] if prices else None
+    avg_volume = np.mean(volumes[-10:]) if len(volumes) >= 10 else None
+    current_volume = volumes[-1] if volumes else None
+
+    # Default values if any metric is missing
+    trend = "High Volatility"
+    confidence = 0.5  # Neutral confidence by default
+
+    if last_price is not None and sma is not None and rsi is not None:
+        if rsi < 30 and last_price < sma:
+            trend = "Bearish"
+            confidence = 0.7 if current_volume and avg_volume and current_volume > avg_volume else 0.6
+        elif rsi > 70 and last_price > sma:
+            trend = "Bullish"
+            confidence = 0.8 if current_volume and avg_volume and current_volume > avg_volume else 0.7
+        elif recent_high and last_price > recent_high:
+            trend = "Breakout (Bullish)"
+            confidence = 0.9
+        elif recent_low and last_price < recent_low:
+            trend = "Breakdown (Bearish)"
+            confidence = 0.9
+
+    # Fundamental Analysis
+    if metrics.get("ROE", 0) > 0.15 and metrics.get("Free Cash Flow", 0) > 0:
+        confidence += 0.1
+    if metrics.get("Current Ratio", 0) < 1:
+        confidence -= 0.1
+    if metrics.get("Beta", 0) > 1.5:
+        confidence += 0.1 if trend == "Bullish" else -0.1
+
+    # Predict Next Day Movement
+    predicted_change = (last_price * 0.01) * confidence if trend == "Bullish" else -(last_price * 0.01) * confidence
+    predicted_price = last_price + predicted_change if last_price is not None else None
+    return trend, confidence, predicted_price
+
+# --- Función para aplicar estilos dinámicos a la tabla ---
+def style_option_data(option_data):
+    def highlight_calls_puts(row):
+        # Colorear filas según el tipo de opción (call o put)
+        if row["type"] == "call":
+            return ["background-color: rgba(0, 255, 0, 0.2)"] * len(row)  # Verde claro para calls
+        elif row["type"] == "put":
+            return ["background-color: rgba(255, 0, 0, 0.2)"] * len(row)  # Rojo claro para puts
+        else:
+            return [""] * len(row)
+
+    def highlight_actions(row):
+        # Resaltar acciones (buy o sell)
+        if row["action"] == "buy":
+            return ["color: green"] * len(row)  # Texto verde para buy
+        elif row["action"] == "sell":
+            return ["color: orange"] * len(row)  # Texto naranja para sell
+        else:
+            return [""] * len(row)
+
+    def highlight_high_open_interest(row):
+        # Resaltar strikes con interés abierto alto
+        threshold = option_data["open_interest"].quantile(0.75)  # Percentil 75
+        styles = []
+        for value in row:
+            if isinstance(value, (int, float)) and value > threshold:
+                styles.append("background-color: yellow")  # Amarillo para valores altos
+            else:
+                styles.append("")
+        return styles
+
+    # Aplicar múltiples estilos
+    styled_df = (
+        option_data.style.apply(highlight_calls_puts, axis=1)
+        .apply(highlight_actions, axis=1)
+        .apply(highlight_high_open_interest, axis=1)
+    )
+    return styled_df
+
+# --- Streamlit App ---
+st.title("📈 SCANNER PRO")
+
+# Input: Stock Ticker
+stock = st.text_input("Enter Stock Ticker (e.g., AAPL, MSFT):", value="AAPL").upper()
+
+if stock:
+    # Fetch Data
+    financial_metrics = get_financial_metrics(stock)
+    prices, volumes = get_historical_prices(stock)
+    if not prices or not volumes:
+        st.error(f"❌ Unable to fetch data for {stock}.")
+    else:
+        # Calculate additional metrics
+        trend, confidence, predicted_price = speculate_next_day_movement(financial_metrics, prices, volumes)
+
+        # Display Metrics
+        st.markdown(f"### Metrics for {stock}")
+        st.write(f"- **Current Price**: ${financial_metrics.get('Current Price', 0):,.2f}")
+        st.write(f"- **EBITDA**: ${financial_metrics.get('EBITDA', 0):,.2f}")
+        st.write(f"- **Revenue**: ${financial_metrics.get('Revenue', 0):,.2f}")
+        st.write(f"- **Net Income**: ${financial_metrics.get('Net Income', 0):,.2f}")
+        st.write(f"- **ROE**: {financial_metrics.get('ROE', 0):.2f}")
+        st.write(f"- **Beta**: {financial_metrics.get('Beta', 0):.2f}")
+        st.write(f"- **PE Ratio**: {financial_metrics.get('PE Ratio', 0):.2f}")
+        st.write(f"- **Debt-to-Equity Ratio**: {financial_metrics.get('Debt-to-Equity Ratio', 0):.2f}")
+        st.write(f"- **Dividend Yield**: {financial_metrics.get('Dividend Yield', 0):.2%}")
+        st.write(f"- **Market Cap**: ${financial_metrics.get('Market Cap', 0):,.2f}")
+
+        # Display Speculation
+        st.markdown(f"### Speculation for {stock}")
+        st.write(f"- **Current Price**: ${financial_metrics.get('Current Price', 0):,.2f}")
+        st.write(f"- **Trend**: {trend}")
+        st.write(f"- **Confidence**: {confidence:.2f}")
+        st.write(f"- **Predicted Price (Next Day)**: ${predicted_price:.2f}" if predicted_price is not None else "- **Predicted Price (Next Day)**: N/A")
+        st.write(f"- **Current Price**: ${financial_metrics.get('Current Price', 0):,.2f}")
+    # Obtener fechas de vencimiento
+    expiration_dates = get_expiration_dates(stock)
+    if not expiration_dates:
+        st.stop()
+
+    # Seleccionar una fecha de vencimiento
+    selected_expiration = st.selectbox("Select an Expiration Date:", expiration_dates)
+
+    # Obtener datos de opciones para la fecha seleccionada
+    option_data = get_option_data(stock, selected_expiration)
+    if option_data.empty:
+        st.stop()
+
+    # Filtrar calls y puts
+    calls = option_data[option_data["type"] == "call"]
+    puts = option_data[option_data["type"] == "put"]
+
+    # Crear una lista completa de strikes
+    all_strikes = sorted(set(option_data["strike"]))
+
+    # Rellenar datos faltantes con ceros
+    calls_filled = pd.DataFrame({"strike": all_strikes}).merge(calls, on="strike", how="left").fillna(0)
+    puts_filled = pd.DataFrame({"strike": all_strikes}).merge(puts, on="strike", how="left").fillna(0)
+
+    # Crear el gráfico de histograma
+    fig = go.Figure()
+
+    # Añadir barras para CALLS (hacia arriba)
+    for _, row in calls_filled.iterrows():
+        fig.add_trace(
+            go.Bar(
+                name=f"Call ({'buy' if row['action'] == 'buy' else 'sell'})",
+                x=[row["strike"]],
+                y=[row["open_interest"]] if row["action"] == "buy" else [-row["open_interest"]],
+                marker_color="green" if row["action"] == "buy" else "orange",
+                text=f"{str(row['action']).capitalize()} Call",
+                textposition="inside",
+                orientation="v",
+            )
+        )
+
+    # Añadir barras para PUTS (hacia abajo)
+    for _, row in puts_filled.iterrows():
+        fig.add_trace(
+            go.Bar(
+                name=f"Put ({'buy' if row['action'] == 'buy' else 'sell'})",
+                x=[row["strike"]],
+                y=[-row["open_interest"]] if row["action"] == "buy" else [row["open_interest"]],
+                marker_color="red" if row["action"] == "buy" else "purple",
+                text=f"{str(row['action']).capitalize()} Put",
+                textposition="inside",
+                orientation="v",
+            )
+        )
+
+    # Personalizar el diseño del gráfico
+    fig.update_layout(
+        title=f"Calls and Puts for {stock} (Expiration: {selected_expiration})",
+        xaxis_title="Strike Price",
+        yaxis_title="SELLS/ PUTS & CALLS",
+        barmode="relative",  # Barras relativas para superposición
+        showlegend=True,
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+        xaxis=dict(range=[min(all_strikes) - 10, max(all_strikes) + 10]),  # Ajustar rango del eje X
+    )
+
+    # Mostrar el gráfico en Streamlit
+    st.plotly_chart(fig)
+    st.write(f"- **Current Price**: ${financial_metrics.get('Current Price', 0):,.2f}")
+    
+    # Mostrar la tabla de datos con estilos dinámicos
+    st.subheader("Data")
+    st.write(f"- **Current Price**: ${financial_metrics.get('Current Price', 0):,.2f}")
+    styled_option_data = style_option_data(option_data)
+    st.dataframe(styled_option_data)  # Mostrar la tabla con estilos
+    st.write(f"- **Current Price**: ${financial_metrics.get('Current Price', 0):,.2f}")
