@@ -2047,13 +2047,15 @@ if stock:
         st.write(f"- **Debt-to-Equity Ratio**: {financial_metrics.get('Debt-to-Equity Ratio', 0):.2f}")
         st.write(f"- **Dividend Yield**: {financial_metrics.get('Dividend Yield', 0):.2%}")
         st.write(f"- **Market Cap**: ${financial_metrics.get('Market Cap', 0):,.2f}")
+        st.write(f"- **Operating Cash Flow**: ${financial_metrics.get('Operating Cash Flow', 0):,.2f}")  # Mostramos Operating Cash Flow
+        st.write(f"- **EPS**: {financial_metrics.get('EPS', 0):.2f}")  # Mostramos EPS
+        st.write(f"- **Free Cash Flow**: ${financial_metrics.get('Free Cash Flow', 0):,.2f}")
 
         # Display Speculation
         st.markdown(f"### Speculation for {stock}")
-        st.write(f"- **Current Price**: ${financial_metrics.get('Current Price', 0):,.2f}")
         st.write(f"- **Trend**: {trend}")
         st.write(f"- **Confidence**: {confidence:.2f}")
-        st.write(f"- **Predicted Price (Next Day)**: ${predicted_price:.2f}" if predicted_price is not None else "- **Predicted Price (Next Day)**: N/A")
+        st.write(f"- **EPS Next QT=Price**: ${predicted_price:.2f}" if predicted_price is not None else "- **Predicted Price (Next Day)**: N/A")
         st.write(f"- **Current Price**: ${financial_metrics.get('Current Price', 0):,.2f}")
     # Obtener fechas de vencimiento
     expiration_dates = get_expiration_dates(stock)
