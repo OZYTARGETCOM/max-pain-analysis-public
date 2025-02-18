@@ -132,6 +132,8 @@ if not st.session_state["authenticated"]:
 
 ################################################app
 ################################################app
+
+
 # Tradier API Configuration
 API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
 BASE_URL = "https://api.tradier.com/v1"
