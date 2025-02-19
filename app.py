@@ -2133,3 +2133,63 @@ if stock:
     styled_option_data = style_option_data(option_data)
     st.dataframe(styled_option_data)  # Mostrar la tabla con estilos
     st.write(f"- **Current Price**: ${financial_metrics.get('Current Price', 0):,.2f}")
+
+
+
+
+
+# Función para obtener datos de la API
+def fetch_data(endpoint: str, ticker: str = None, additional_params: dict = None):
+    url = f"{FMP_BASE_URL}/{endpoint}"
+    params = {"apikey": FMP_API_KEY}
+    if ticker:
+        params["symbol"] = ticker
+    if additional_params:
+        params.update(additional_params)
+    
+    try:
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list) and len(data) == 0:  # Verificar si la respuesta es una lista vacía
+                st.warning(f"No se encontraron datos para el endpoint: {endpoint}")
+                return None
+            return data
+        else:
+            st.error(f"Error al obtener datos: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        st.error(f"Error en la solicitud HTTP: {str(e)}")
+        return None
+
+# Obtener lista de tenedores institucionales
+def get_institutional_holders_list(ticker: str):
+    endpoint = f"institutional-holder/{ticker}"
+    data = fetch_data(endpoint, ticker)
+    if data:
+        return pd.DataFrame(data)
+    return None
+
+# Buscar tenedores institucionales
+def search_institutional_holders(query: str):
+    endpoint = "institutional-holders-search"
+    data = fetch_data(endpoint, additional_params={"query": query})
+    if data:
+        return pd.DataFrame(data)
+    return None
+
+# Entrada del usuario (ya implementada en tu aplicación principal)
+ticker = st.text_input("Institutional Holders (ej. AAPL):").upper()
+
+if ticker:
+    st.subheader(f"ticker: {ticker}")
+
+    # Sección 1: Lista de tenedores institucionales (PRIMERA FILA)
+    st.write("### Institutional Holders")
+    institutional_holders = get_institutional_holders_list(ticker)
+    if institutional_holders is not None and not institutional_holders.empty:
+        st.dataframe(institutional_holders)
+    else:
+        st.warning("No se encontraron datos de tenedores institucionales para este ticker.")
+
+
