@@ -1866,7 +1866,7 @@ def get_financial_metrics(symbol: str) -> Dict[str, float]:
             "Beta": latest_metrics.get("beta", 0),
             "PE Ratio": latest_metrics.get("peRatio", 0),
             "Debt-to-Equity Ratio": latest_metrics.get("debtToEquity", 0),
-            "Dividend Yield": latest_metrics.get("dividendYield", 0),
+            
             "Working Capital": latest_balance.get("totalCurrentAssets", 0) - latest_balance.get("totalCurrentLiabilities", 0),
             "Total Assets": latest_balance.get("totalAssets", 0),
             "Retained Earnings": latest_balance.get("retainedEarnings", 0),
@@ -1886,7 +1886,7 @@ def get_financial_metrics(symbol: str) -> Dict[str, float]:
             "Cash and Cash Equivalents": latest_balance.get("cashAndCashEquivalents", 0),
             "Total Debt": latest_balance.get("totalDebt", 0),
             "Interest Expense": latest_income.get("interestExpense", 0),
-            "Dividend Paid": latest_cash_flow.get("dividendPaid", 0),
+            
             "Short Term Debt": latest_balance.get("shortTermDebt", 0),
             "Intangible Assets": latest_balance.get("intangibleAssets", 0),
             "Accounts Receivable": latest_balance.get("accountsReceivable", 0),
@@ -2045,7 +2045,7 @@ if stock:
         st.write(f"- **Beta**: {financial_metrics.get('Beta', 0):.2f}")
         st.write(f"- **PE Ratio**: {financial_metrics.get('PE Ratio', 0):.2f}")
         st.write(f"- **Debt-to-Equity Ratio**: {financial_metrics.get('Debt-to-Equity Ratio', 0):.2f}")
-        st.write(f"- **Dividend Yield**: {financial_metrics.get('Dividend Yield', 0):.2%}")
+        
         st.write(f"- **Market Cap**: ${financial_metrics.get('Market Cap', 0):,.2f}")
         st.write(f"- **Operating Cash Flow**: ${financial_metrics.get('Operating Cash Flow', 0):,.2f}")  # Mostramos Operating Cash Flow
         st.write(f"- **EPS**: {financial_metrics.get('EPS', 0):.2f}")  # Mostramos EPS
