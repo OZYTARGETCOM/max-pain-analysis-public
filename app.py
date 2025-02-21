@@ -193,13 +193,13 @@ def get_expiration_dates(ticker: str) -> List[str]:
     url = f"{TRADIER_BASE_URL}/markets/options/expirations"
     params = {"symbol": ticker}
     data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier")
-    if data and 'expirations' in data and 'date' in data['expirations']:
+    if data is not None and isinstance(data, dict) and 'expirations' in data and 'date' in data.get('expirations', {}):
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         expiration_dates = [date_str for date_str in sorted(data['expirations']['date'])
                             if (datetime.strptime(date_str, "%Y-%m-%d") - today).days >= 0]
         logger.info(f"Found {len(expiration_dates)} expiration dates for {ticker}")
         return expiration_dates
-    logger.error(f"No expiration dates for {ticker}")
+    logger.error(f"No valid expiration dates found for {ticker} - data may be missing or invalid")
     return []
 
 @st.cache_data(ttl=CACHE_TTL)
@@ -406,7 +406,7 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes):
     fig.update_layout(title="|GAMMA EXPOSURE|", xaxis_title="Strike", yaxis_title="Gamma Exposure", template="plotly_dark", hovermode="x unified")
     return fig
 
-def plot_skew_analysis_with_totals(options_data):
+def plot_skew_analysis_with_totals(options_data, current_price=None):
     strikes = [float(option["strike"]) for option in options_data]
     iv = [float(option.get("implied_volatility", 0)) * 100 for option in options_data]
     option_type = [option["option_type"].upper() for option in options_data]
@@ -422,6 +422,39 @@ def plot_skew_analysis_with_totals(options_data):
                      hover_data=["Strike", "Option Type", "Open Interest", "Adjusted IV (%)"],
                      title=title, labels={"Option Type": "Contract Type"}, color_discrete_map={"CALL": "blue", "PUT": "red"})
     fig.update_layout(xaxis_title="Strike Price", yaxis_title="Implied Volatility (%)", legend_title="Option Type", template="plotly_white", title_x=0.5)
+
+    # Calcular Max Pain
+    if options_data:
+        strikes_dict = {}
+        for option in options_data:
+            strike = float(option["strike"])
+            oi = int(option.get("open_interest", 0) or 0)
+            opt_type = option["option_type"].upper()
+            if strike not in strikes_dict:
+                strikes_dict[strike] = {"CALL": 0, "PUT": 0}
+            strikes_dict[strike][opt_type] += oi
+        strike_prices = sorted(strikes_dict.keys())
+        total_losses = {}
+        for strike in strike_prices:
+            loss_call = sum((strikes_dict[s]["CALL"] * max(0, s - strike)) for s in strike_prices)
+            loss_put = sum((strikes_dict[s]["PUT"] * max(0, strike - s)) for s in strike_prices)
+            total_losses[strike] = loss_call + loss_put
+        max_pain = min(total_losses, key=total_losses.get) if total_losses else None
+    else:
+        max_pain = None
+
+    # Añadir bola amarilla para Current Price
+    if current_price is not None:
+        fig.add_scatter(x=[current_price], y=[0], mode="markers", name="Current Price",
+                        marker=dict(size=15, color="yellow", symbol="circle"),
+                        hovertemplate=f"Current Price: {current_price:.2f}")
+
+    # Añadir bola blanca para Max Pain
+    if max_pain is not None:
+        fig.add_scatter(x=[max_pain], y=[0], mode="markers", name="Max Pain",
+                        marker=dict(size=15, color="white", symbol="circle"),
+                        hovertemplate=f"Max Pain: {max_pain:.2f}")
+
     return fig, total_calls, total_puts
 
 def fetch_google_news(keywords):
@@ -908,9 +941,10 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
     logger.info(f"Generated {len(suggestions)} suggestions for {exp_date.strftime('%Y-%m-%d')} with OI >= {open_interest_threshold}, Gamma >= {gamma_threshold}")
     return suggestions
 
+
 # --- Main App ---
 def main():
-    st.set_page_config(page_title="Scanner Pro", layout="wide", initial_sidebar_state="expanded")
+    st.set_page_config(page_title="Quantum Scanner Pro", layout="wide", initial_sidebar_state="expanded")
     st.markdown("""
         <style>
         .stApp {background-color: #1E1E1E;}
@@ -919,12 +953,12 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-    # Título y subtítulo con emoji de "target" (🎯)
+    # Título y subtítulo
     st.markdown("""
     🎯 Scanner Pro
     """, unsafe_allow_html=True)
-    
-    # Tabs
+
+    # Declaración de tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options"])
 
     with tab1:
@@ -934,20 +968,20 @@ def main():
             ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
             expiration_dates = get_expiration_dates(ticker)
             if not expiration_dates:
-                st.error("No expiration dates available.")
+                st.error(f"No expiration dates found for '{ticker}'. Please enter a valid stock ticker (e.g., SPY, AAPL).")
                 return
             expiration_date = st.selectbox("Expiration Date", expiration_dates, key="expiration_date")
             with st.spinner("Fetching price..."):
                 current_price = get_current_price(ticker)
                 if current_price == 0.0:
-                    st.error("Invalid ticker or no price data.")
+                    st.error(f"Invalid ticker '{ticker}' or no price data available.")
                     return
             st.markdown(f"**Current Price:** ${current_price:.2f}")
         with col2:
             with st.spinner(f"Fetching data for {expiration_date}..."):
                 options_data = get_options_data(ticker, expiration_date)
                 if not options_data:
-                    st.error("No options data available.")
+                    st.error("No options data available for this ticker and expiration date.")
                     return
                 processed_data = {}
                 for opt in options_data:
@@ -973,7 +1007,7 @@ def main():
                 df = analyze_contracts(ticker, expiration_date, current_price)
                 max_pain_strike, max_pain_df = calculate_max_pain(df)
                 st.plotly_chart(gamma_exposure_chart(processed_data, current_price, touched_strikes), use_container_width=True)
-                skew_fig, total_calls, total_puts = plot_skew_analysis_with_totals(options_data)
+                skew_fig, total_calls, total_puts = plot_skew_analysis_with_totals(options_data, current_price)
                 st.plotly_chart(skew_fig, use_container_width=True)
                 st.write(f"**Total CALLS:** {total_calls} | **Total PUTS:** {total_puts}")
                 st.write(f"Current Price of {ticker}: ${current_price:.2f} (Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
@@ -1059,58 +1093,58 @@ def main():
         stock = st.text_input("Enter Stock Ticker (e.g., AAPL, MSFT):", value="AAPL", key="stock_analysis").upper()
         expiration_dates = get_expiration_dates(stock)
         if not expiration_dates:
-            st.error("No expiration dates available.")
-        else:
-            selected_expiration = st.selectbox("Select an Expiration Date:", expiration_dates, key="stock_exp_date")
-            if stock:
-                with st.spinner("Fetching data..."):
-                    financial_metrics = get_financial_metrics(stock)
-                    prices, volumes = get_historical_prices_fmp(stock)
-                    if not prices or not volumes:
-                        st.error(f"❌ Unable to fetch data for {stock}.")
-                    else:
-                        trend, confidence, predicted_price = speculate_next_day_movement(financial_metrics, prices, volumes)
-                        st.markdown(f"### Metrics for {stock}")
-                        st.write(f"- **Current Price**: ${financial_metrics.get('Current Price', 0):,.2f}")
-                        st.write(f"- **EBITDA**: ${financial_metrics.get('EBITDA', 0):,.2f}")
-                        st.write(f"- **Revenue**: ${financial_metrics.get('Revenue', 0):,.2f}")
-                        st.write(f"- **Net Income**: ${financial_metrics.get('Net Income', 0):,.2f}")
-                        st.write(f"- **ROE**: {financial_metrics.get('ROE', 0):.2f}")
-                        st.write(f"- **Beta**: {financial_metrics.get('Beta', 0):.2f}")
-                        st.write(f"- **PE Ratio**: ${financial_metrics.get('PE Ratio', 0):,.2f}")
-                        st.write(f"- **Debt-to-Equity Ratio**: {financial_metrics.get('Debt-to-Equity Ratio', 0):.2f}")
-                        st.write(f"- **Market Cap**: ${financial_metrics.get('Market Cap', 0):,.2f}")
-                        st.write(f"- **Operating Cash Flow**: ${financial_metrics.get('Operating Cash Flow', 0):,.2f}")
-                        st.write(f"- **Free Cash Flow**: ${financial_metrics.get('Free Cash Flow', 0):,.2f}")
-                        st.markdown(f"### Speculation for {stock}")
-                        st.write(f"- **Trend**: {trend}")
-                        st.write(f"- **Confidence**: {confidence:.2f}")
-                        st.write(f"- **Predicted Price (Next Day)**: ${predicted_price:.2f}" if predicted_price is not None else "- **Predicted Price (Next Day)**: N/A")
-                        option_data = get_option_data(stock, selected_expiration)
-                        if not option_data.empty:
-                            buy_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "buy")]
-                            sell_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "sell")]
-                            buy_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "buy")]
-                            sell_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "sell")]
-                            all_strikes = sorted(set(option_data["strike"]))
-                            buy_calls_data = pd.DataFrame({"strike": all_strikes}).merge(buy_calls[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
-                            sell_calls_data = pd.DataFrame({"strike": all_strikes}).merge(sell_calls[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
-                            buy_puts_data = pd.DataFrame({"strike": all_strikes}).merge(buy_puts[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
-                            sell_puts_data = pd.DataFrame({"strike": all_strikes}).merge(sell_puts[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
-                            fig = go.Figure()
-                            fig.add_trace(go.Bar(name="Buy Call", x=buy_calls_data["strike"], y=buy_calls_data["open_interest"],
-                                                 marker_color="green", text="Buy Call", textposition="inside"))
-                            fig.add_trace(go.Bar(name="Sell Call", x=sell_calls_data["strike"], y=sell_calls_data["open_interest"],
-                                                 marker_color="orange", text="Sell Call", textposition="inside"))
-                            fig.add_trace(go.Bar(name="Buy Put", x=buy_puts_data["strike"], y=-buy_puts_data["open_interest"],
-                                                 marker_color="red", text="Buy Put", textposition="inside"))
-                            fig.add_trace(go.Bar(name="Sell Put", x=sell_puts_data["strike"], y=-sell_puts_data["open_interest"],
-                                                 marker_color="purple", text="Sell Put", textposition="inside"))
-                            fig.update_layout(title=f"Calls and Puts for {stock} (Expiration: {selected_expiration})",
-                                              xaxis_title="Strike Price", yaxis_title="Open Interest", barmode="relative",
-                                              showlegend=True, legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                                              xaxis=dict(range=[min(all_strikes) - 10, max(all_strikes) + 10]))
-                            st.plotly_chart(fig)
+            st.error(f"No expiration dates found for '{stock}'. Please enter a valid stock ticker (e.g., SPY, AAPL).")
+            return
+        selected_expiration = st.selectbox("Select an Expiration Date:", expiration_dates, key="stock_exp_date")
+        if stock:
+            with st.spinner("Fetching data..."):
+                financial_metrics = get_financial_metrics(stock)
+                prices, volumes = get_historical_prices_fmp(stock)
+                if not prices or not volumes:
+                    st.error(f"❌ Unable to fetch data for {stock}.")
+                else:
+                    trend, confidence, predicted_price = speculate_next_day_movement(financial_metrics, prices, volumes)
+                    st.markdown(f"### Metrics for {stock}")
+                    st.write(f"- **Current Price**: ${financial_metrics.get('Current Price', 0):,.2f}")
+                    st.write(f"- **EBITDA**: ${financial_metrics.get('EBITDA', 0):,.2f}")
+                    st.write(f"- **Revenue**: ${financial_metrics.get('Revenue', 0):,.2f}")
+                    st.write(f"- **Net Income**: ${financial_metrics.get('Net Income', 0):,.2f}")
+                    st.write(f"- **ROE**: {financial_metrics.get('ROE', 0):.2f}")
+                    st.write(f"- **Beta**: {financial_metrics.get('Beta', 0):.2f}")
+                    st.write(f"- **PE Ratio**: ${financial_metrics.get('PE Ratio', 0):,.2f}")
+                    st.write(f"- **Debt-to-Equity Ratio**: {financial_metrics.get('Debt-to-Equity Ratio', 0):.2f}")
+                    st.write(f"- **Market Cap**: ${financial_metrics.get('Market Cap', 0):,.2f}")
+                    st.write(f"- **Operating Cash Flow**: ${financial_metrics.get('Operating Cash Flow', 0):,.2f}")
+                    st.write(f"- **Free Cash Flow**: ${financial_metrics.get('Free Cash Flow', 0):,.2f}")
+                    st.markdown(f"### Speculation for {stock}")
+                    st.write(f"- **Trend**: {trend}")
+                    st.write(f"- **Confidence**: {confidence:.2f}")
+                    st.write(f"- **Predicted Price (Next Day)**: ${predicted_price:.2f}" if predicted_price is not None else "- **Predicted Price (Next Day)**: N/A")
+                    option_data = get_option_data(stock, selected_expiration)
+                    if not option_data.empty:
+                        buy_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "buy")]
+                        sell_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "sell")]
+                        buy_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "buy")]
+                        sell_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "sell")]
+                        all_strikes = sorted(set(option_data["strike"]))
+                        buy_calls_data = pd.DataFrame({"strike": all_strikes}).merge(buy_calls[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
+                        sell_calls_data = pd.DataFrame({"strike": all_strikes}).merge(sell_calls[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
+                        buy_puts_data = pd.DataFrame({"strike": all_strikes}).merge(buy_puts[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
+                        sell_puts_data = pd.DataFrame({"strike": all_strikes}).merge(sell_puts[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
+                        fig = go.Figure()
+                        fig.add_trace(go.Bar(name="Buy Call", x=buy_calls_data["strike"], y=buy_calls_data["open_interest"],
+                                             marker_color="green", text="Buy Call", textposition="inside"))
+                        fig.add_trace(go.Bar(name="Sell Call", x=sell_calls_data["strike"], y=sell_calls_data["open_interest"],
+                                             marker_color="orange", text="Sell Call", textposition="inside"))
+                        fig.add_trace(go.Bar(name="Buy Put", x=buy_puts_data["strike"], y=-buy_puts_data["open_interest"],
+                                             marker_color="red", text="Buy Put", textposition="inside"))
+                        fig.add_trace(go.Bar(name="Sell Put", x=sell_puts_data["strike"], y=-sell_puts_data["open_interest"],
+                                             marker_color="purple", text="Sell Put", textposition="inside"))
+                        fig.update_layout(title=f"Calls and Puts for {stock} (Expiration: {selected_expiration})",
+                                          xaxis_title="Strike Price", yaxis_title="Open Interest", barmode="relative",
+                                          showlegend=True, legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+                                          xaxis=dict(range=[min(all_strikes) - 10, max(all_strikes) + 10]))
+                        st.plotly_chart(fig)
 
     with tab6:
         st.subheader("Trading Options")
@@ -1120,13 +1154,13 @@ def main():
             ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="alerts_ticker").upper()
             expiration_dates = get_expiration_dates(ticker)
             if not expiration_dates:
-                st.error("No expiration dates available.")
+                st.error(f"No expiration dates found for '{ticker}'. Please enter a valid stock ticker (e.g., SPY, AAPL).")
                 return
             expiration_date = st.selectbox("Expiration Date", expiration_dates, key="alerts_exp_date")
             with st.spinner("Fetching price..."):
                 current_price = get_current_price(ticker)
                 if current_price == 0.0:
-                    st.error("Invalid ticker or no price data available.")
+                    st.error(f"Invalid ticker '{ticker}' or no price data available.")
                     return
             st.markdown("### Vol Filter")
             volume_options = {
