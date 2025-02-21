@@ -188,17 +188,29 @@ def get_current_price(ticker: str) -> float:
 
 @st.cache_data(ttl=CACHE_TTL)
 def get_expiration_dates(ticker: str) -> List[str]:
+    """Get expiration dates from Tradier."""
     if not ticker or not ticker.isalnum():
         return []
     url = f"{TRADIER_BASE_URL}/markets/options/expirations"
     params = {"symbol": ticker}
     data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier")
-    if data is not None and isinstance(data, dict) and 'expirations' in data and 'date' in data.get('expirations', {}):
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        expiration_dates = [date_str for date_str in sorted(data['expirations']['date'])
-                            if (datetime.strptime(date_str, "%Y-%m-%d") - today).days >= 0]
-        logger.info(f"Found {len(expiration_dates)} expiration dates for {ticker}")
-        return expiration_dates
+    # Verificar que data sea un diccionario válido y que 'expirations' contenga 'date' como iterable
+    if (data is not None and 
+        isinstance(data, dict) and 
+        'expirations' in data and 
+        data['expirations'] is not None and 
+        isinstance(data['expirations'], dict) and 
+        'date' in data['expirations'] and 
+        data['expirations']['date'] is not None):
+        try:
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            expiration_dates = [date_str for date_str in sorted(data['expirations']['date'])
+                                if (datetime.strptime(date_str, "%Y-%m-%d") - today).days >= 0]
+            logger.info(f"Found {len(expiration_dates)} expiration dates for {ticker}")
+            return expiration_dates
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error processing expiration dates for {ticker}: {str(e)}")
+            return []
     logger.error(f"No valid expiration dates found for {ticker} - data may be missing or invalid")
     return []
 
@@ -968,7 +980,7 @@ def main():
             ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
             expiration_dates = get_expiration_dates(ticker)
             if not expiration_dates:
-                st.error(f"No expiration dates found for '{ticker}'. Please enter a valid stock ticker (e.g., SPY, AAPL).")
+                st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
                 return
             expiration_date = st.selectbox("Expiration Date", expiration_dates, key="expiration_date")
             with st.spinner("Fetching price..."):
@@ -1154,7 +1166,7 @@ def main():
             ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="alerts_ticker").upper()
             expiration_dates = get_expiration_dates(ticker)
             if not expiration_dates:
-                st.error(f"No expiration dates found for '{ticker}'. Please enter a valid stock ticker (e.g., SPY, AAPL).")
+                st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
                 return
             expiration_date = st.selectbox("Expiration Date", expiration_dates, key="alerts_exp_date")
             with st.spinner("Fetching price..."):
