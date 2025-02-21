@@ -910,7 +910,7 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
 
 # --- Main App ---
 def main():
-    st.set_page_config(page_title="Quantum Scanner Pro", layout="wide", initial_sidebar_state="expanded")
+    st.set_page_config(page_title="Scanner Pro", layout="wide", initial_sidebar_state="expanded")
     st.markdown("""
         <style>
         .stApp {background-color: #1E1E1E;}
@@ -919,11 +919,11 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-    # Título y subtítulo
+    # Título y subtítulo con emoji de "target" (🎯)
     st.markdown("""
-    📈 Scanner Pro
+    🎯 Scanner Pro
     """, unsafe_allow_html=True)
-
+    
     # Tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options"])
 
@@ -976,6 +976,7 @@ def main():
                 skew_fig, total_calls, total_puts = plot_skew_analysis_with_totals(options_data)
                 st.plotly_chart(skew_fig, use_container_width=True)
                 st.write(f"**Total CALLS:** {total_calls} | **Total PUTS:** {total_puts}")
+                st.write(f"Current Price of {ticker}: ${current_price:.2f} (Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
                 st.write(f"**Max Pain Strike (Optimized):** {max_pain if max_pain else 'N/A'}")
                 st.plotly_chart(plot_max_pain_histogram_with_levels(max_pain_df, current_price), use_container_width=True)
                 st.subheader("Top Contracts")
