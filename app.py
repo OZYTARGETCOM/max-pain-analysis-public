@@ -11,8 +11,12 @@ import os
 from sklearn.linear_model import LinearRegression
 from bs4 import BeautifulSoup
 import socket
-import plotly.express as px
-import plotly.graph_objects as go
+import logging
+import time
+from datetime import datetime
+from typing import List, Dict, Optional, Tuple
+from scipy.stats import norm
+
 
 
 
@@ -132,6 +136,453 @@ if not st.session_state["authenticated"]:
 
 ################################################app
 ################################################app
+
+
+
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# --- API Configuration ---
+FMP_API_KEY = "bQ025fPNVrYcBN4KaExd1N3Xczyk44wM"
+FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+TRADIER_API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
+TRADIER_BASE_URL = "https://api.tradier.com/v1"
+
+HEADERS_FMP = {"Accept": "application/json"}
+HEADERS_TRADIER = {
+    "Authorization": f"Bearer {TRADIER_API_KEY}",
+    "Accept": "application/json"
+}
+
+# Constants
+CACHE_TTL = 300
+MAX_RETRIES = 5
+INITIAL_DELAY = 1
+RISK_FREE_RATE = 0.045
+
+def fetch_api_data(url: str, params: Dict, headers: Dict, source: str) -> Optional[Dict]:
+    """Fetch data from API with retries."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            response.raise_for_status()
+            logger.info(f"{source} fetch success: {response.text[:100]}...")
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"{source} error attempt {attempt + 1}: {e}")
+            if attempt == MAX_RETRIES - 1:
+                st.error(f"Failed to connect to {source} API after {MAX_RETRIES} attempts.")
+                return None
+            delay = INITIAL_DELAY * (2 ** attempt) + np.random.uniform(0, 0.5)
+            time.sleep(delay)
+    return None
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_current_price(ticker: str) -> float:
+    """Get current stock price, FMP first, then Tradier."""
+    url = f"{FMP_BASE_URL}/quote/{ticker}"
+    params = {"apikey": FMP_API_KEY}
+    data = fetch_api_data(url, params, HEADERS_FMP, "FMP")
+    try:
+        if data and isinstance(data, list) and len(data) > 0:
+            price = float(data[0].get("price", 0.0))
+            if price > 0:
+                logger.info(f"FMP price for {ticker}: ${price:.2f}")
+                return price
+    except (ValueError, TypeError) as e:
+        logger.error(f"FMP price error: {e}")
+
+    url = f"{TRADIER_BASE_URL}/markets/quotes"
+    params = {"symbols": ticker}
+    data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier")
+    try:
+        if data and 'quotes' in data and 'quote' in data['quotes']:
+            price = float(data['quotes']['quote'].get("last", 0.0))
+            logger.info(f"Tradier price for {ticker}: ${price:.2f}")
+            return price
+        return 0.0
+    except (ValueError, TypeError) as e:
+        logger.error(f"Tradier price error: {e}")
+        return 0.0
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_expiration_dates(ticker: str) -> List[str]:
+    """Get expiration dates from Tradier."""
+    if not ticker or not ticker.isalnum():
+        return []
+    url = f"{TRADIER_BASE_URL}/markets/options/expirations"
+    params = {"symbol": ticker}
+    data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier")
+    if data and 'expirations' in data and 'date' in data['expirations']:
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        expiration_dates = [date_str for date_str in sorted(data['expirations']['date'])
+                            if (datetime.strptime(date_str, "%Y-%m-%d") - today).days >= 0]
+        logger.info(f"Found {len(expiration_dates)} expiration dates for {ticker}")
+        return expiration_dates
+    logger.error(f"No expiration dates for {ticker}")
+    return []
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_options_data(ticker: str, expiration_date: str) -> List[Dict]:
+    """Get options chain, FMP first, then Tradier."""
+    url = f"{FMP_BASE_URL}/options-chain/{ticker}"
+    params = {"apikey": FMP_API_KEY}
+    data = fetch_api_data(url, params, HEADERS_FMP, "FMP")
+    if data and isinstance(data, list) and len(data) > 0:
+        options = [opt for opt in data if opt.get("expirationDate") == expiration_date]
+        if options:
+            return options
+    
+    url = f"{TRADIER_BASE_URL}/markets/options/chains"
+    params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
+    data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier")
+    if data and 'options' in data and 'option' in data['options']:
+        return data['options']['option']
+    return []
+
+def estimate_greeks(strike: float, current_price: float, days_to_expiration: int, iv: float, option_type: str) -> Dict[str, float]:
+    """Estimate Greeks using Black-Scholes."""
+    t = days_to_expiration / 365.0
+    if iv <= 0 or t <= 0:
+        return {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0}
+    s = current_price
+    k = strike
+    r = RISK_FREE_RATE
+    sigma = iv
+    d1 = (np.log(s / k) + (r + 0.5 * sigma**2) * t) / (sigma * np.sqrt(t))
+    d2 = d1 - sigma * np.sqrt(t)
+    if option_type == "CALL":
+        delta = norm.cdf(d1)
+        theta = (-s * norm.pdf(d1) * sigma / (2 * np.sqrt(t)) - r * k * np.exp(-r * t) * norm.cdf(d2)) / 365.0
+    else:
+        delta = norm.cdf(d1) - 1
+        theta = (-s * norm.pdf(d1) * sigma / (2 * np.sqrt(t)) + r * k * np.exp(-r * t) * norm.cdf(-d2)) / 365.0
+    gamma = norm.pdf(d1) / (s * sigma * np.sqrt(t))
+    vega = s * norm.pdf(d1) * np.sqrt(t) / 100.0
+    return {'delta': delta, 'gamma': gamma, 'theta': theta, 'vega': vega}
+
+def calculate_max_pain(options_data: List[Dict]) -> Optional[float]:
+    """Calculate the Max Pain strike for the given options chain."""
+    if not options_data:
+        return None
+    
+    strikes = {}
+    for option in options_data:
+        try:
+            strike = float(option["strike"])
+            oi = int(option.get("open_interest", 0) or option.get("openInterest", 0) or 0)
+            option_type = option["option_type"].upper() if "option_type" in option else ("CALL" if option.get("type") == "call" else "PUT")
+            if strike not in strikes:
+                strikes[strike] = {"CALL": 0, "PUT": 0}
+            strikes[strike][option_type] += oi
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error in max pain calc: {e} - {option}")
+            continue
+    
+    if not strikes:
+        return None
+    
+    total_losses = {}
+    strike_prices = sorted(strikes.keys())
+    for strike in strike_prices:
+        loss_call = sum((strikes[s]["CALL"] * max(0, s - strike)) for s in strike_prices)
+        loss_put = sum((strikes[s]["PUT"] * max(0, strike - s)) for s in strike_prices)
+        total_losses[strike] = loss_call + loss_put
+    
+    max_pain_strike = min(total_losses, key=total_losses.get) if total_losses else None
+    logger.info(f"Max Pain strike: {max_pain_strike}")
+    return max_pain_strike
+
+def analyze_options(options_data: List[Dict], current_price: float) -> Dict[str, Dict[float, Dict[str, float]]]:
+    """Analyze options with enhanced data."""
+    analysis = {"CALL": {}, "PUT": {}}
+    if not options_data:
+        logger.warning("No options data to analyze")
+        return analysis
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    exp_date = datetime.strptime(options_data[0].get("expiration_date") or options_data[0].get("expirationDate"), "%Y-%m-%d")
+    days_to_exp = (exp_date - today).days
+    
+    for option in options_data:
+        try:
+            strike = float(option["strike"])
+            option_type = option["option_type"].upper() if "option_type" in option else ("CALL" if option.get("type") == "call" else "PUT")
+            bid_ask_spread = float(option.get('ask', 0)) - float(option.get('bid', 0))
+            iv = float(option.get('implied_volatility', 0) or option.get('impliedVolatility', 0) or 0)
+            volume = int(option.get('volume', 0) or 0)
+            open_interest = int(option.get('open_interest', 0) or option.get('openInterest', 0) or 0)
+            intrinsic = max(current_price - strike, 0) if option_type == "CALL" else max(strike - current_price, 0)
+            greek = option.get("greeks", {})
+            
+            if greek and all(greek.get(k) is not None and greek.get(k) != 0 for k in ['delta', 'gamma']):
+                delta = float(greek.get('delta', 0))
+                gamma = float(greek.get('gamma', 0))
+                theta = float(greek.get('theta', 0))
+                vega = float(greek.get('vega', 0))
+            else:
+                estimated = estimate_greeks(strike, current_price, days_to_exp, iv if iv > 0 else 0.2, option_type)
+                delta = estimated['delta']
+                gamma = estimated['gamma']
+                theta = estimated['theta']
+                vega = estimated['vega']
+            
+            if strike not in analysis[option_type]:
+                analysis[option_type][strike] = {
+                    'gamma': gamma,
+                    'vega': vega,
+                    'theta': theta,
+                    'delta': delta,
+                    'iv': iv if iv > 0 else 0.2,
+                    'bid': float(option.get('bid', 0)),
+                    'ask': float(option.get('ask', 0)),
+                    'spread': bid_ask_spread,
+                    'open_interest': open_interest,
+                    'volume': volume,
+                    'intrinsic': intrinsic
+                }
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error analyzing option: {e} - {option}")
+    logger.info(f"Analyzed: {len(analysis['CALL'])} CALLs, {len(analysis['PUT'])} PUTs")
+    return analysis
+
+def calculate_special_monetization(data: Dict, current_price: float, days_to_expiration: int) -> Tuple[float, float, float, str]:
+    """Cálculo especial basado en gamma, IV y open interest."""
+    strike = list(data.keys())[0]
+    option_type = 'CALL' if data[strike]['delta'] > 0 else 'PUT'
+    mid_price = (data[strike]['bid'] + data[strike]['ask']) / 2
+    delta = abs(data[strike]['delta'])
+    gamma = data[strike]['gamma']
+    theta = data[strike]['theta']
+    iv = data[strike]['iv']
+    intrinsic = data[strike]['intrinsic']
+    open_interest = data[strike]['open_interest']
+    
+    gamma_iv_index = gamma * iv * (open_interest / 1000000.0) if gamma > 0 and iv > 0 else 0.001
+    t = days_to_expiration / 365.0
+    d1 = (np.log(current_price / strike) + (RISK_FREE_RATE + 0.5 * iv**2) * t) / (iv * np.sqrt(t))
+    prob_otm = norm.cdf(-d1) if option_type == "PUT" else norm.cdf(d1)
+    
+    direction_factor = 1 if (option_type == "CALL" and current_price > strike) or (option_type == "PUT" and current_price < strike) else 0.5
+    monetization_factor = mid_price * (1 + abs(theta) / (gamma + 0.001)) * direction_factor
+    
+    potential_profit = monetization_factor * 100
+    risk = mid_price * 100 * (1 - prob_otm) * (1 + gamma * 5)
+    rr_ratio = potential_profit / risk if risk > 0 else 10.0
+    action = "SELL" if prob_otm > 0.5 else "BUY"
+    
+    logger.debug(f"Strike {strike}: Gamma-IV Index={gamma_iv_index:.4f}, RR={rr_ratio:.2f}, Prob OTM={prob_otm:.2%}, Mid Price={mid_price}, Profit={potential_profit:.2f}, Open Interest={open_interest}")
+    return rr_ratio, potential_profit, prob_otm, action
+
+def generate_contract_suggestions(ticker: str, options_data: List[Dict], current_price: float, open_interest_threshold: int, gamma_threshold: float) -> List[Dict]:
+    """Generate trading alerts including Max Pain strike."""
+    if not options_data or not current_price:
+        logger.error("No options data or invalid price")
+        return []
+    
+    exp_date = datetime.strptime(options_data[0].get("expiration_date") or options_data[0].get("expirationDate"), "%Y-%m-%d")
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    days_to_expiration = (exp_date - today).days
+    if days_to_expiration < 0:
+        logger.error(f"Expiration date {exp_date} is in the past")
+        return []
+    
+    options_analysis = analyze_options(options_data, current_price)
+    if not options_analysis["CALL"] and not options_analysis["PUT"]:
+        return []
+    
+    # Calcular Max Pain
+    max_pain_strike = calculate_max_pain(options_data)
+    
+    suggestions = []
+    for option_type in ["CALL", "PUT"]:
+        strikes = sorted(options_analysis[option_type].keys())
+        relevant_strikes = [s for s in strikes if (option_type == "CALL" and s > current_price) or (option_type == "PUT" and s < current_price)]
+        
+        if not relevant_strikes:
+            logger.warning(f"No OTM strikes for {option_type}")
+        
+        for strike in relevant_strikes:
+            data = options_analysis[option_type][strike]
+            open_interest = data['open_interest']
+            gamma = data['gamma']
+            if open_interest >= open_interest_threshold and gamma >= gamma_threshold:
+                rr_ratio, profit, prob_otm, action = calculate_special_monetization({strike: data}, current_price, days_to_expiration)
+                vol_category = "HighOpenInterest"
+                reason = f"{vol_category}: Strike {strike}, Gamma {data['gamma']:.4f}, IV {data['iv']:.2f}, Delta {data['delta']:.2f}, RR {rr_ratio:.2f}, Prob OTM {prob_otm:.2%}, Profit ${profit:.2f}, OI {open_interest}"
+                suggestions.append({
+                    "Action": action,
+                    "Type": option_type,
+                    "Strike": strike,
+                    "Reason": reason,
+                    "Gamma": data['gamma'],
+                    "IV": data['iv'],
+                    "Delta": data['delta'],
+                    "RR": rr_ratio,
+                    "Prob OTM": prob_otm,
+                    "Profit": profit,
+                    "Open Interest": open_interest,
+                    "IsMaxPain": strike == max_pain_strike
+                })
+                logger.info(f"Added {option_type} strike {strike}: Open Interest={open_interest}, Gamma={data['gamma']:.4f}, IV={data['iv']:.2f}, Max Pain={strike == max_pain_strike}")
+            else:
+                logger.debug(f"Rejected {strike}: Open Interest={open_interest}, Gamma={data['gamma']:.4f} (Thresholds: OI={open_interest_threshold}, Gamma={gamma_threshold})")
+    
+    # Asegurar Max Pain strike siempre presente
+    if max_pain_strike:
+        for option_type in ["CALL", "PUT"]:
+            if max_pain_strike in options_analysis[option_type]:
+                data = options_analysis[option_type][max_pain_strike]
+                rr_ratio, profit, prob_otm, action = calculate_special_monetization({max_pain_strike: data}, current_price, days_to_expiration)
+                reason = f"MaxPain: Strike {max_pain_strike}, Gamma {data['gamma']:.4f}, IV {data['iv']:.2f}, Delta {data['delta']:.2f}, RR {rr_ratio:.2f}, Prob OTM {prob_otm:.2%}, Profit ${profit:.2f}, OI {data['open_interest']}"
+                if not any(s["Strike"] == max_pain_strike and s["Type"] == option_type for s in suggestions):
+                    suggestions.append({
+                        "Action": action,
+                        "Type": option_type,
+                        "Strike": max_pain_strike,
+                        "Reason": reason,
+                        "Gamma": data['gamma'],
+                        "IV": data['iv'],
+                        "Delta": data['delta'],
+                        "RR": rr_ratio,
+                        "Prob OTM": prob_otm,
+                        "Profit": profit,
+                        "Open Interest": data['open_interest'],
+                        "IsMaxPain": True
+                    })
+                    logger.info(f"Added Max Pain {option_type} strike {max_pain_strike}")
+
+    logger.info(f"Generated {len(suggestions)} suggestions for {exp_date.strftime('%Y-%m-%d')} with OI >= {open_interest_threshold}, Gamma >= {gamma_threshold}")
+    return suggestions
+
+def main():
+    """Main Streamlit app with professional layout."""
+    st.set_page_config(page_title="Options Trading Dashboard", layout="wide", initial_sidebar_state="expanded")
+    
+    # Tema personalizado (oscuro estilo "hack")
+    st.markdown("""
+        <style>
+        body {
+            background-color: #1E1E1E;
+            color: #FFFFFF;
+        }
+        .stApp {
+            background-color: #1E1E1E;
+        }
+        .stTextInput, .stSelectbox {
+            background-color: #2D2D2D;
+            color: #FFFFFF;
+        }
+        .stSpinner > div > div {
+            border-color: #32CD32 !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Header
+    st.title("Options Trading Dashboard")
+    
+
+    # Layout en columnas
+    col1, col2 = st.columns([1, 3])
+
+    # Sidebar para controles
+    with col1:
+        st.subheader("Configuration", help="Adjust settings to filter options contracts.")
+        ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY").upper()
+        # Selector de fecha
+        expiration_dates = get_expiration_dates(ticker)
+        if not expiration_dates:
+            st.error("No expiration dates available.")
+            return
+        expiration_date = st.selectbox("Expiration Date", expiration_dates)
+        
+        with st.spinner("Fetching price..."):
+            current_price = get_current_price(ticker)
+            if current_price == 0.0:
+                st.error("Invalid ticker or no price data available.")
+                return
+            
+
+        # Controles de Open Interest
+        st.markdown("### Vol Filter")
+        volume_options = {
+            "0.1M": 10000,
+            "0.2M": 20000,
+            "0.3M": 30000,
+            "0.4M": 40000,
+            "0.5M": 50000,
+            "1.0M": 100000
+        }
+        selected_volume = st.selectbox("Min Open Interest (M)", list(volume_options.keys()), index=3)
+        open_interest_threshold = volume_options[selected_volume]
+
+        # Controles de Gamma
+        st.markdown("### Gamma Filter")
+        gamma_options = {
+            "0.001": 0.001,
+            "0.01": 0.01,
+            "0.02": 0.02,
+            "0.03": 0.03,
+            "0.04": 0.04,
+            "0.05": 0.05
+        }
+        selected_gamma = st.selectbox("Min Gamma", list(gamma_options.keys()), index=2)
+        gamma_threshold = gamma_options[selected_gamma]
+        st.markdown(f"**Current Price:** ${current_price:.2f}  \n*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
+
+        
+
+    # Main content para alertas
+    with col2:
+        st.subheader("Trading Alerts")
+        st.markdown(f"**Current Price:** ${current_price:.2f}  \n*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
+        with st.spinner(f"Generating alerts for {expiration_date}..."):
+            options_data = get_options_data(ticker, expiration_date)
+            if not options_data:
+                st.error("No options data available for this date.")
+                return
+            
+            suggestions = generate_contract_suggestions(ticker, options_data, current_price, open_interest_threshold, gamma_threshold)
+            
+            if suggestions:
+                # Crear DataFrame para tabla
+                df = pd.DataFrame(suggestions)
+                df['Contract'] = df.apply(lambda row: f"{ticker} {row['Action']} {row['Type']} {row['Strike']}", axis=1)
+                df = df[['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'RR', 'Prob OTM', 'Profit', 'Open Interest', 'IsMaxPain']]
+                df.columns = ['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'R/R', 'Prob OTM', 'Profit ($)', 'Open Int.', 'Max Pain']
+
+                # Aplicar colores dinámicos en la tabla
+                def color_row(row):
+                    if row['Max Pain']:
+                        return ['color: #FFA500'] * len(row)
+                    elif row['Type'] == "CALL":
+                        return ['color: #32CD32' if row['Action'] == "SELL" and row['Strike'] > current_price else 'color: #008000'] * len(row)
+                    elif row['Type'] == "PUT":
+                        return ['color: #FF4500' if row['Action'] == "SELL" and row['Strike'] < current_price else 'color: #FF0000'] * len(row)
+                    return [''] * len(row)
+
+                styled_df = df.style.apply(color_row, axis=1).format({
+                    'Strike': '{:.1f}',
+                    'Gamma': '{:.4f}',
+                    'IV': '{:.2f}',
+                    'Delta': '{:.2f}',
+                    'R/R': '{:.2f}',
+                    'Prob OTM': '{:.2%}',
+                    'Profit ($)': '{:.2f}',
+                    'Open Int.': '{:,.0f}'
+                })
+                st.dataframe(styled_df, height=400)
+            else:
+                st.error(f"No alerts generated with Open Interest ≥ {selected_volume}, Gamma ≥ {selected_gamma}. Check logs.")
+
+    # Footer
+    st.markdown("---")
+    st.markdown("*Developed by a Ozy | © 2025*")
+
+if __name__ == "__main__":
+    main()
 
 # Tradier API Configuration
 API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
@@ -2181,6 +2632,7 @@ def search_institutional_holders(query: str):
 # Entrada del usuario (ya implementada en tu aplicación principal)
 ticker = st.text_input("Institutional Holders (ej. AAPL):").upper()
 
+
 if ticker:
     st.subheader(f"ticker: {ticker}")
 
@@ -2191,5 +2643,6 @@ if ticker:
         st.dataframe(institutional_holders)
     else:
         st.warning("No se encontraron datos de tenedores institucionales para este ticker.")
+
 
 
