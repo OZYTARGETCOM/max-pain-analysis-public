@@ -455,13 +455,40 @@ def plot_skew_analysis_with_totals(options_data, current_price=None):
     else:
         max_pain = None
 
-    # Añadir bola amarilla para Current Price
-    if current_price is not None:
-        fig.add_scatter(x=[current_price], y=[0], mode="markers", name="Current Price",
-                        marker=dict(size=15, color="yellow", symbol="circle"),
-                        hovertemplate=f"Current Price: {current_price:.2f}")
+    # Calcular Adjusted IV promedio para CALLs y PUTs
+    avg_iv_calls = sum(iv[i] + (open_interest[i] * 0.01) for i, ot in enumerate(option_type) if ot == "CALL") / max(1, sum(1 for ot in option_type if ot == "CALL"))
+    avg_iv_puts = sum(-(iv[i] + (open_interest[i] * 0.01)) for i, ot in enumerate(option_type) if ot == "PUT") / max(1, sum(1 for ot in option_type if ot == "PUT"))
 
-    # Añadir bola blanca para Max Pain
+    # Usar el Open Interest total para escalar el tamaño de las bolas
+    call_open_interest = total_calls
+    put_open_interest = total_puts
+    scale_factor = 5000  # Escala para reducir tamaño
+    call_size = max(5, min(30, call_open_interest / scale_factor))
+    put_size = max(5, min(30, put_open_interest / scale_factor))
+
+    # Calcular pérdida estimada en el Current Price (distancia al Max Pain * Open Interest)
+    if current_price is not None and max_pain is not None:
+        # Pérdida para CALLs: si Current Price < Max Pain, los CALLs pierden valor extrínseco
+        call_loss = abs(current_price - max_pain) * total_calls if current_price < max_pain else (current_price - max_pain) * total_calls
+        # Pérdida para PUTs: si Current Price > Max Pain, los PUTs pierden valor extrínseco
+        put_loss = abs(max_pain - current_price) * total_puts if current_price > max_pain else (max_pain - current_price) * total_puts
+    else:
+        call_loss = 0
+        put_loss = 0
+
+    # Añadir bola amarilla para Current Price (CALLs) - en el Adjusted IV promedio de CALLs
+    if current_price is not None and call_open_interest > 0:
+        fig.add_scatter(x=[current_price], y=[avg_iv_calls], mode="markers", name="Current Price (CALLs)",
+                        marker=dict(size=call_size, color="yellow", symbol="circle"),
+                        hovertemplate=f"Current Price (CALLs): {current_price:.2f}<br>Adjusted IV: {avg_iv_calls:.2f}%<br>Open Interest: {call_open_interest:,}<br>Est. Loss: ${call_loss:,.2f}")
+
+    # Añadir bola amarilla para Current Price (PUTs) - en el Adjusted IV promedio de PUTs
+    if current_price is not None and put_open_interest > 0:
+        fig.add_scatter(x=[current_price], y=[avg_iv_puts], mode="markers", name="Current Price (PUTs)",
+                        marker=dict(size=put_size, color="yellow", symbol="circle"),
+                        hovertemplate=f"Current Price (PUTs): {current_price:.2f}<br>Adjusted IV: {avg_iv_puts:.2f}%<br>Open Interest: {put_open_interest:,}<br>Est. Loss: ${put_loss:,.2f}")
+
+    # Añadir bola blanca para Max Pain (tamaño fijo)
     if max_pain is not None:
         fig.add_scatter(x=[max_pain], y=[0], mode="markers", name="Max Pain",
                         marker=dict(size=15, color="white", symbol="circle"),
