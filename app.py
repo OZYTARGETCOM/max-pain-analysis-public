@@ -476,16 +476,16 @@ def plot_skew_analysis_with_totals(options_data, current_price=None):
         call_loss = 0
         put_loss = 0
 
-    # Añadir bola amarilla para Current Price (CALLs) - en el Adjusted IV promedio de CALLs
+    # Añadir bola amarilla para Current Price (CALLs) - en el Adjusted IV promedio de CALLs con transparencia del 55%
     if current_price is not None and call_open_interest > 0:
         fig.add_scatter(x=[current_price], y=[avg_iv_calls], mode="markers", name="Current Price (CALLs)",
-                        marker=dict(size=call_size, color="yellow", symbol="circle"),
+                        marker=dict(size=call_size, color="yellow", opacity=0.45, symbol="circle"),
                         hovertemplate=f"Current Price (CALLs): {current_price:.2f}<br>Adjusted IV: {avg_iv_calls:.2f}%<br>Open Interest: {call_open_interest:,}<br>Est. Loss: ${call_loss:,.2f}")
 
-    # Añadir bola amarilla para Current Price (PUTs) - en el Adjusted IV promedio de PUTs
+    # Añadir bola amarilla para Current Price (PUTs) - en el Adjusted IV promedio de PUTs con transparencia del 55%
     if current_price is not None and put_open_interest > 0:
         fig.add_scatter(x=[current_price], y=[avg_iv_puts], mode="markers", name="Current Price (PUTs)",
-                        marker=dict(size=put_size, color="yellow", symbol="circle"),
+                        marker=dict(size=put_size, color="yellow", opacity=0.45, symbol="circle"),
                         hovertemplate=f"Current Price (PUTs): {current_price:.2f}<br>Adjusted IV: {avg_iv_puts:.2f}%<br>Open Interest: {put_open_interest:,}<br>Est. Loss: ${put_loss:,.2f}")
 
     # Añadir bola blanca para Max Pain (tamaño fijo)
