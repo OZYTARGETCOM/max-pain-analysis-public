@@ -983,7 +983,7 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
 
 # --- Main App ---
 def main():
-    st.set_page_config(page_title="🎯Scanner Pro", layout="wide", initial_sidebar_state="expanded")
+    st.set_page_config(page_title="O Z Y", page_icon="♾️", layout="wide", initial_sidebar_state="expanded")
     st.markdown("""
         <style>
         .stApp {background-color: #1E1E1E;}
@@ -994,7 +994,7 @@ def main():
 
     # Título y subtítulo
     st.markdown("""
-    🎯 Scanner Pro
+      PRO SCANNER |
     """, unsafe_allow_html=True)
 
     # Declaración de tabs
