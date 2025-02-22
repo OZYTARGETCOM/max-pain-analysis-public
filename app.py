@@ -1002,67 +1002,68 @@ def main():
 
     with tab1:
         st.subheader("Options Scanner")
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
-            expiration_dates = get_expiration_dates(ticker)
-            if not expiration_dates:
-                st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
+        
+        # Sección de entrada y precio al inicio, ocupando todo el ancho
+        ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
+        expiration_dates = get_expiration_dates(ticker)
+        if not expiration_dates:
+            st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
+            return  # Este return ahora está dentro del flujo de main()
+        expiration_date = st.selectbox("Expiration Date", expiration_dates, key="expiration_date")
+        with st.spinner("Fetching price..."):
+            current_price = get_current_price(ticker)
+            if current_price == 0.0:
+                st.error(f"Invalid ticker '{ticker}' or no price data available.")
+                return  # Este return también está dentro del flujo de main()
+        st.markdown(f"**Current Price:** ${current_price:.2f}")
+
+        # Sección de gráficas y datos, ocupando todo el ancho
+        with st.spinner(f"Fetching data for {expiration_date}..."):
+            options_data = get_options_data(ticker, expiration_date)
+            if not options_data:
+                st.error("No options data available for this ticker and expiration date.")
+                return  # Asegúrate de que este return también esté dentro del flujo
+            processed_data = {}
+            for opt in options_data:
+                if not opt or not isinstance(opt, dict):
+                    continue
+                strike = float(opt.get("strike", 0))
+                option_type = opt.get("option_type", "").upper()
+                if option_type not in ["CALL", "PUT"]:
+                    continue
+                oi = int(opt.get("open_interest", 0))
+                greeks = opt.get("greeks", {})
+                gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
+                if strike not in processed_data:
+                    processed_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
+                processed_data[strike][option_type]["OI"] += oi
+                processed_data[strike][option_type]["Gamma"] += gamma
+            if not processed_data:
+                st.error("No valid data to display.")
                 return
-            expiration_date = st.selectbox("Expiration Date", expiration_dates, key="expiration_date")
-            with st.spinner("Fetching price..."):
-                current_price = get_current_price(ticker)
-                if current_price == 0.0:
-                    st.error(f"Invalid ticker '{ticker}' or no price data available.")
-                    return
-            st.markdown(f"**Current Price:** ${current_price:.2f}")
-        with col2:
-            with st.spinner(f"Fetching data for {expiration_date}..."):
-                options_data = get_options_data(ticker, expiration_date)
-                if not options_data:
-                    st.error("No options data available for this ticker and expiration date.")
-                    return
-                processed_data = {}
-                for opt in options_data:
-                    if not opt or not isinstance(opt, dict):
-                        continue
-                    strike = float(opt.get("strike", 0))
-                    option_type = opt.get("option_type", "").upper()
-                    if option_type not in ["CALL", "PUT"]:
-                        continue
-                    oi = int(opt.get("open_interest", 0))
-                    greeks = opt.get("greeks", {})
-                    gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
-                    if strike not in processed_data:
-                        processed_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
-                    processed_data[strike][option_type]["OI"] += oi
-                    processed_data[strike][option_type]["Gamma"] += gamma
-                if not processed_data:
-                    st.error("No valid data to display.")
-                    return
-                historical_prices = get_historical_data(ticker)
-                touched_strikes = detect_touched_strikes(processed_data.keys(), historical_prices)
-                max_pain = calculate_max_pain_optimized(options_data)
-                df = analyze_contracts(ticker, expiration_date, current_price)
-                max_pain_strike, max_pain_df = calculate_max_pain(df)
-                st.plotly_chart(gamma_exposure_chart(processed_data, current_price, touched_strikes), use_container_width=True)
-                skew_fig, total_calls, total_puts = plot_skew_analysis_with_totals(options_data, current_price)
-                st.plotly_chart(skew_fig, use_container_width=True)
-                st.write(f"**Total CALLS:** {total_calls} | **Total PUTS:** {total_puts}")
-                st.write(f"Current Price of {ticker}: ${current_price:.2f} (Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
-                st.write(f"**Max Pain Strike (Optimized):** {max_pain if max_pain else 'N/A'}")
-                st.plotly_chart(plot_max_pain_histogram_with_levels(max_pain_df, current_price), use_container_width=True)
-                st.subheader("Top Contracts")
-                styled_df = style_and_sort_table(df)
-                st.dataframe(styled_df)
-                closest, economic = select_best_contracts(df, current_price)
-                if closest is not None:
-                    st.markdown(f"**Closest Contract:** Strike {closest['strike']}, Type {closest['option_type']}, Volume {closest['volume']}, OI {closest['open_interest']}")
-                if economic is not None:
-                    st.markdown(f"**Economic Contract:** Strike {economic['strike']}, Type {economic['option_type']}, Volume {economic['volume']}, OI {economic['open_interest']}")
-                score_df = calculate_score(df, current_price)
-                st.plotly_chart(plot_histogram(score_df), use_container_width=True)
-                display_cards(score_df)
+            historical_prices = get_historical_data(ticker)
+            touched_strikes = detect_touched_strikes(processed_data.keys(), historical_prices)
+            max_pain = calculate_max_pain_optimized(options_data)
+            df = analyze_contracts(ticker, expiration_date, current_price)
+            max_pain_strike, max_pain_df = calculate_max_pain(df)
+            st.plotly_chart(gamma_exposure_chart(processed_data, current_price, touched_strikes), use_container_width=True)
+            skew_fig, total_calls, total_puts = plot_skew_analysis_with_totals(options_data, current_price)
+            st.plotly_chart(skew_fig, use_container_width=True)
+            st.write(f"**Total CALLS:** {total_calls} | **Total PUTS:** {total_puts}")
+            st.write(f"Current Price of {ticker}: ${current_price:.2f} (Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
+            st.write(f"**Max Pain Strike (Optimized):** {max_pain if max_pain else 'N/A'}")
+            st.plotly_chart(plot_max_pain_histogram_with_levels(max_pain_df, current_price), use_container_width=True)
+            st.subheader("Top Contracts")
+            styled_df = style_and_sort_table(df)
+            st.dataframe(styled_df, use_container_width=True)
+            closest, economic = select_best_contracts(df, current_price)
+            if closest is not None:
+                st.markdown(f"**Closest Contract:** Strike {closest['strike']}, Type {closest['option_type']}, Volume {closest['volume']}, OI {closest['open_interest']}")
+            if economic is not None:
+                st.markdown(f"**Economic Contract:** Strike {economic['strike']}, Type {economic['option_type']}, Volume {economic['volume']}, OI {economic['open_interest']}")
+            score_df = calculate_score(df, current_price)
+            st.plotly_chart(plot_histogram(score_df), use_container_width=True)
+            display_cards(score_df)
 
     with tab2:
         st.subheader("Market Scanner")
@@ -1109,11 +1110,10 @@ def main():
                 instagram_posts = fetch_instagram_posts(keywords)
                 latest_news = google_news + bing_news + instagram_posts
                 if latest_news:
-                    with st.expander("📰 Latest News"):
-                        for idx, article in enumerate(latest_news[:10], 1):
-                            st.markdown(f"### {idx}. [{article['title']}]({article['link']})")
-                            st.markdown(f"**Published:** {article['time']}\n")
-                            st.markdown("---")
+                    for idx, article in enumerate(latest_news[:10], 1):
+                        st.markdown(f"### {idx}. [{article['title']}]({article['link']})")
+                        st.markdown(f"**Published:** {article['time']}\n")
+                        st.markdown("---")
                 else:
                     st.error("No recent news found.")
 
