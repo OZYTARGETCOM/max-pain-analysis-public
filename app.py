@@ -1108,17 +1108,6 @@ def main():
             st.write(f"Current Price of {ticker}: ${current_price:.2f} (Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
             st.write(f"**Max Pain Strike (Optimized):** {max_pain if max_pain else 'N/A'}")
             st.plotly_chart(plot_max_pain_histogram_with_levels(max_pain_df, current_price), use_container_width=True)
-            st.subheader("Top Contracts")
-            styled_df = style_and_sort_table(df)
-            st.dataframe(styled_df, use_container_width=True)
-            closest, economic = select_best_contracts(df, current_price)
-            if closest is not None:
-                st.markdown(f"**Closest Contract:** Strike {closest['strike']}, Type {closest['option_type']}, Volume {closest['volume']}, OI {closest['open_interest']}")
-            if economic is not None:
-                st.markdown(f"**Economic Contract:** Strike {economic['strike']}, Type {economic['option_type']}, Volume {economic['volume']}, OI {economic['open_interest']}")
-            score_df = calculate_score(df, current_price)
-            st.plotly_chart(plot_histogram(score_df), use_container_width=True)
-            display_cards(score_df)
 
     with tab2:
         st.subheader("Market Scanner")
@@ -1216,7 +1205,7 @@ def main():
                     st.write(f"- **Revenue**: ${financial_metrics.get('Revenue', 0):,.2f}")
                     st.write(f"- **Net Income**: ${financial_metrics.get('Net Income', 0):,.2f}")
                     st.write(f"- **ROE**: {financial_metrics.get('ROE', 0):.2f}")
-                    st.write(f"- **Beta**: {financial_metrics.get('Beta', 0):.2f}")
+                    st.write(f"- **Beta**: ${financial_metrics.get('Beta', 0):,.2f}")
                     st.write(f"- **PE Ratio**: ${financial_metrics.get('PE Ratio', 0):,.2f}")
                     st.write(f"- **Debt-to-Equity Ratio**: {financial_metrics.get('Debt-to-Equity Ratio', 0):.2f}")
                     st.write(f"- **Market Cap**: ${financial_metrics.get('Market Cap', 0):,.2f}")
@@ -1265,7 +1254,7 @@ def main():
                         direction_mm = "Down" if combined_score < 0 else "Up" if combined_score > 0 else "Neutral"
                         st.write(f"Debug: Current Price = {current_price}, Max Pain = {max_pain}, OI Pressure = {oi_pressure}, Net Gamma = {net_gamma}, Combined Score = {combined_score}, Direction = {direction_mm}")
 
-                        # Añadir línea vertical para Current Price (más delgada, sin anotación fija)
+                        # Añadir línea vertical para Current Price (delgada, con label transparente)
                         y_max = max(buy_calls_data["open_interest"].max() or 0, sell_calls_data["open_interest"].max() or 0) * 1.1 or 100
                         fig.add_trace(go.Scatter(x=[current_price, current_price], y=[-y_max, y_max], mode="lines",
                                                  line=dict(width=1, dash="dash", color="yellow"),
@@ -1280,11 +1269,15 @@ def main():
                                           showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1, arrowcolor="yellow",
                                           font=dict(size=12), ax=20, ay=-30, bgcolor="rgba(0,0,0,0.5)", bordercolor="yellow")
 
+                        # Ajustar layout para tamaño grande
                         fig.update_layout(title=f"Calls and Puts for {stock} (Expiration: {selected_expiration})",
                                           xaxis_title="Strike Price", yaxis_title="Open Interest", barmode="relative",
                                           showlegend=True, legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                                          xaxis=dict(range=[min(all_strikes) - 10, max(all_strikes) + 10]))
-                        st.plotly_chart(fig)
+                                          xaxis=dict(range=[min(all_strikes) - 10, max(all_strikes) + 10]),
+                                          height=600)
+
+                        # Mostrar gráfica con tamaño completo
+                        st.plotly_chart(fig, use_container_width=True, height=600)
 
     with tab6:
         st.subheader("Trading Options")
