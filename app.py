@@ -1042,7 +1042,7 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
 
 # --- Main App ---
 def main():
-    st.set_page_config(page_title="O Z Y", page_icon="♾️", layout="wide", initial_sidebar_state="expanded")
+    st.set_page_config(page_title="O Z Y |  DATA®", page_icon="♾️", layout="wide", initial_sidebar_state="expanded")
     st.markdown("""
         <style>
         .stApp {background-color: #1E1E1E;}
@@ -1052,7 +1052,7 @@ def main():
     """, unsafe_allow_html=True)
 
     st.markdown("""
-      PRO SCANNER |
+      PRO SCANNER |®
     """, unsafe_allow_html=True)
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options"])
