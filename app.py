@@ -429,10 +429,13 @@ def plot_skew_analysis_with_totals(options_data, current_price=None):
     total_volume_puts = sum(int(option.get("volume", 0)) for option in options_data if option["option_type"].upper() == "PUT")
     adjusted_iv = [iv[i] + (open_interest[i] * 0.01) if option_type[i] == "CALL" else -(iv[i] + (open_interest[i] * 0.01)) for i in range(len(iv))]
     skew_df = pd.DataFrame({"Strike": strikes, "Adjusted IV (%)": adjusted_iv, "Option Type": option_type, "Open Interest": open_interest})
-    title = f"IV Analysis<br><span style='font-size:16px;'> CALLS: {total_calls} | PUTS: {total_puts} | VC {total_volume_calls} | VP {total_volume_puts}</span>"
+    
+    # Crear el gráfico base para CALLs y PUTs (bolas azules y rojas)
     fig = px.scatter(skew_df, x="Strike", y="Adjusted IV (%)", color="Option Type", size="Open Interest",
-                     hover_data=["Strike", "Option Type", "Open Interest", "Adjusted IV (%)"],
-                     title=title, labels={"Option Type": "Contract Type"}, color_discrete_map={"CALL": "blue", "PUT": "red"})
+                     custom_data=["Strike", "Option Type", "Open Interest", "Adjusted IV (%)"],
+                     title=f"IV Analysis<br><span style='font-size:16px;'> CALLS: {total_calls} | PUTS: {total_puts} | VC {total_volume_calls} | VP {total_volume_puts}</span>",
+                     labels={"Option Type": "Contract Type"}, color_discrete_map={"CALL": "blue", "PUT": "red"})
+    fig.update_traces(hovertemplate="<b>Strike:</b> %{customdata[0]:.2f}<br><b>Type:</b> %{customdata[1]}<br><b>Open Interest:</b> %{customdata[2]:,}<br><b>Adjusted IV:</b> %{customdata[3]:.2f}%")
     fig.update_layout(xaxis_title="Strike Price", yaxis_title="Implied Volatility (%)", legend_title="Option Type", template="plotly_white", title_x=0.5)
 
     # Calcular Max Pain
@@ -466,35 +469,98 @@ def plot_skew_analysis_with_totals(options_data, current_price=None):
     call_size = max(5, min(30, call_open_interest / scale_factor))
     put_size = max(5, min(30, put_open_interest / scale_factor))
 
-    # Calcular pérdida estimada en el Current Price (distancia al Max Pain * Open Interest)
-    if current_price is not None and max_pain is not None:
-        # Pérdida para CALLs: si Current Price < Max Pain, los CALLs pierden valor extrínseco
-        call_loss = abs(current_price - max_pain) * total_calls if current_price < max_pain else (current_price - max_pain) * total_calls
-        # Pérdida para PUTs: si Current Price > Max Pain, los PUTs pierden valor extrínseco
-        put_loss = abs(max_pain - current_price) * total_puts if current_price > max_pain else (max_pain - current_price) * total_puts
-    else:
-        call_loss = 0
-        put_loss = 0
+    # Datos en tiempo real para CALLs y PUTs más cercanos al Current Price (bolas amarillas intactas)
+    if current_price is not None and max_pain is not None and options_data:
+        calls_data = [opt for opt in options_data if opt["option_type"].upper() == "CALL"]
+        puts_data = [opt for opt in options_data if opt["option_type"].upper() == "PUT"]
+        
+        closest_call = min(calls_data, key=lambda x: abs(float(x["strike"]) - current_price), default=None)
+        closest_put = min(puts_data, key=lambda x: abs(float(x["strike"]) - current_price), default=None)
 
-    # Añadir bola amarilla para Current Price (CALLs) - en el Adjusted IV promedio de CALLs con transparencia del 55%
-    if current_price is not None and call_open_interest > 0:
-        fig.add_scatter(x=[current_price], y=[avg_iv_calls], mode="markers", name="Current Price (CALLs)",
-                        marker=dict(size=call_size, color="yellow", opacity=0.45, symbol="circle"),
-                        hovertemplate=f"Current Price (CALLs): {current_price:.2f}<br>Adjusted IV: {avg_iv_calls:.2f}%<br>Open Interest: {call_open_interest:,}<br>Est. Loss: ${call_loss:,.2f}")
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        exp_date = datetime.strptime(options_data[0].get("expiration_date") or options_data[0].get("expirationDate"), "%Y-%m-%d")
+        days_to_expiration = (exp_date - today).days
 
-    # Añadir bola amarilla para Current Price (PUTs) - en el Adjusted IV promedio de PUTs con transparencia del 55%
-    if current_price is not None and put_open_interest > 0:
-        fig.add_scatter(x=[current_price], y=[avg_iv_puts], mode="markers", name="Current Price (PUTs)",
-                        marker=dict(size=put_size, color="yellow", opacity=0.45, symbol="circle"),
-                        hovertemplate=f"Current Price (PUTs): {current_price:.2f}<br>Adjusted IV: {avg_iv_puts:.2f}%<br>Open Interest: {put_open_interest:,}<br>Est. Loss: ${put_loss:,.2f}")
+        if closest_call:
+            call_strike = float(closest_call["strike"])
+            call_data = {
+                call_strike: {
+                    'bid': float(closest_call.get("bid", 0)),
+                    'ask': float(closest_call.get("ask", 0)),
+                    'delta': float(closest_call.get("greeks", {}).get("delta", 0.5)),
+                    'gamma': float(closest_call.get("greeks", {}).get("gamma", 0.02)),
+                    'theta': float(closest_call.get("greeks", {}).get("theta", -0.01)),
+                    'iv': float(closest_call.get("implied_volatility", 0.2)),
+                    'open_interest': int(closest_call.get("open_interest", 0)),
+                    'intrinsic': max(current_price - call_strike, 0)
+                }
+            }
+            rr_calls, profit_calls, prob_otm_calls, _ = calculate_special_monetization(call_data, current_price, days_to_expiration)
+            percent_change_calls = ((current_price - max_pain) / max_pain) * 100 if max_pain != 0 else 0
+            call_loss = abs(current_price - max_pain) * total_calls if current_price < max_pain else (current_price - max_pain) * total_calls
+            potential_move_calls = abs(current_price - max_pain)
+            direction_calls = "Down" if current_price > max_pain else "Up"
+        else:
+            rr_calls, profit_calls, prob_otm_calls, percent_change_calls, call_loss, potential_move_calls, direction_calls = 0, 0, 0, 0, 0, 0, "N/A"
 
-    # Añadir bola blanca para Max Pain (tamaño fijo)
+        if closest_put:
+            put_strike = float(closest_put["strike"])
+            put_data = {
+                put_strike: {
+                    'bid': float(closest_put.get("bid", 0)),
+                    'ask': float(closest_put.get("ask", 0)),
+                    'delta': float(closest_put.get("greeks", {}).get("delta", -0.5)),
+                    'gamma': float(closest_put.get("greeks", {}).get("gamma", 0.02)),
+                    'theta': float(closest_put.get("greeks", {}).get("theta", -0.01)),
+                    'iv': float(closest_put.get("implied_volatility", 0.2)),
+                    'open_interest': int(closest_put.get("open_interest", 0)),
+                    'intrinsic': max(put_strike - current_price, 0)
+                }
+            }
+            rr_puts, profit_puts, prob_otm_puts, _ = calculate_special_monetization(put_data, current_price, days_to_expiration)
+            percent_change_puts = ((max_pain - current_price) / max_pain) * 100 if max_pain != 0 else 0
+            put_loss = abs(max_pain - current_price) * total_puts if current_price > max_pain else (max_pain - current_price) * total_puts
+            potential_move_puts = abs(max_pain - current_price)
+            direction_puts = "Up" if current_price < max_pain else "Down"
+        else:
+            rr_puts, profit_puts, prob_otm_puts, percent_change_puts, put_loss, potential_move_puts, direction_puts = 0, 0, 0, 0, 0, 0, "N/A"
+
+        # Añadir bola amarilla para Current Price (CALLs) - Sin cambios
+        if call_open_interest > 0 and closest_call:
+            fig.add_scatter(x=[current_price], y=[avg_iv_calls], mode="markers", name="Current Price (CALLs)",
+                            marker=dict(size=call_size, color="yellow", opacity=0.45, symbol="circle"),
+                            hovertemplate=(f"Current Price (CALLs): {current_price:.2f}<br>"
+                                           f"Adjusted IV: {avg_iv_calls:.2f}%<br>"
+                                           f"Open Interest: {call_open_interest:,}<br>"
+                                           f"% to Max Pain: {percent_change_calls:.2f}%<br>"
+                                           f"R/R: {rr_calls:.2f}<br>"
+                                           f"Est. Loss: ${call_loss:,.2f}<br>"
+                                           f"Potential Move: ${potential_move_calls:.2f}<br>"
+                                           f"Direction: {direction_calls}"))
+
+        # Añadir bola amarilla para Current Price (PUTs) - Sin cambios
+        if put_open_interest > 0 and closest_put:
+            fig.add_scatter(x=[current_price], y=[avg_iv_puts], mode="markers", name="Current Price (PUTs)",
+                            marker=dict(size=put_size, color="yellow", opacity=0.45, symbol="circle"),
+                            hovertemplate=(f"Current Price (PUTs): {current_price:.2f}<br>"
+                                           f"Adjusted IV: {avg_iv_puts:.2f}%<br>"
+                                           f"Open Interest: {put_open_interest:,}<br>"
+                                           f"% to Max Pain: {percent_change_puts:.2f}%<br>"
+                                           f"R/R: {rr_puts:.2f}<br>"
+                                           f"Est. Loss: ${put_loss:,.2f}<br>"
+                                           f"Potential Move: ${potential_move_puts:.2f}<br>"
+                                           f"Direction: {direction_puts}"))
+
+    # Añadir bola blanca para Max Pain
     if max_pain is not None:
         fig.add_scatter(x=[max_pain], y=[0], mode="markers", name="Max Pain",
                         marker=dict(size=15, color="white", symbol="circle"),
                         hovertemplate=f"Max Pain: {max_pain:.2f}")
 
     return fig, total_calls, total_puts
+
+
+
 
 def fetch_google_news(keywords):
     base_url = "https://www.google.com/search"
