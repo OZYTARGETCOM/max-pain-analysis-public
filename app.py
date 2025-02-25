@@ -432,25 +432,91 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes):
     gamma_puts = [-processed_data[s]["PUT"]["OI"] * processed_data[s]["PUT"]["Gamma"] * current_price for s in strikes]
     call_colors = ["grey" if s in touched_strikes else "#7DF9FF" for s in strikes]
     put_colors = ["orange" if s in touched_strikes else "red" for s in strikes]
+
+    # Crear la figura
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=strikes, y=gamma_calls, name="Gamma CALL", marker=dict(color=call_colors),
-                         hovertemplate="<b>Strike:</b> %{x}<br><b>Gamma CALL:</b> %{y:.2f}<extra></extra>"))
-    fig.add_trace(go.Bar(x=strikes, y=gamma_puts, name="Gamma PUT", marker=dict(color=put_colors),
-                         hovertemplate="<b>Strike:</b> %{x}<br><b>Gamma PUT:</b> %{y:.2f}<extra></extra>"))
-    
-    # Añadir línea vertical para Current Price (delgada, con label transparente)
+
+    # Añadir barras para CALLs y PUTs con ancho fijo
+    fig.add_trace(go.Bar(
+        x=strikes,
+        y=gamma_calls,
+        name="Gamma CALL",
+        marker=dict(color=call_colors),
+        width=0.4,
+        hovertemplate=f"Current Price: ${current_price:.2f}<br>Gamma CALL: %{{y:.2f}}",
+    ))
+    fig.add_trace(go.Bar(
+        x=strikes,
+        y=gamma_puts,
+        name="Gamma PUT",
+        marker=dict(color=put_colors),
+        width=0.4,
+        hovertemplate=f"Current Price: ${current_price:.2f}<br>Gamma PUT: %{{y:.2f}}",
+    ))
+
+    # Línea vertical para Current Price
     y_min = min(gamma_calls + gamma_puts) * 1.1
     y_max = max(gamma_calls + gamma_puts) * 1.1
-    fig.add_trace(go.Scatter(x=[current_price, current_price], y=[y_min, y_max], mode="lines",
-                             line=dict(width=1, dash="dot", color="#39FF14"),
-                             name="Current Price",
-                             hovertemplate=f"Current Price: ${current_price:.2f}<br>",
-                             showlegend=False))
+    fig.add_trace(go.Scatter(
+        x=[current_price, current_price],
+        y=[y_min, y_max],
+        mode="lines",
+        line=dict(width=1, dash="dot", color="#39FF14"),
+        name="Current Price",
+        # Tooltip con más información y completamente transparente
+        hovertemplate=(
+            f"<b>Current Price:</b> ${current_price:.2f}<br>"
+            f"<b>Nearest Strike:</b> {min(strikes, key=lambda x: abs(x - current_price)):.2f}<br>"
+            f"<b>Max Gamma CALL:</b> {max(gamma_calls):.2f}<br>"
+            f"<b>Min Gamma PUT:</b> {min(gamma_puts):.2f}"
+        ),
+        showlegend=False,
+        hoverlabel=dict(
+            bgcolor="rgba(0,0,0,0)",  # Fondo completamente transparente
+            bordercolor="rgba(0,0,0,0)",  # Borde completamente transparente
+            font=dict(color="#39FF14", size=12)  # Letras verdes "en el aire"
+        )
+    ))
 
-    # Configuración del layout (sin líneas grises)
-    fig.update_traces(hoverlabel=dict(bgcolor="rgba(30,30,30,0.9)", bordercolor="white", font=dict(color="white", size=12)))
-    fig.update_layout(title="|GAMMA EXPOSURE|", xaxis_title="Strike", yaxis_title="Gamma Exposure", 
-                      template="plotly_dark", hovermode="x unified")
+    # Añadir label fijo profesional para Current Price
+    fig.add_annotation(
+        x=current_price,
+        y=y_max * 0.95,  # Posición cerca del tope del gráfico
+        text=f"Price: ${current_price:.2f}",
+        showarrow=False,
+        font=dict(color="#39FF14", size=10),  # Verde, pequeño y profesional
+        bgcolor="rgba(0,0,0,0.5)",  # Fondo semitransparente oscuro
+        bordercolor="#39FF14",  # Borde verde fino
+        borderwidth=1,
+        borderpad=4  # Espacio interno para un look limpio
+    )
+
+    # Configuración de los tooltips y layout
+    fig.update_traces(
+        hoverlabel=dict(
+            bgcolor="rgba(0,0,0,0.1)",  # Fondo muy transparente para las barras
+            bordercolor="rgba(255,255,255,0.3)",  # Borde casi invisible para las barras
+            font=dict(color="white", size=12)  # Texto blanco para las barras
+        )
+    )
+    fig.update_layout(
+        title="|GAMMA EXPOSURE|",
+        xaxis_title="Strike",
+        yaxis_title="Gamma Exposure",
+        template="plotly_dark",
+        hovermode="x",
+        xaxis=dict(
+            tickmode="array",
+            tickvals=strikes,
+            ticktext=[f"{s:.2f}" for s in strikes],
+            rangeslider=dict(visible=False),
+            showgrid=False
+        ),
+        yaxis=dict(showgrid=False),
+        bargap=0.2,
+        barmode="relative",
+    )
+
     return fig
 
 def plot_skew_analysis_with_totals(options_data, current_price=None):
@@ -1055,7 +1121,7 @@ def main():
       PRO SCANNER |®
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5, tab6= st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options"])
 
     with tab1:
         st.subheader("Options Scanner")
@@ -1223,19 +1289,64 @@ def main():
                         buy_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "buy")]
                         sell_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "sell")]
                         all_strikes = sorted(set(option_data["strike"]))
-                        buy_calls_data = pd.DataFrame({"strike": all_strikes}).merge(buy_calls[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
-                        sell_calls_data = pd.DataFrame({"strike": all_strikes}).merge(sell_calls[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
-                        buy_puts_data = pd.DataFrame({"strike": all_strikes}).merge(buy_puts[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
-                        sell_puts_data = pd.DataFrame({"strike": all_strikes}).merge(sell_puts[["strike", "open_interest"]], on="strike", how="left").fillna({"open_interest": 0})
+                        buy_calls_data = pd.DataFrame({"strike": all_strikes}).merge(buy_calls[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
+                        sell_calls_data = pd.DataFrame({"strike": all_strikes}).merge(sell_calls[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
+                        buy_puts_data = pd.DataFrame({"strike": all_strikes}).merge(buy_puts[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
+                        sell_puts_data = pd.DataFrame({"strike": all_strikes}).merge(sell_puts[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
                         fig = go.Figure()
-                        fig.add_trace(go.Bar(name="Buy Call", x=buy_calls_data["strike"], y=buy_calls_data["open_interest"],
-                                             marker_color="green", text="Buy Call", textposition="inside"))
-                        fig.add_trace(go.Bar(name="Sell Call", x=sell_calls_data["strike"], y=sell_calls_data["open_interest"],
-                                             marker_color="orange", text="Sell Call", textposition="inside"))
-                        fig.add_trace(go.Bar(name="Buy Put", x=buy_puts_data["strike"], y=-buy_puts_data["open_interest"],
-                                             marker_color="red", text="Buy Put", textposition="inside"))
-                        fig.add_trace(go.Bar(name="Sell Put", x=sell_puts_data["strike"], y=-sell_puts_data["open_interest"],
-                                             marker_color="purple", text="Sell Put", textposition="inside"))
+
+                        # Añadir barras con tooltips simples como en tab1
+                        fig.add_trace(go.Bar(
+                            x=buy_calls_data["strike"],
+                            y=buy_calls_data["open_interest"],
+                            name="Buy Call",
+                            marker_color="green",
+                            width=0.4,
+                            hovertemplate="%{y:,}",  # Solo el valor numérico de Open Interest
+                            text="Buy Call",
+                            textposition="inside"
+                        ))
+                        fig.add_trace(go.Bar(
+                            x=sell_calls_data["strike"],
+                            y=sell_calls_data["open_interest"],
+                            name="Sell Call",
+                            marker_color="orange",
+                            width=0.4,
+                            hovertemplate="%{y:,}",
+                            text="Sell Call",
+                            textposition="inside"
+                        ))
+                        fig.add_trace(go.Bar(
+                            x=buy_puts_data["strike"],
+                            y=-buy_puts_data["open_interest"],
+                            name="Buy Put",
+                            marker_color="red",
+                            width=0.4,
+                            hovertemplate="%{customdata:,}",  # Usar customdata para mostrar el valor positivo
+                            customdata=[abs(oi) for oi in buy_puts_data["open_interest"]],
+                            text="Buy Put",
+                            textposition="inside"
+                        ))
+                        fig.add_trace(go.Bar(
+                            x=sell_puts_data["strike"],
+                            y=-sell_puts_data["open_interest"],
+                            name="Sell Put",
+                            marker_color="purple",
+                            width=0.4,
+                            hovertemplate="%{customdata:,}",
+                            customdata=[abs(oi) for oi in sell_puts_data["open_interest"]],
+                            text="Sell Put",
+                            textposition="inside"
+                        ))
+
+                        # Configurar transparencia para las barras como en tab1
+                        fig.update_traces(
+                            hoverlabel=dict(
+                                bgcolor="rgba(0,0,0,0.1)",  # Fondo muy transparente
+                                bordercolor="rgba(255,255,255,0.3)",  # Borde casi invisible
+                                font=dict(color="white", size=12)  # Texto blanco
+                            )
+                        )
 
                         # Cálculo combinado ajustado para la dirección del MM
                         max_pain = calculate_max_pain_optimized(option_data_list)
@@ -1254,27 +1365,84 @@ def main():
                         direction_mm = "Down" if combined_score < 0 else "Up" if combined_score > 0 else "Neutral"
                         st.write(f"Debug: Current Price = {current_price}, Max Pain = {max_pain}, OI Pressure = {oi_pressure}, Net Gamma = {net_gamma}, Combined Score = {combined_score}, Direction = {direction_mm}")
 
-                        # Añadir línea vertical para Current Price (delgada, con label transparente)
+                        # Añadir línea vertical para Current Price con label fijo y tooltip como en tab1
                         y_max = max(buy_calls_data["open_interest"].max() or 0, sell_calls_data["open_interest"].max() or 0) * 1.1 or 100
-                        fig.add_trace(go.Scatter(x=[current_price, current_price], y=[-y_max, y_max], mode="lines",
-                                                 line=dict(width=1, dash="dash", color="yellow"),
-                                                 name="Current Price",
-                                                 hovertemplate=f"Current Price: ${current_price:.2f}<br>",
-                                                 showlegend=False))
+                        y_min = -y_max
+                        fig.add_trace(go.Scatter(
+                            x=[current_price, current_price],
+                            y=[y_min, y_max],
+                            mode="lines",
+                            line=dict(width=1, dash="dash", color="#39FF14"),  # Color verde como en tab1
+                            name="Current Price",
+                            hovertemplate=(
+                                f"<b>Current Price:</b> ${current_price:.2f}<br>"
+                                f"<b>Max Pain:</b> ${max_pain:.2f}<br>"
+                                f"<b>Total Call OI:</b> {total_call_oi:,}<br>"
+                                f"<b>Total Put OI:</b> {total_put_oi:,}<br>"
+                                f"<b>Net Gamma:</b> {net_gamma:.2f}<br>"
+                                f"<b>MM Direction:</b> {direction_mm}"
+                            ),
+                            showlegend=False,
+                            hoverlabel=dict(
+                                bgcolor="rgba(0,0,0,0)",  # Fondo completamente transparente
+                                bordercolor="rgba(0,0,0,0)",  # Borde completamente transparente
+                                font=dict(color="#39FF14", size=12)  # Letras verdes como en tab1
+                            )
+                        ))
+
+                        # Añadir label fijo profesional para Current Price como en tab1
+                        fig.add_annotation(
+                            x=current_price,
+                            y=y_max * 0.95,
+                            text=f"Price: ${current_price:.2f}",
+                            showarrow=False,
+                            font=dict(color="#39FF14", size=10),  # Verde como en tab1
+                            bgcolor="rgba(0,0,0,0.5)",
+                            bordercolor="#39FF14",
+                            borderwidth=1,
+                            borderpad=4
+                        )
 
                         # Añadir anotación dinámica para la dirección del MM con colores
                         score_color = "red" if combined_score < 0 else "green" if combined_score > 0 else "white"
-                        fig.add_annotation(x=current_price, y=y_max * 0.9,
-                                          text=f"MM Score: <span style='color:{score_color}'>{combined_score:.2f}</span><br>{direction_mm}",
-                                          showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1, arrowcolor="yellow",
-                                          font=dict(size=12), ax=20, ay=-30, bgcolor="rgba(0,0,0,0.5)", bordercolor="yellow")
+                        fig.add_annotation(
+                            x=current_price,
+                            y=y_max * 0.9,
+                            text=f"MM Score: <span style='color:{score_color}'>{combined_score:.2f}</span><br>{direction_mm}",
+                            showarrow=True,
+                            arrowhead=2,
+                            arrowsize=1,
+                            arrowwidth=1,
+                            arrowcolor="#39FF14",  # Verde como en tab1
+                            font=dict(size=12),
+                            ax=20,
+                            ay=-30,
+                            bgcolor="rgba(0,0,0,0.5)",
+                            bordercolor="#39FF14"
+                        )
 
-                        # Ajustar layout para tamaño grande
-                        fig.update_layout(title=f"Calls and Puts for {stock} (Expiration: {selected_expiration})",
-                                          xaxis_title="Strike Price", yaxis_title="Open Interest", barmode="relative",
-                                          showlegend=True, legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                                          xaxis=dict(range=[min(all_strikes) - 10, max(all_strikes) + 10]),
-                                          height=600)
+                        # Ajustar layout para precisión y funcionalidad como en tab1
+                        fig.update_layout(
+                            title=f"Calls and Puts for {stock} (Expiration: {selected_expiration})",
+                            xaxis_title="Strike Price",
+                            yaxis_title="Open Interest",
+                            barmode="relative",
+                            showlegend=True,
+                            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+                            xaxis=dict(
+                                tickmode="array",
+                                tickvals=all_strikes,
+                                ticktext=[f"{s:.2f}" for s in all_strikes],
+                                range=[min(all_strikes) - 10, max(all_strikes) + 10],
+                                showgrid=False,
+                                rangeslider=dict(visible=True)
+                            ),
+                            yaxis=dict(showgrid=False),
+                            hovermode="x",
+                            bargap=0.2,
+                            height=600,
+                            template="plotly_dark"  # Tema oscuro como en tab1
+                        )
 
                         # Mostrar gráfica con tamaño completo
                         st.plotly_chart(fig, use_container_width=True, height=600)
@@ -1352,8 +1520,6 @@ def main():
                     st.dataframe(styled_df, height=400)
                 else:
                     st.error(f"No alerts generated with Open Interest ≥ {selected_volume}, Gamma ≥ {selected_gamma}. Check logs.")
-
-    
 
 if __name__ == "__main__":
     main()
