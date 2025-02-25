@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
 from typing import List, Dict, Optional, Tuple
-from yahoo_fin import stock_info as si
+
 
 # --- Configuración de Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
