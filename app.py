@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
 from typing import List, Dict, Optional, Tuple
+from yahoo_fin import stock_info as si
 
 # --- Configuración de Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,34 +40,7 @@ INITIAL_DELAY = 1
 RISK_FREE_RATE = 0.045
 
 # --- Lista de Tickers ---
-all_tickers = [
-    "AAPL", "MSFT", "NVDA", "GOOG", "AMZN", "META", "TSLA", "ADBE", "INTC", "NFLX",
-    "QCOM", "CSCO", "AMD", "PYPL", "AVGO", "AMAT", "TXN", "MRVL", "INTU", "SHOP",
-    "JD", "ZM", "DOCU", "CRWD", "SNOW", "ZS", "PANW", "SPLK", "MDB", "OKTA",
-    "ROKU", "ALGN", "ADSK", "DXCM", "TEAM", "PDD", "MELI", "BIDU", "BABA", "NTES",
-    "ATVI", "EA", "ILMN", "EXPE", "SIRI", "KLAC", "LRCX", "ASML", "SWKS", "XLNX",
-    "WDAY", "TTWO", "VRTX", "REGN", "BIIB", "SGEN", "MAR", "CTSH", "FISV", "MTCH",
-    "TTD", "SPLK", "PTON", "DOCS", "UPST", "HIMS", "CRSP", "NVCR", "EXAS", "ARKK",
-    "ZS", "TWLO", "U", "HUBS", "VIX", "BILL", "ZI", "GTLB", "NET", "FVRR",
-    "TTD", "COIN", "RBLX", "DKNG", "SPOT", "SNAP", "PINS", "MTCH", "LYFT", "GRPN",
-    "BRK.B", "JNJ", "V", "PG", "JPM", "HD", "DIS", "MA", "UNH", "PFE", "KO", "PEP",
-    "BAC", "WMT", "XOM", "CVX", "ABT", "TMO", "MRK", "MCD", "CAT", "GS", "MMM",
-    "RTX", "IBM", "DOW", "GE", "BA", "LMT", "FDX", "T", "VZ", "NKE", "AXP", "ORCL",
-    "CSX", "USB", "SPG", "AMT", "PLD", "CCI", "PSA", "CB", "BK", "SCHW", "TFC", "SO",
-    "D", "DUK", "NEE", "EXC", "SRE", "AEP", "EIX", "PPL", "PEG", "FE", "AEE", "AES",
-    "ETR", "XEL", "AWK", "WEC", "ED", "ES", "CNP", "CMS", "DTE", "EQT", "OGE",
-    "OKE", "SWX", "WMB", "APA", "DVN", "FANG", "MRO", "PXD", "HAL", "SLB", "COP",
-    "CVX", "XOM", "PSX", "MPC", "VLO", "HES", "OXY", "EOG", "KMI", "WES", "DJT", "BITX", "SMCI", "ENPH",
-    "PLTR", "ROKU", "SQ", "AFRM", "UPST", "FVRR", "ETSY", "NET", "DDOG", "TWLO",
-    "U", "HUBS", "DOCN", "GTLB", "SMAR", "PATH", "COUP", "ASAN", "RBLX", "DKNG",
-    "BILL", "ZI", "TTD", "CRSP", "NVCR", "EXAS", "ARKK", "MTCH", "LYFT", "GRPN",
-    "BB", "CLF", "FUBO", "CLOV", "NNDM", "SKLZ", "SPCE", "SNDL", "WKHS", "GME",
-    "AMC", "BBBY", "APRN", "SPWR", "RUN", "FCEL", "PLUG", "SOLO", "KNDI", "XPEV",
-    "LI", "NIO", "RIDE", "NKLA", "QS", "LCID", "FSR", "PSNY", "GOEV", "WKHS",
-    "VRM", "BABA", "JD", "PDD", "BIDU", "TCEHY", "NTES", "IQ", "HUYA", "DOYU",
-    "EDU", "TAL", "ZH", "DIDI", "YMM", "BILI", "PDD", "LU", "QD", "FINV",
-    "OCGN", "NVTA", "CRSP", "BEAM", "EDIT", "NTLA", "PACB", "TWST", "FLGT", "FATE"
-]
+
 
 # --- Autenticación ---
 def initialize_passwords_file():
@@ -246,27 +220,52 @@ def get_historical_prices_combined(symbol, period="daily", limit=30):
 @st.cache_data(ttl=CACHE_TTL)
 def get_stock_list_combined():
     """Obtener lista de acciones combinando FMP y Tradier."""
+    combined_tickers = set()  # Usamos un set para evitar duplicados
+
+    # 1. Obtener lista de FMP
     try:
-        response = requests.get(f"{FMP_BASE_URL}/stock-screener", params={"apikey": FMP_API_KEY, "marketCapMoreThan": 1_000_000_000, "volumeMoreThan": 500_000, "priceMoreThan": 10, "priceLessThan": 100, "betaMoreThan": 1})
+        response = requests.get(
+            f"{FMP_BASE_URL}/stock-screener",
+            params={
+                "apikey": FMP_API_KEY,
+                "marketCapMoreThan": 1_000_000_000,  # Capitalización > $1B
+                "volumeMoreThan": 500_000,           # Volumen > 500k
+                "priceMoreThan": 5,                  # Precio > $5
+                "exchange": "NASDAQ,NYSE"            # Solo NASDAQ y NYSE
+            }
+        )
         response.raise_for_status()
         data = response.json()
-        stock_list = [stock["symbol"] for stock in data]
-        if stock_list:
-            return stock_list[:200]  # Limitar para rapidez inicial
+        fmp_tickers = [stock["symbol"] for stock in data if stock.get("isActivelyTrading", True)]
+        combined_tickers.update(fmp_tickers[:200])  # Limitamos a 200 por velocidad
+        logger.info(f"FMP returned {len(fmp_tickers)} tickers")
     except Exception as e:
         logger.error(f"FMP stock list failed: {str(e)}")
-    
-    tickers_batch = all_tickers[:200]
-    url_tradier = f"{TRADIER_BASE_URL}/markets/quotes"
-    params_tradier = {"symbols": ",".join(tickers_batch)}
-    data_tradier = fetch_api_data(url_tradier, params_tradier, HEADERS_TRADIER, "Tradier")
-    if data_tradier and "quotes" in data_tradier and "quote" in data_tradier["quotes"]:
-        quotes = data_tradier["quotes"]["quote"]
-        if isinstance(quotes, dict):
-            quotes = [quotes]
-        return [quote["symbol"] for quote in quotes if quote.get("last", 0) > 10 and quote.get("volume", 0) > 500_000]
-    
-    return all_tickers[:100]
+
+    # 2. Obtener lista de Tradier (usamos endpoint de quotes con múltiples símbolos)
+    try:
+        # Tradier no tiene un endpoint directo de "screener", así que usamos una lista inicial de índices o ETFs populares
+        initial_tickers = "SPY,QQQ,DIA,IWM,TSLA,AAPL,MSFT,NVDA,GOOGL,AMZN,META"  # Base inicial
+        url_tradier = f"{TRADIER_BASE_URL}/markets/quotes"
+        params_tradier = {"symbols": initial_tickers}
+        data_tradier = fetch_api_data(url_tradier, params_tradier, HEADERS_TRADIER, "Tradier")
+        if data_tradier and "quotes" in data_tradier and "quote" in data_tradier["quotes"]:
+            quotes = data_tradier["quotes"]["quote"]
+            if isinstance(quotes, dict):
+                quotes = [quotes]
+            tradier_tickers = [
+                quote["symbol"] for quote in quotes
+                if quote.get("last", 0) > 5 and quote.get("volume", 0) > 500_000
+            ]
+            combined_tickers.update(tradier_tickers)
+            logger.info(f"Tradier returned {len(tradier_tickers)} tickers")
+    except Exception as e:
+        logger.error(f"Tradier stock list failed: {str(e)}")
+
+    # Convertimos a lista y limitamos el resultado
+    final_list = list(combined_tickers)
+    logger.info(f"Combined unique tickers: {len(final_list)}")
+    return final_list[:200]  # Máximo 200 para mantener rendimiento
 
 # --- Funciones de Análisis ---
 def analyze_contracts(ticker, expiration, current_price):
@@ -1038,8 +1037,9 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
     return suggestions
 
 
-# --- Main App ---
 
+
+# --- Main App ---
 # --- Main App ---
 def main():
     st.set_page_config(page_title="O Z Y |  DATA®", page_icon="♾️", layout="wide", initial_sidebar_state="expanded")
@@ -1055,7 +1055,7 @@ def main():
       PRO SCANNER |®
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options", "Earnings Calendar"])
 
     with tab1:
         st.subheader("Options Scanner")
@@ -1141,7 +1141,7 @@ def main():
                         for _, row in df_results.iterrows():
                             color = "green" if row.get("Breakout Type") == "Up" else "red" if row.get("Breakout Type") == "Down" else "blue"
                             fig.add_trace(go.Bar(x=[row["Symbol"]], y=[row["Volume"]], marker_color=color,
-                                                 hovertext=f"Symbol: {row['Symbol']}<br>Volume: {row['Volume']:,}<br>Breakout: {row.get('Breakout Type', 'N/A')}<br>Change: {row.get('Possible Change (%)', 'N/A')}%"))
+                                                hovertext=f"Symbol: {row['Symbol']}<br>Volume: {row['Volume']:,}<br>Breakout: {row.get('Breakout Type', 'N/A')}<br>Change: {row.get('Possible Change (%)', 'N/A')}%"))
                         fig.update_layout(title="📊 Volume Distribution", xaxis_title="Stock Symbol", yaxis_title="Volume", template="plotly_dark")
                         st.plotly_chart(fig, use_container_width=True)
                 else:
@@ -1204,7 +1204,7 @@ def main():
                     st.write(f"- **EBITDA**: ${financial_metrics.get('EBITDA', 0):,.2f}")
                     st.write(f"- **Revenue**: ${financial_metrics.get('Revenue', 0):,.2f}")
                     st.write(f"- **Net Income**: ${financial_metrics.get('Net Income', 0):,.2f}")
-                    st.write(f"- **ROE**: {financial_metrics.get('ROE', 0):.2f}")
+                    st.write(f"- **ROE**: {financial_metrics.get('ROE', 0):,.2f}")
                     st.write(f"- **Beta**: ${financial_metrics.get('Beta', 0):,.2f}")
                     st.write(f"- **PE Ratio**: ${financial_metrics.get('PE Ratio', 0):,.2f}")
                     st.write(f"- **Debt-to-Equity Ratio**: {financial_metrics.get('Debt-to-Equity Ratio', 0):.2f}")
@@ -1353,8 +1353,7 @@ def main():
                 else:
                     st.error(f"No alerts generated with Open Interest ≥ {selected_volume}, Gamma ≥ {selected_gamma}. Check logs.")
 
-    st.markdown("---")
-    st.markdown("*Developed by Ozy | © 2025*")
+    
 
 if __name__ == "__main__":
     main()
