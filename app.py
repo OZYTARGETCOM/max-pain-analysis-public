@@ -1055,7 +1055,7 @@ def main():
       PRO SCANNER |®
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options", "Earnings Calendar"])
+    tab1, tab2, tab3, tab4, tab5, tab6= st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options"])
 
     with tab1:
         st.subheader("Options Scanner")
