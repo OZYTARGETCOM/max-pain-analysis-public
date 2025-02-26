@@ -1104,6 +1104,95 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
 
 
 
+    with tab7:
+        st.subheader("Elliott Wave Options Predictor")
+        ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="elliott_ticker").upper()
+        expiration_dates = get_expiration_dates(ticker)
+        if not expiration_dates:
+            st.error(f"No expiration dates found for '{ticker}'. Try a valid ticker (e.g., SPY).")
+            return
+        selected_expiration = st.selectbox("Expiration Date", expiration_dates, key="elliott_exp_date")
+        volume_threshold = st.slider("Min Open Interest (millions)", 0.1, 2.0, 0.5, step=0.1, key="elliott_vol") * 1_000_000
+
+        with st.spinner(f"Fetching data for {ticker}..."):
+            current_price = get_current_price(ticker)
+            if current_price == 0.0:
+                st.error(f"Unable to fetch current price for '{ticker}'.")
+                return
+            options_data = get_options_data(ticker, selected_expiration)
+            if not options_data:
+                st.error("No options data available.")
+                return
+
+            # Procesar datos para gamma y volumen
+            strikes_data = {}
+            for opt in options_data:
+                strike = float(opt.get("strike", 0))
+                opt_type = opt.get("option_type", "").upper()
+                oi = int(opt.get("open_interest", 0))
+                greeks = opt.get("greeks", {})
+                gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
+                intrinsic = max(current_price - strike, 0) if opt_type == "CALL" else max(strike - current_price, 0)
+                if strike not in strikes_data:
+                    strikes_data[strike] = {"CALL": {"OI": 0, "Gamma": 0, "Intrinsic": 0}, "PUT": {"OI": 0, "Gamma": 0, "Intrinsic": 0}}
+                strikes_data[strike][opt_type]["OI"] += oi
+                strikes_data[strike][opt_type]["Gamma"] += gamma * oi  # Gamma ponderado por OI
+                strikes_data[strike][opt_type]["Intrinsic"] = intrinsic
+
+            # Filtrar strikes con OI >= threshold y calcular gamma neto
+            strikes = sorted(strikes_data.keys())
+            call_gamma = []
+            put_gamma = []
+            net_gamma = []
+            intrinsic_values = []
+            for strike in strikes:
+                call_oi = strikes_data[strike]["CALL"]["OI"]
+                put_oi = strikes_data[strike]["PUT"]["OI"]
+                if call_oi >= volume_threshold or put_oi >= volume_threshold:
+                    cg = strikes_data[strike]["CALL"]["Gamma"]
+                    pg = strikes_data[strike]["PUT"]["Gamma"]
+                    call_gamma.append(cg)
+                    put_gamma.append(-pg)
+                    net_gamma.append(cg - pg)
+                    intrinsic_values.append(max(strikes_data[strike]["CALL"]["Intrinsic"], strikes_data[strike]["PUT"]["Intrinsic"]))
+                else:
+                    call_gamma.append(0)
+                    put_gamma.append(0)
+                    net_gamma.append(0)
+                    intrinsic_values.append(0)
+
+            # Encontrar el strike con mayor gamma neto absoluto más cercano al precio actual
+            nearest_strike_idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - current_price) if abs(net_gamma[i]) > 0 else float('inf'))
+            if nearest_strike_idx == float('inf'):
+                st.warning("No significant gamma found above volume threshold.")
+                return
+            target_strike = strikes[nearest_strike_idx]
+            target_gamma = net_gamma[nearest_strike_idx]
+            predicted_move = "Up" if target_gamma > 0 else "Down"
+
+            # Crear gráfica
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=strikes, y=call_gamma, name="CALL Gamma", marker_color="green", width=0.4))
+            fig.add_trace(go.Bar(x=strikes, y=put_gamma, name="PUT Gamma", marker_color="red", width=0.4))
+            fig.add_trace(go.Scatter(x=[current_price, current_price], y=[min(put_gamma) * 1.1, max(call_gamma) * 1.1], 
+                                    mode="lines", line=dict(color="#39FF14", dash="dash"), name="Current Price"))
+            fig.add_trace(go.Scatter(x=[target_strike], y=[target_gamma], mode="markers+text", marker=dict(size=15, color="yellow"),
+                                    text=[f"Target: ${target_strike:.2f}"], textposition="top center", name="Predicted Move"))
+
+            fig.update_layout(
+                title=f"Elliott Wave Prediction for {ticker} (Exp: {selected_expiration})",
+                xaxis_title="Strike Price",
+                yaxis_title="Gamma Exposure",
+                barmode="relative",
+                template="plotly_dark",
+                annotations=[dict(x=target_strike, y=max(call_gamma) * 0.9, text=f"Next Move: {predicted_move}", showarrow=True, arrowhead=2, 
+                                font=dict(color="yellow", size=12))]
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            st.write(f"Predicted Next Move: {predicted_move} towards ${target_strike:.2f} (Intrinsic Value: ${intrinsic_values[nearest_strike_idx]:.2f})")
+
+
+
 
 # --- Main App ---
 # --- Main App ---
@@ -1121,7 +1210,7 @@ def main():
       PRO SCANNER |®
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options", "Elliott Predictor"])
 
     with tab1:
         st.subheader("Options Scanner")
@@ -1295,14 +1384,13 @@ def main():
                         sell_puts_data = pd.DataFrame({"strike": all_strikes}).merge(sell_puts[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
                         fig = go.Figure()
 
-                        # Añadir barras con tooltips simples como en tab1
                         fig.add_trace(go.Bar(
                             x=buy_calls_data["strike"],
                             y=buy_calls_data["open_interest"],
                             name="Buy Call",
                             marker_color="green",
                             width=0.4,
-                            hovertemplate="%{y:,}",  # Solo el valor numérico de Open Interest
+                            hovertemplate="%{y:,}",
                             text="Buy Call",
                             textposition="inside"
                         ))
@@ -1322,7 +1410,7 @@ def main():
                             name="Buy Put",
                             marker_color="red",
                             width=0.4,
-                            hovertemplate="%{customdata:,}",  # Usar customdata para mostrar el valor positivo
+                            hovertemplate="%{customdata:,}",
                             customdata=[abs(oi) for oi in buy_puts_data["open_interest"]],
                             text="Buy Put",
                             textposition="inside"
@@ -1339,24 +1427,22 @@ def main():
                             textposition="inside"
                         ))
 
-                        # Configurar transparencia para las barras como en tab1
                         fig.update_traces(
                             hoverlabel=dict(
-                                bgcolor="rgba(0,0,0,0.1)",  # Fondo muy transparente
-                                bordercolor="rgba(255,255,255,0.3)",  # Borde casi invisible
-                                font=dict(color="white", size=12)  # Texto blanco
+                                bgcolor="rgba(0,0,0,0.1)",
+                                bordercolor="rgba(255,255,255,0.3)",
+                                font=dict(color="white", size=12)
                             )
                         )
 
-                        # Cálculo combinado ajustado para la dirección del MM
                         max_pain = calculate_max_pain_optimized(option_data_list)
                         total_call_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "call" and row["strike"] > current_price)
                         total_put_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "put" and row["strike"] < current_price)
                         total_oi = total_call_oi + total_put_oi
                         gamma_calls = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0 
-                                          for row in option_data_list if row["option_type"] == "call" and "greeks" in row)
+                                        for row in option_data_list if row["option_type"] == "call" and "greeks" in row)
                         gamma_puts = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0 
-                                         for row in option_data_list if row["option_type"] == "put" and "greeks" in row)
+                                        for row in option_data_list if row["option_type"] == "put" and "greeks" in row)
                         net_gamma = gamma_calls - gamma_puts
                         max_pain_factor = -2 if current_price > max_pain else 2 if current_price < max_pain else 0
                         oi_pressure = (total_call_oi - total_put_oi) / max(total_oi, 1)
@@ -1365,14 +1451,13 @@ def main():
                         direction_mm = "Down" if combined_score < 0 else "Up" if combined_score > 0 else "Neutral"
                         st.write(f"Debug: Current Price = {current_price}, Max Pain = {max_pain}, OI Pressure = {oi_pressure}, Net Gamma = {net_gamma}, Combined Score = {combined_score}, Direction = {direction_mm}")
 
-                        # Añadir línea vertical para Current Price con label fijo y tooltip como en tab1
                         y_max = max(buy_calls_data["open_interest"].max() or 0, sell_calls_data["open_interest"].max() or 0) * 1.1 or 100
                         y_min = -y_max
                         fig.add_trace(go.Scatter(
                             x=[current_price, current_price],
                             y=[y_min, y_max],
                             mode="lines",
-                            line=dict(width=1, dash="dash", color="#39FF14"),  # Color verde como en tab1
+                            line=dict(width=1, dash="dash", color="#39FF14"),
                             name="Current Price",
                             hovertemplate=(
                                 f"<b>Current Price:</b> ${current_price:.2f}<br>"
@@ -1384,26 +1469,24 @@ def main():
                             ),
                             showlegend=False,
                             hoverlabel=dict(
-                                bgcolor="rgba(0,0,0,0)",  # Fondo completamente transparente
-                                bordercolor="rgba(0,0,0,0)",  # Borde completamente transparente
-                                font=dict(color="#39FF14", size=12)  # Letras verdes como en tab1
+                                bgcolor="rgba(0,0,0,0)",
+                                bordercolor="rgba(0,0,0,0)",
+                                font=dict(color="#39FF14", size=12)
                             )
                         ))
 
-                        # Añadir label fijo profesional para Current Price como en tab1
                         fig.add_annotation(
                             x=current_price,
                             y=y_max * 0.95,
                             text=f"Price: ${current_price:.2f}",
                             showarrow=False,
-                            font=dict(color="#39FF14", size=10),  # Verde como en tab1
+                            font=dict(color="#39FF14", size=10),
                             bgcolor="rgba(0,0,0,0.5)",
                             bordercolor="#39FF14",
                             borderwidth=1,
                             borderpad=4
                         )
 
-                        # Añadir anotación dinámica para la dirección del MM con colores
                         score_color = "red" if combined_score < 0 else "green" if combined_score > 0 else "white"
                         fig.add_annotation(
                             x=current_price,
@@ -1413,7 +1496,7 @@ def main():
                             arrowhead=2,
                             arrowsize=1,
                             arrowwidth=1,
-                            arrowcolor="#39FF14",  # Verde como en tab1
+                            arrowcolor="#39FF14",
                             font=dict(size=12),
                             ax=20,
                             ay=-30,
@@ -1421,7 +1504,6 @@ def main():
                             bordercolor="#39FF14"
                         )
 
-                        # Ajustar layout para precisión y funcionalidad como en tab1
                         fig.update_layout(
                             title=f"Calls and Puts for {stock} (Expiration: {selected_expiration})",
                             xaxis_title="Strike Price",
@@ -1441,10 +1523,9 @@ def main():
                             hovermode="x",
                             bargap=0.2,
                             height=600,
-                            template="plotly_dark"  # Tema oscuro como en tab1
+                            template="plotly_dark"
                         )
 
-                        # Mostrar gráfica con tamaño completo
                         st.plotly_chart(fig, use_container_width=True, height=600)
 
     with tab6:
@@ -1520,6 +1601,102 @@ def main():
                     st.dataframe(styled_df, height=400)
                 else:
                     st.error(f"No alerts generated with Open Interest ≥ {selected_volume}, Gamma ≥ {selected_gamma}. Check logs.")
+
+    with tab7:
+        st.subheader("Elliott Wave Gamma Direction")
+        ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="elliott_ticker").upper()
+        expiration_dates = get_expiration_dates(ticker)
+        if not expiration_dates:
+            st.error(f"No expiration dates found for '{ticker}'. Try a valid ticker (e.g., SPY).")
+            return
+        selected_expiration = st.selectbox("Select Expiration Date", expiration_dates, key="elliott_exp_date")
+        volume_threshold = st.slider("Min Open Interest (millions)", 0.0001, 5.0, 0.1, step=0.0001, key="elliott_vol") * 1_000_000
+
+        with st.spinner(f"Fetching data for {ticker} on {selected_expiration}..."):
+            current_price = get_current_price(ticker)
+            if current_price == 0.0:
+                st.error(f"Unable to fetch current price for '{ticker}'.")
+                return
+            options_data = get_options_data(ticker, selected_expiration)
+            if not options_data:
+                st.error(f"No options data available for {selected_expiration}.")
+                return
+
+            strikes_data = {}
+            for opt in options_data:
+                strike = float(opt.get("strike", 0))
+                opt_type = opt.get("option_type", "").upper()
+                oi = int(opt.get("open_interest", 0))
+                greeks = opt.get("greeks", {})
+                gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
+                intrinsic = max(current_price - strike, 0) if opt_type == "CALL" else max(strike - current_price, 0)
+                if strike not in strikes_data:
+                    strikes_data[strike] = {"CALL": {"OI": 0, "Gamma": 0, "Intrinsic": 0}, "PUT": {"OI": 0, "Gamma": 0, "Intrinsic": 0}}
+                strikes_data[strike][opt_type]["OI"] += oi
+                strikes_data[strike][opt_type]["Gamma"] += gamma * oi
+                strikes_data[strike][opt_type]["Intrinsic"] = intrinsic
+
+            strikes = sorted(strikes_data.keys())
+            call_gamma = []
+            put_gamma = []
+            net_gamma = []
+            for strike in strikes:
+                call_oi = strikes_data[strike]["CALL"]["OI"]
+                put_oi = strikes_data[strike]["PUT"]["OI"]
+                if call_oi >= volume_threshold or put_oi >= volume_threshold:
+                    cg = strikes_data[strike]["CALL"]["Gamma"]
+                    pg = strikes_data[strike]["PUT"]["Gamma"]
+                    call_gamma.append(cg)
+                    put_gamma.append(-pg)
+                    net_gamma.append(cg - pg)
+                else:
+                    call_gamma.append(0)
+                    put_gamma.append(0)
+                    net_gamma.append(0)
+
+            significant_strikes = [(strike, ng, strikes_data[strike]["CALL"]["OI"] + strikes_data[strike]["PUT"]["OI"]) 
+                                  for strike, ng in zip(strikes, net_gamma) if abs(ng) > 0]
+            if not significant_strikes:
+                st.warning(f"No significant gamma found above volume threshold ({volume_threshold/1_000_000:.4f}M) for {selected_expiration}.")
+                return
+
+            sorted_by_volume = sorted(significant_strikes, key=lambda x: x[2], reverse=True)
+            wave_points = sorted_by_volume[:5]
+            wave_strikes = [point[0] for point in wave_points]
+            wave_gamma = [point[1] for point in wave_points]
+
+            if 590 in strikes and strikes_data[590]["CALL"]["OI"] + strikes_data[590]["PUT"]["OI"] >= volume_threshold:
+                if 590 not in wave_strikes:
+                    min_volume_idx = min(range(len(wave_points)), key=lambda i: wave_points[i][2])
+                    if wave_points[min_volume_idx][2] < strikes_data[590]["CALL"]["OI"] + strikes_data[590]["PUT"]["OI"]:
+                        wave_points[min_volume_idx] = (590, strikes_data[590]["CALL"]["Gamma"] - strikes_data[590]["PUT"]["Gamma"], 
+                                                      strikes_data[590]["CALL"]["OI"] + strikes_data[590]["PUT"]["OI"])
+                        wave_strikes = [point[0] for point in wave_points]
+                        wave_gamma = [point[1] for point in wave_points]
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=strikes, y=call_gamma, name="CALL Gamma", marker_color="green", width=0.4, opacity=0.6))
+            fig.add_trace(go.Bar(x=strikes, y=put_gamma, name="PUT Gamma", marker_color="red", width=0.4, opacity=0.6))
+            fig.add_trace(go.Scatter(x=[current_price, current_price], y=[min(put_gamma) * 1.1, max(call_gamma) * 1.1], 
+                                    mode="lines", line=dict(color="#39FF14", dash="dash", width=2), name="Current Price"))
+            fig.add_trace(go.Scatter(x=wave_strikes, y=wave_gamma, mode="lines+markers+text", name="Wave Direction",
+                                    line=dict(color="yellow", width=1), marker=dict(size=12, symbol="circle"),
+                                    text=[f"${s:.2f}" for s in wave_strikes], textposition="top center",
+                                    hovertemplate="Strike: %{x:.2f}<br>Gamma: %{y:.2f}"))
+
+            fig.update_layout(
+                title=f"Gamma Direction for {ticker} (Exp: {selected_expiration})",
+                xaxis_title="Strike Price",
+                yaxis_title="Gamma Exposure",
+                barmode="relative",
+                template="plotly_dark",
+                hovermode="x unified",
+                height=600
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("*Developed by Ozy | © 2025*")
 
 if __name__ == "__main__":
     main()
