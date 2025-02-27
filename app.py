@@ -443,7 +443,7 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes):
         name="Gamma CALL",
         marker=dict(color=call_colors),
         width=0.4,
-        hovertemplate=f"Current Price: ${current_price:.2f}<br>Gamma CALL: %{{y:.2f}}",
+        hovertemplate="Gamma CALL: %{y:.2f}",  # Sin Current Price
     ))
     fig.add_trace(go.Bar(
         x=strikes,
@@ -451,7 +451,7 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes):
         name="Gamma PUT",
         marker=dict(color=put_colors),
         width=0.4,
-        hovertemplate=f"Current Price: ${current_price:.2f}<br>Gamma PUT: %{{y:.2f}}",
+        hovertemplate="Gamma PUT: %{y:.2f}",  # Sin Current Price
     ))
 
     # Línea vertical para Current Price
@@ -463,13 +463,7 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes):
         mode="lines",
         line=dict(width=1, dash="dot", color="#39FF14"),
         name="Current Price",
-        # Tooltip con más información y completamente transparente
-        hovertemplate=(
-            f"<b>Current Price:</b> ${current_price:.2f}<br>"
-            f"<b>Nearest Strike:</b> {min(strikes, key=lambda x: abs(x - current_price)):.2f}<br>"
-            f"<b>Max Gamma CALL:</b> {max(gamma_calls):.2f}<br>"
-            f"<b>Min Gamma PUT:</b> {min(gamma_puts):.2f}"
-        ),
+        hovertemplate="",  # Tooltip vacío para evitar redundancia
         showlegend=False,
         hoverlabel=dict(
             bgcolor="rgba(0,0,0,0)",  # Fondo completamente transparente
@@ -1105,7 +1099,7 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
 
 
     with tab7:
-        st.subheader("Elliott Wave Options Predictor")
+        st.subheader("Elliott Pulse")
         ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="elliott_ticker").upper()
         expiration_dates = get_expiration_dates(ticker)
         if not expiration_dates:
@@ -1180,7 +1174,7 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
                                     text=[f"Target: ${target_strike:.2f}"], textposition="top center", name="Predicted Move"))
 
             fig.update_layout(
-                title=f"Elliott Wave Prediction for {ticker} (Exp: {selected_expiration})",
+                title=f"Elliott Pulse {ticker} (Exp: {selected_expiration})",
                 xaxis_title="Strike Price",
                 yaxis_title="Gamma Exposure",
                 barmode="relative",
@@ -1210,7 +1204,7 @@ def main():
       PRO SCANNER |®
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options", "Elliott Predictor"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options", "Elliott Pulse"])
 
     with tab1:
         st.subheader("Options Scanner")
@@ -1330,7 +1324,21 @@ def main():
         if ticker:
             holders = get_institutional_holders_list(ticker)
             if holders is not None and not holders.empty:
-                st.dataframe(holders)
+                # Función para aplicar estilo condicional
+                def color_negative(row):
+                    if 'Change' in row and row['Change'] < 0:  # Si hay columna "Change" y es negativa
+                        return ['color: #FF4500'] * len(row)  # Rojo para toda la fila
+                    elif 'Shares' in row and row['Shares'] < 0:  # Si "Shares" es negativa (menos común)
+                        return ['color: #FF4500'] * len(row)
+                    return [''] * len(row)  # Sin color si no hay cambio negativo
+
+                # Aplicar estilo y mostrar la tabla
+                styled_holders = holders.style.apply(color_negative, axis=1).format({
+                    'Shares': '{:,.0f}',
+                    'Change': '{:,.0f}' if 'Change' in holders.columns else None,
+                    'Value': '${:,.0f}' if 'Value' in holders.columns else None
+                })
+                st.dataframe(styled_holders, use_container_width=True)
             else:
                 st.warning("No institutional holders data available.")
 
@@ -1603,14 +1611,13 @@ def main():
                     st.error(f"No alerts generated with Open Interest ≥ {selected_volume}, Gamma ≥ {selected_gamma}. Check logs.")
 
     with tab7:
-        st.subheader("Elliott Wave Gamma Direction")
+        st.subheader("Elliott Pulse")
         ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="elliott_ticker").upper()
         expiration_dates = get_expiration_dates(ticker)
         if not expiration_dates:
             st.error(f"No expiration dates found for '{ticker}'. Try a valid ticker (e.g., SPY).")
             return
         selected_expiration = st.selectbox("Select Expiration Date", expiration_dates, key="elliott_exp_date")
-        volume_threshold = st.slider("Min Open Interest (millions)", 0.0001, 5.0, 0.1, step=0.0001, key="elliott_vol") * 1_000_000
 
         with st.spinner(f"Fetching data for {ticker} on {selected_expiration}..."):
             current_price = get_current_price(ticker)
@@ -1622,6 +1629,14 @@ def main():
                 st.error(f"No options data available for {selected_expiration}.")
                 return
 
+            total_oi_all = sum(int(opt.get("open_interest", 0)) for opt in options_data)
+            num_strikes = len(set(opt.get("strike", 0) for opt in options_data))
+            avg_oi = total_oi_all / num_strikes if num_strikes > 0 else 0
+            st.markdown(f"**Avg OI per Strike:** {avg_oi:,.0f}")
+
+            default_volume = max(0.0001, min(5.0, avg_oi / 2_000_000))
+            volume_threshold = st.slider("Min Open Interest (millions)", 0.0001, 5.0, default_volume, step=0.0001, key="elliott_vol") * 1_000_000
+
             strikes_data = {}
             for opt in options_data:
                 strike = float(opt.get("strike", 0))
@@ -1629,17 +1644,16 @@ def main():
                 oi = int(opt.get("open_interest", 0))
                 greeks = opt.get("greeks", {})
                 gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
-                intrinsic = max(current_price - strike, 0) if opt_type == "CALL" else max(strike - current_price, 0)
                 if strike not in strikes_data:
-                    strikes_data[strike] = {"CALL": {"OI": 0, "Gamma": 0, "Intrinsic": 0}, "PUT": {"OI": 0, "Gamma": 0, "Intrinsic": 0}}
+                    strikes_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
                 strikes_data[strike][opt_type]["OI"] += oi
                 strikes_data[strike][opt_type]["Gamma"] += gamma * oi
-                strikes_data[strike][opt_type]["Intrinsic"] = intrinsic
 
             strikes = sorted(strikes_data.keys())
             call_gamma = []
             put_gamma = []
             net_gamma = []
+            total_oi = []
             for strike in strikes:
                 call_oi = strikes_data[strike]["CALL"]["OI"]
                 put_oi = strikes_data[strike]["PUT"]["OI"]
@@ -1649,54 +1663,107 @@ def main():
                     call_gamma.append(cg)
                     put_gamma.append(-pg)
                     net_gamma.append(cg - pg)
+                    total_oi.append(call_oi + put_oi)
                 else:
                     call_gamma.append(0)
                     put_gamma.append(0)
                     net_gamma.append(0)
+                    total_oi.append(0)
 
-            significant_strikes = [(strike, ng, strikes_data[strike]["CALL"]["OI"] + strikes_data[strike]["PUT"]["OI"]) 
-                                  for strike, ng in zip(strikes, net_gamma) if abs(ng) > 0]
+            significant_strikes = [(strike, ng, oi) for strike, ng, oi in zip(strikes, net_gamma, total_oi) if oi > volume_threshold]
             if not significant_strikes:
-                st.warning(f"No significant gamma found above volume threshold ({volume_threshold/1_000_000:.4f}M) for {selected_expiration}.")
+                st.warning(f"No significant strikes found above volume threshold ({volume_threshold/1_000_000:.4f}M).")
                 return
 
+            total_volume = sum(oi for _, _, oi in significant_strikes)
+            volume_cutoff = total_volume * 0.1
+            high_volume_strikes = [(strike, oi) for strike, _, oi in significant_strikes if oi >= volume_cutoff]
+
+            max_pain = None
+            min_loss = float('inf')
+            for strike in [s[0] for s in high_volume_strikes]:
+                call_loss = sum(max(0, s - strike) * strikes_data[s]["CALL"]["OI"] for s, _ in high_volume_strikes)
+                put_loss = sum(max(0, strike - s) * strikes_data[s]["PUT"]["OI"] for s, _ in high_volume_strikes)
+                total_loss = call_loss + put_loss
+                if total_loss < min_loss:
+                    min_loss = total_loss
+                    max_pain = strike
+            max_pain_gamma = strikes_data.get(max_pain, {"CALL": {"Gamma": 0}, "PUT": {"Gamma": 0}})["CALL"]["Gamma"] - \
+                            strikes_data.get(max_pain, {"CALL": {"Gamma": 0}, "PUT": {"Gamma": 0}})["PUT"]["Gamma"] if max_pain else 0
+
             sorted_by_volume = sorted(significant_strikes, key=lambda x: x[2], reverse=True)
-            wave_points = sorted_by_volume[:5]
+            sorted_by_low_volume = sorted(significant_strikes, key=lambda x: x[2])
+
+            a_point = min(significant_strikes, key=lambda x: abs(x[0] - current_price)) if significant_strikes else (current_price, 0, 0)
+            b_point = sorted_by_volume[0] if sorted_by_volume else (current_price + 1, 0, 0)
+            c_point = sorted_by_low_volume[0] if sorted_by_low_volume else (current_price - 1, 0, 0)
+            d_point = (max_pain, max_pain_gamma, strikes_data.get(max_pain, {"CALL": {"OI": 0}, "PUT": {"OI": 0}})["CALL"]["OI"] + 
+                      strikes_data.get(max_pain, {"CALL": {"OI": 0}, "PUT": {"OI": 0}})["PUT"]["OI"]) if max_pain else (current_price, 0, 0)
+            e_point = max(significant_strikes, key=lambda x: abs(x[1])) if significant_strikes else (current_price + 2, 0, 0)
+
+            wave_points = [a_point, b_point, c_point, d_point, e_point]
             wave_strikes = [point[0] for point in wave_points]
             wave_gamma = [point[1] for point in wave_points]
+            wave_oi = [point[2] for point in wave_points]
 
-            if 590 in strikes and strikes_data[590]["CALL"]["OI"] + strikes_data[590]["PUT"]["OI"] >= volume_threshold:
-                if 590 not in wave_strikes:
-                    min_volume_idx = min(range(len(wave_points)), key=lambda i: wave_points[i][2])
-                    if wave_points[min_volume_idx][2] < strikes_data[590]["CALL"]["OI"] + strikes_data[590]["PUT"]["OI"]:
-                        wave_points[min_volume_idx] = (590, strikes_data[590]["CALL"]["Gamma"] - strikes_data[590]["PUT"]["Gamma"], 
-                                                      strikes_data[590]["CALL"]["OI"] + strikes_data[590]["PUT"]["OI"])
-                        wave_strikes = [point[0] for point in wave_points]
-                        wave_gamma = [point[1] for point in wave_points]
+            max_pain_divisions = [max_pain / s if s != 0 and max_pain is not None else 0 for s in wave_strikes]
+            pressure = [oi / abs(s - max_pain) if max_pain is not None and s != max_pain and abs(s - max_pain) > 0 else 0 
+                        for s, oi in zip(wave_strikes, wave_oi)]
+            max_pressure = max(pressure) if pressure and max(pressure) > 0 else 1
+            pressure_normalized = [p / max_pressure * 100 for p in pressure]
 
             fig = go.Figure()
-            fig.add_trace(go.Bar(x=strikes, y=call_gamma, name="CALL Gamma", marker_color="green", width=0.4, opacity=0.6))
-            fig.add_trace(go.Bar(x=strikes, y=put_gamma, name="PUT Gamma", marker_color="red", width=0.4, opacity=0.6))
+            fig.add_trace(go.Bar(x=strikes, y=call_gamma, name="CALL Gamma", marker_color="#32CD32", width=0.8, opacity=0.4))
+            fig.add_trace(go.Bar(x=strikes, y=put_gamma, name="PUT Gamma", marker_color="#FF4500", width=0.8, opacity=0.4))
             fig.add_trace(go.Scatter(x=[current_price, current_price], y=[min(put_gamma) * 1.1, max(call_gamma) * 1.1], 
-                                    mode="lines", line=dict(color="#39FF14", dash="dash", width=2), name="Current Price"))
-            fig.add_trace(go.Scatter(x=wave_strikes, y=wave_gamma, mode="lines+markers+text", name="Wave Direction",
-                                    line=dict(color="yellow", width=1), marker=dict(size=12, symbol="circle"),
-                                    text=[f"${s:.2f}" for s in wave_strikes], textposition="top center",
-                                    hovertemplate="Strike: %{x:.2f}<br>Gamma: %{y:.2f}"))
+                                    mode="lines", line=dict(color="#FFFFFF", dash="dash", width=2), name="Current Price"))
+
+            for i in range(len(wave_strikes) - 1):
+                start_strike = wave_strikes[i]
+                end_strike = wave_strikes[i + 1]
+                start_gamma = wave_gamma[i]
+                end_gamma = wave_gamma[i + 1]
+                if start_strike is not None and end_strike is not None:
+                    if (start_strike > current_price and end_strike < current_price) or \
+                       (start_strike < current_price and end_strike > current_price):
+                        line_color = "#FF4500" if start_strike > end_strike else "#32CD32"
+                    else:
+                        line_color = "#FFD700"
+                    fig.add_trace(go.Scatter(x=[start_strike, end_strike], y=[start_gamma, end_gamma], 
+                                            mode="lines", line=dict(color=line_color, width=1), showlegend=False))
+
+            fig.add_trace(go.Scatter(x=wave_strikes, y=wave_gamma, mode="markers+text", name="Elliott Pulse",
+                                    marker=dict(size=8, symbol="circle", color="#FFD700"),
+                                    text=[f"${s:.2f}\n{letter}\n<span style='color:{'#FF4500' if p > 50 else '#32CD32'}'>{p:.0f}</span>" 
+                                          for s, letter, p in zip(wave_strikes, ["A", "B", "C", "D", "E"], pressure_normalized)],
+                                    textposition="top center",
+                                    textfont=dict(size=12),
+                                    customdata=[(s, g, o, mpd, p) for s, g, o, mpd, p in zip(wave_strikes, wave_gamma, wave_oi, max_pain_divisions, pressure_normalized)],
+                                    hovertemplate="Strike: $%{customdata[0]:.2f}<br>Gamma: %{customdata[1]:.2f}<br>OI: %{customdata[2]:,d}<br>Max Pain / Strike: %{customdata[3]:.2f}<br>MM Pressure: %{customdata[4]:.0f}"))
+            fig.add_trace(go.Scatter(x=[max_pain], y=[max_pain_gamma], mode="markers+text", name="Max Pain",
+                                    marker=dict(size=13, color="white", symbol="star"), text=[f"${max_pain:.2f}" if max_pain else "N/A"], 
+                                    textposition="bottom center"))
 
             fig.update_layout(
-                title=f"Gamma Direction for {ticker} (Exp: {selected_expiration})",
+                title=f"Elliott Pulse {ticker} (Exp: {selected_expiration})",
                 xaxis_title="Strike Price",
                 yaxis_title="Gamma Exposure",
                 barmode="relative",
                 template="plotly_dark",
                 hovermode="x unified",
-                height=600
+                height=600,
+                legend=dict(yanchor="top", y=1.1, xanchor="right", x=1.0, bgcolor="rgba(0,0,0,0.5)"),
+                plot_bgcolor="#000000",
+                paper_bgcolor="#000000",
+                font=dict(color="#FFFFFF"),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.1)"),
+                yaxis=dict(gridcolor="rgba(255,255,255,0.1)")
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, config={'staticPlot': False, 'displayModeBar': True}, use_container_width=True)
 
     st.markdown("---")
     st.markdown("*Developed by Ozy | © 2025*")
 
 if __name__ == "__main__":
     main()
+#####################################
