@@ -1588,6 +1588,7 @@ def main():
                     df['Contract'] = df.apply(lambda row: f"{ticker} {row['Action']} {row['Type']} {row['Strike']}", axis=1)
                     df = df[['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'RR', 'Prob OTM', 'Profit', 'Open Interest', 'IsMaxPain']]
                     df.columns = ['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'R/R', 'Prob OTM', 'Profit ($)', 'Open Int.', 'Max Pain']
+
                     def color_row(row):
                         if row['Max Pain']:
                             return ['color: #FFA500'] * len(row)
@@ -1596,6 +1597,7 @@ def main():
                         elif row['Type'] == "PUT":
                             return ['color: #FF4500' if row['Action'] == "SELL" and row['Strike'] < current_price else 'color: #FF0000'] * len(row)
                         return [''] * len(row)
+
                     styled_df = df.style.apply(color_row, axis=1).format({
                         'Strike': '{:.1f}',
                         'Gamma': '{:.4f}',
@@ -1607,6 +1609,16 @@ def main():
                         'Open Int.': '{:,.0f}'
                     })
                     st.dataframe(styled_df, height=400)
+
+                    # Botón para descargar como CSV
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download as CSV",
+                        data=csv,
+                        file_name=f"{ticker}_trading_options_{expiration_date}.csv",
+                        mime="text/csv",
+                        key="download_csv_tab6"
+                    )
                 else:
                     st.error(f"No alerts generated with Open Interest ≥ {selected_volume}, Gamma ≥ {selected_gamma}. Check logs.")
 
