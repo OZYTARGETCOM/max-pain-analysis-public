@@ -18,6 +18,13 @@ import logging
 import time
 from typing import List, Dict, Optional, Tuple
 
+# --- Configuración inicial de página (primer comando de Streamlit) ---
+st.set_page_config(
+    page_title="𝗢 𝗭 𝗬 |  DATA®",
+    page_icon="favicon.png",  # Ícono en la pestaña del navegador
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # --- Configuración de Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -40,7 +47,6 @@ INITIAL_DELAY = 1
 RISK_FREE_RATE = 0.045
 
 # --- Lista de Tickers ---
-
 
 # --- Autenticación ---
 def initialize_passwords_file():
@@ -102,20 +108,48 @@ def authenticate_password(input_password):
             return False
     return False
 
+# Estilos personalizados globales
+st.markdown("""
+    <style>
+    .stApp {background-color: #1E1E1E;}
+    .stTextInput, .stSelectbox {background-color: #2D2D2D; color: #FFFFFF;}
+    .stSpinner > div > div {border-color: #32CD32 !important;}
+    </style>
+""", unsafe_allow_html=True)
+
+# Pantalla de autenticación con logo
 initialize_passwords_file()
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
+    # Logo centrado en la pantalla de inicio
+    logo_path = "assets/favicon.png"  # Intenta en assets primero
+    if not os.path.exists(logo_path):
+        logo_path = "favicon.png"  # Luego en la raíz
+    if os.path.exists(logo_path):
+        st.markdown("<div style='display: flex; justify-content: center; align-items: center; margin-bottom: 20px;'>", unsafe_allow_html=True)
+        st.image(logo_path, width=150)  # Logo en pantalla de inicio
+        st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.warning("No se encontró 'favicon.png' para pantalla de inicio. Coloca el archivo en 'C:/Users/urbin/TradingApp/' o en 'assets/'.")
+    
     st.title("🔒 Acceso VIP")
     password = st.text_input("Ingresa tu contraseña", type="password")
     if st.button("Iniciar Sesión"):
         if authenticate_password(password):
             st.session_state["authenticated"] = True
-            st.success("✅ Acceso concedido!")
+            st.success("✅ Acceso concedido! Haz clic en 'Iniciar Sesión' nuevamente.")
     else:
         st.error("❌ Acceso solo para clientes VIP.")
     st.stop()
+
+########################################################app
+
+
+
+
+
 
 # --- Funciones de API Optimizadas ---
 def fetch_api_data(url: str, params: Dict, headers: Dict, source: str) -> Optional[Dict]:
@@ -1186,29 +1220,9 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
             st.write(f"Predicted Next Move: {predicted_move} towards ${target_strike:.2f} (Intrinsic Value: ${intrinsic_values[nearest_strike_idx]:.2f})")
 
 
-
-
 # --- Main App --
-# --- Main App ---
 def main():
-    # Configuración inicial con favicon.png como ícono de pestaña
-    st.set_page_config(
-        page_title="𝗢 𝗭 𝗬 |  DATA®",
-        page_icon="favicon.png",  # Ícono en la pestaña del navegador
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
-    # Estilos personalizado
-    st.markdown("""
-        <style>
-        .stApp {background-color: #1E1E1E;}
-        .stTextInput, .stSelectbox {background-color: #2D2D2D; color: #FFFFFF;}
-        .stSpinner > div > div {border-color: #32CD32 !important;}
-        </style>
-    """, unsafe_allow_html=True)
-
-    # Crear columnas para posicionar el logo a la derecha
+    # Logo y título principal después de autenticación
     col1, col2 = st.columns([4, 1])
     with col1:
         st.markdown("""
@@ -1219,9 +1233,20 @@ def main():
         if not os.path.exists(logo_path):
             logo_path = "favicon.png"  # Luego en la raíz
         if os.path.exists(logo_path):
-            st.image(logo_path, width=50)
+            st.image(logo_path, width=45)
         else:
             st.warning("No se encontró 'favicon.png'. Coloca el archivo en 'C:/Users/urbin/TradingApp/' o en 'assets/'.")
+    
+    # Estilos personalizado
+    st.markdown("""
+        <style>
+        .stApp {background-color: #1E1E1E;}
+        .stTextInput, .stSelectbox {background-color: #2D2D2D; color: #FFFFFF;}
+        .stSpinner > div > div {border-color: #32CD32 !important;}
+        </style>
+    """, unsafe_allow_html=True)
+
+   
 
     # Resto de los tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Gummy Data Bubbles®", "Market Scanner", "News", "Institutional Holders", "Options Order Flow", "Analyst Rating Flow", "Elliott Pulse®"])
