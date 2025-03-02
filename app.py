@@ -440,18 +440,18 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes):
     fig.add_trace(go.Bar(
         x=strikes,
         y=gamma_calls,
-        name="Gamma CALL",
+        name="Gummy CALL",
         marker=dict(color=call_colors),
         width=0.4,
-        hovertemplate="Gamma CALL: %{y:.2f}",  # Sin Current Price
+        hovertemplate="Gummy CALL: %{y:.2f}",  # Sin Current Price
     ))
     fig.add_trace(go.Bar(
         x=strikes,
         y=gamma_puts,
-        name="Gamma PUT",
+        name="Gummy PUT",
         marker=dict(color=put_colors),
         width=0.4,
-        hovertemplate="Gamma PUT: %{y:.2f}",  # Sin Current Price
+        hovertemplate="Gummy PUT: %{y:.2f}",  # Sin Current Price
     ))
 
     # Línea vertical para Current Price
@@ -494,9 +494,9 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes):
         )
     )
     fig.update_layout(
-        title="|GAMMA EXPOSURE|",
+        title="GUMMY EXPOSURE",
         xaxis_title="Strike",
-        yaxis_title="Gamma Exposure",
+        yaxis_title="Gummy Exposure",
         template="plotly_dark",
         hovermode="x",
         xaxis=dict(
@@ -529,7 +529,7 @@ def plot_skew_analysis_with_totals(options_data, current_price=None):
                      title=f"IV Analysis<br><span style='font-size:16px;'> CALLS: {total_calls} | PUTS: {total_puts} | VC {total_volume_calls} | VP {total_volume_puts}</span>",
                      labels={"Option Type": "Contract Type"}, color_discrete_map={"CALL": "blue", "PUT": "red"})
     fig.update_traces(hovertemplate="<b>Strike:</b> %{customdata[0]:.2f}<br><b>Type:</b> %{customdata[1]}<br><b>Open Interest:</b> %{customdata[2]:,}<br><b>Adjusted IV:</b> %{customdata[3]:.2f}%")
-    fig.update_layout(xaxis_title="Strike Price", yaxis_title="Implied Volatility (%)", legend_title="Option Type", template="plotly_white", title_x=0.5)
+    fig.update_layout(xaxis_title="Strike Price", yaxis_title="Gummy Bubbles® (%)", legend_title="Option Type", template="plotly_white", title_x=0.5)
 
     if current_price is not None and options_data:
         strikes_dict = {}
@@ -1176,7 +1176,7 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
             fig.update_layout(
                 title=f"Elliott Pulse {ticker} (Exp: {selected_expiration})",
                 xaxis_title="Strike Price",
-                yaxis_title="Gamma Exposure",
+                yaxis_title="Gummy Exposure",
                 barmode="relative",
                 template="plotly_dark",
                 annotations=[dict(x=target_strike, y=max(call_gamma) * 0.9, text=f"Next Move: {predicted_move}", showarrow=True, arrowhead=2, 
@@ -1188,10 +1188,18 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
 
 
 
-# --- Main App ---
+# --- Main App --
 # --- Main App ---
 def main():
-    st.set_page_config(page_title="O Z Y |  DATA®", page_icon="♾️", layout="wide", initial_sidebar_state="expanded")
+    # Configuración inicial con favicon.png como ícono de pestaña
+    st.set_page_config(
+        page_title="𝗢 𝗭 𝗬 |  DATA®",
+        page_icon="favicon.png",  # Ícono en la pestaña del navegador
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Estilos personalizado
     st.markdown("""
         <style>
         .stApp {background-color: #1E1E1E;}
@@ -1200,32 +1208,44 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-    st.markdown("""
-      PRO SCANNER |®
-    """, unsafe_allow_html=True)
+    # Crear columnas para posicionar el logo a la derecha
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.markdown("""
+          ℙℝ𝕆 𝔼𝕊ℂ𝔸ℕℕ𝔼ℝ|®
+        """, unsafe_allow_html=True)
+    with col2:
+        logo_path = "assets/favicon.png"  # Intenta en assets primero
+        if not os.path.exists(logo_path):
+            logo_path = "favicon.png"  # Luego en la raíz
+        if os.path.exists(logo_path):
+            st.image(logo_path, width=50)
+        else:
+            st.warning("No se encontró 'favicon.png'. Coloca el archivo en 'C:/Users/urbin/TradingApp/' o en 'assets/'.")
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Options Scanner", "Market Scanner", "News", "Institutional Holders", "Stock Analysis", "Trading Options", "Elliott Pulse"])
+    # Resto de los tabs
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Gummy Data Bubbles®", "Market Scanner", "News", "Institutional Holders", "Options Order Flow", "Analyst Rating Flow", "Elliott Pulse®"])
 
     with tab1:
-        st.subheader("Options Scanner")
+        #st.subheader("Options Scanner")
         ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
         expiration_dates = get_expiration_dates(ticker)
         if not expiration_dates:
             st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
-            return
+            return  # Este return está dentro del if, correctamente
         expiration_date = st.selectbox("Expiration Date", expiration_dates, key="expiration_date")
         with st.spinner("Fetching price..."):
             current_price = get_current_price(ticker)
             if current_price == 0.0:
                 st.error(f"Invalid ticker '{ticker}' or no price data available.")
-                return
+                return  # Este return está dentro del if, correctamente
         st.markdown(f"**Current Price:** ${current_price:.2f}")
 
         with st.spinner(f"Fetching data for {expiration_date}..."):
             options_data = get_options_data(ticker, expiration_date)
             if not options_data:
                 st.error("No options data available for this ticker and expiration date.")
-                return
+                return  # Este return está dentro del if, correctamente
             processed_data = {}
             for opt in options_data:
                 if not opt or not isinstance(opt, dict):
@@ -1243,7 +1263,7 @@ def main():
                 processed_data[strike][option_type]["Gamma"] += gamma
             if not processed_data:
                 st.error("No valid data to display.")
-                return
+                return  # Este return está dentro del if, correctamente
             prices, _ = get_historical_prices_combined(ticker)
             historical_prices = prices
             touched_strikes = detect_touched_strikes(processed_data.keys(), historical_prices)
