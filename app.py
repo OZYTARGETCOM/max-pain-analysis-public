@@ -381,7 +381,7 @@ def plot_max_pain_histogram_with_levels(max_pain_table, current_price):
     fig = px.bar(max_pain_table, x='strike', y='total_loss', title="Max Pain Histogram with Levels",
                  labels={'total_loss': 'Total Loss', 'strike': 'Strike Price'}, color='loss_category', color_discrete_map=color_map)
     fig.update_layout(xaxis_title="Strike Price", yaxis_title="Total Loss", template="plotly_white", font=dict(size=14, family="Open Sans"),
-                      title=dict(text="📊 Max Pain Analysis", font=dict(size=18), x=0.5), hovermode="x",
+                      title=dict(text="📊 Analysis loss  Options", font=dict(size=18), x=0.5), hovermode="x",
                       yaxis=dict(showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="#FFFF00", spikethickness=1.5))
     mean_loss = max_pain_table['total_loss'].mean()
     fig.add_hline(y=mean_loss, line_width=1, line_dash="dash", line_color="#00FF00", annotation_text=f"Mean Loss: {mean_loss:.2f}", annotation_position="top right", annotation_font=dict(color="#00FF00", size=12))
@@ -1388,7 +1388,7 @@ def main():
                 st.warning("No institutional holders data available.")
 
     with tab5:
-        st.subheader("Stock Analysis")
+        st.subheader("Order Flow")
         stock = st.text_input("Enter Stock Ticker (e.g., AAPL, MSFT):", value="SPY", key="stock_analysis").upper()
         expiration_dates = get_expiration_dates(stock)
         if not expiration_dates:
@@ -1419,7 +1419,7 @@ def main():
                     st.write(f"- **Market Cap**: ${financial_metrics.get('Market Cap', 0):,.2f}")
                     st.write(f"- **Operating Cash Flow**: ${financial_metrics.get('Operating Cash Flow', 0):,.2f}")
                     st.write(f"- **Free Cash Flow**: ${financial_metrics.get('Free Cash Flow', 0):,.2f}")
-                    st.markdown(f"### Speculation for {stock}")
+                    st.markdown(f"### Possibilities for {stock}")
                     st.write(f"- **Trend**: {trend}")
                     st.write(f"- **Confidence**: {confidence:.2f}")
                     st.write(f"- **Predicted Price (Next Day)**: ${predicted_price:.2f}" if predicted_price is not None else "- **Predicted Price (Next Day)**: N/A")
@@ -1558,7 +1558,7 @@ def main():
                         )
 
                         fig.update_layout(
-                            title=f"Calls and Puts for {stock} (Expiration: {selected_expiration})",
+                            title=f"| {stock} |  Expiration: {selected_expiration}",
                             xaxis_title="Strike Price",
                             yaxis_title="Open Interest",
                             barmode="relative",
@@ -1582,7 +1582,7 @@ def main():
                         st.plotly_chart(fig, use_container_width=True, height=600)
 
     with tab6:
-        st.subheader("Trading Options")
+        st.subheader("Rating Flow")
         col1, col2 = st.columns([1, 3])
         with col1:
             st.markdown("### Configuration")
