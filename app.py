@@ -1220,7 +1220,293 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
             st.write(f"Predicted Next Move: {predicted_move} towards ${target_strike:.2f} (Intrinsic Value: ${intrinsic_values[nearest_strike_idx]:.2f})")
 
 
+# --- Nust.cache_data(ttl=CACHE_TTL)
+# --- Nuevas funciones para cripto (necesarias para Tab 8) ---
+# --- Nuevas funciones para cripto (necesarias para Tab 8) ---
+@st.cache_data(ttl=CACHE_TTL)
+def get_crypto_list():
+    """Obtener lista de criptomonedas disponibles desde FMP."""
+    url = f"{FMP_BASE_URL}/symbol/available-cryptocurrencies"
+    params = {"apikey": FMP_API_KEY}
+    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto List")
+    if data and isinstance(data, list):
+        crypto_symbols = [item["symbol"] for item in data if "symbol" in item]
+        logger.info(f"Found {len(crypto_symbols)} crypto symbols")
+        return crypto_symbols
+    logger.error("No crypto symbols found")
+    return []
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_crypto_quote(crypto_symbol: str):
+    """Obtener precio actual y datos de una criptomoneda desde FMP."""
+    url = f"{FMP_BASE_URL}/quote/{crypto_symbol}"
+    params = {"apikey": FMP_API_KEY}
+    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto Quote")
+    if data and isinstance(data, list) and len(data) > 0:
+        return data[0]
+    logger.error(f"No quote data for {crypto_symbol}")
+    return {}
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_crypto_historical_fmp(crypto_symbol: str, limit: int = 30):
+    """Obtener precios históricos de una criptomoneda desde FMP."""
+    url = f"{FMP_BASE_URL}/historical-price-full/crypto/{crypto_symbol}"
+    params = {"apikey": FMP_API_KEY, "timeseries": limit}
+    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto Historical")
+    if data and "historical" in data and len(data["historical"]) > 0:
+        logger.info(f"FMP: Retrieved {len(data['historical'])} historical data points for {crypto_symbol}")
+        return data["historical"]
+    logger.warning(f"FMP: No historical data for {crypto_symbol}. Response: {data}")
+    return None
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_crypto_historical_coingecko(crypto_symbol: str, days: int = 30):
+    """Obtener precios históricos de una criptomoneda desde CoinGecko."""
+    symbol_to_id = {
+        "BTCUSD": "bitcoin",
+        "ETHUSD": "ethereum",
+        "OTRUMPUSD": "trump-coin",
+        "TRUMPUSD": "maga"
+    }
+    crypto_id = symbol_to_id.get(crypto_symbol, crypto_symbol.lower().replace("usd", ""))
+    url = f"https://api.coingecko.com/api/v3/coins/{crypto_id}/market_chart"
+    params = {"vs_currency": "usd", "days": days, "interval": "daily"}
+    headers = {"accept": "application/json"}
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if "prices" in data and len(data["prices"]) > 0:
+            historical = [
+                {
+                    "date": datetime.fromtimestamp(price[0] / 1000).strftime("%Y-%m-%d"),
+                    "close": price[1],
+                    "volume": vol[1] if i < len(data["total_volumes"]) else 0
+                }
+                for i, (price, vol) in enumerate(zip(data["prices"], data["total_volumes"]))
+            ]
+            logger.info(f"CoinGecko: Retrieved {len(historical)} historical data points for {crypto_symbol} (ID: {crypto_id})")
+            return historical
+        logger.warning(f"CoinGecko: No historical data for {crypto_symbol}. Response: {data}")
+        return None
+    except Exception as e:
+        logger.error(f"CoinGecko: Error fetching data for {crypto_symbol}: {str(e)}")
+        return None
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_crypto_historical(crypto_symbol: str, limit: int = 30):
+    """Intentar obtener datos históricos de FMP primero, luego de CoinGecko si falla."""
+    historical = get_crypto_historical_fmp(crypto_symbol, limit)
+    if historical:
+        return historical, "FMP"
+    logger.info(f"FMP no tiene datos históricos para {crypto_symbol}. Intentando con CoinGecko...")
+    historical = get_crypto_historical_coingecko(crypto_symbol, limit)
+    if historical:
+        return historical, "CoinGecko"
+    return None, None
+
+def calculate_accumulation_zones(historical_data, current_price, bin_size=100):
+    """Calcular zonas de acumulación y niveles clave."""
+    df = pd.DataFrame(historical_data)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date")
+    
+    # Determinar tendencia reciente (últimos 5 días)
+    recent_trend = df["close"].iloc[-5:].diff().mean()
+    trend_direction = "Bullish" if recent_trend > 0 else "Bearish"
+    
+    min_price = df["close"].min()
+    max_price = df["close"].max()
+    price_bins = np.arange(min_price - bin_size, max_price + bin_size, bin_size)
+    df["price_bin"] = pd.cut(df["close"], bins=price_bins, labels=price_bins[:-1])
+    
+    volume_data = df.groupby("price_bin")["volume"].sum().reset_index()
+    volume_data["price_bin"] = volume_data["price_bin"].astype(float)
+    
+    # Zonas clave (top 3 por volumen)
+    top_zones = volume_data.nlargest(3, "volume")
+    key_levels = top_zones["price_bin"].tolist()
+    
+    # Posible target
+    if trend_direction == "Bullish":
+        target = volume_data[volume_data["price_bin"] > current_price].nlargest(1, "volume")["price_bin"].iloc[0] if not volume_data[volume_data["price_bin"] > current_price].empty else current_price
+    else:
+        target = volume_data[volume_data["price_bin"] < current_price].nlargest(1, "volume")["price_bin"].iloc[0] if not volume_data[volume_data["price_bin"] < current_price].empty else current_price
+    
+    # Entradas (soportes debajo del precio actual)
+    entries = volume_data[volume_data["price_bin"] < current_price].nlargest(2, "volume")["price_bin"].tolist()
+    
+    # Salidas (resistencias encima del precio actual)
+    exits = volume_data[volume_data["price_bin"] > current_price].nlargest(2, "volume")["price_bin"].tolist()
+    
+    total_volume = volume_data["volume"].sum()
+    accumulation_score = total_volume / len(volume_data) if len(volume_data) > 0 else 0
+    
+    return volume_data, key_levels, accumulation_score, target, entries, exits, trend_direction
+
+def plot_accumulation_zones(volume_data, current_price, key_levels, target, entries, exits):
+    """Crear gráfica de zonas de acumulación con target, entradas y salidas."""
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=volume_data["price_bin"],
+        y=volume_data["volume"],
+        name="Volume",
+        marker_color="#32CD32",
+        width=volume_data["price_bin"].diff().mean() * 0.8,
+        hovertemplate="Price: $%{x:.2f}<br>Volume: %{y:,.0f}"
+    ))
+    
+    y_max = volume_data["volume"].max() * 1.1
+    fig.add_trace(go.Scatter(
+        x=[current_price, current_price],
+        y=[0, y_max],
+        mode="lines",
+        line=dict(color="#FFFFFF", dash="dash", width=2),
+        name="Current Price",
+        hovertemplate="Current Price: $%{x:.2f}"
+    ))
+    
+    for level in key_levels:
+        fig.add_trace(go.Scatter(
+            x=[level, level],
+            y=[0, y_max],
+            mode="lines",
+            line=dict(color="#FFD700", dash="dot", width=1),
+            name=f"Key Level (${level:.2f})",
+            hovertemplate="Key Level: $%{x:.2f}"
+        ))
+    
+    fig.add_trace(go.Scatter(
+        x=[target, target],
+        y=[0, y_max],
+        mode="lines",
+        line=dict(color="#00FFFF", width=2),
+        name=f"Target (${target:.2f})",
+        hovertemplate="Target: $%{x:.2f}"
+    ))
+    
+    for entry in entries:
+        fig.add_trace(go.Scatter(
+            x=[entry, entry],
+            y=[0, y_max],
+            mode="lines",
+            line=dict(color="#00FF00", dash="dot", width=1),
+            name=f"Entry (${entry:.2f})",
+            hovertemplate="Entry: $%{x:.2f}"
+        ))
+    
+    for exit in exits:
+        fig.add_trace(go.Scatter(
+            x=[exit, exit],
+            y=[0, y_max],
+            mode="lines",
+            line=dict(color="#FF0000", dash="dot", width=1),
+            name=f"Exit (${exit:.2f})",
+            hovertemplate="Exit: $%{x:.2f}"
+        ))
+    
+    fig.update_layout(
+        title="Accumulation Zones with Targets",
+        xaxis_title="Price Level (USD)",
+        yaxis_title="Volume",
+        template="plotly_dark",
+        hovermode="x unified",
+        legend=dict(yanchor="top", y=1.1, xanchor="right", x=1.0),
+        height=500
+    )
+    return fig
+
+def calculate_crypto_flow(historical_data, current_price, bin_size=100):
+    """Calcular presión de compra/venta y niveles clave para Crypto Flow."""
+    df = pd.DataFrame(historical_data)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date")
+    
+    df["price_change"] = df["close"].diff()
+    df["buy_volume"] = df.apply(lambda row: row["volume"] if row["price_change"] > 0 else 0, axis=1)
+    df["sell_volume"] = df.apply(lambda row: row["volume"] if row["price_change"] < 0 else 0, axis=1)
+    
+    min_price = df["close"].min()
+    max_price = df["close"].max()
+    price_bins = np.arange(min_price - bin_size, max_price + bin_size, bin_size)
+    df["price_bin"] = pd.cut(df["close"], bins=price_bins, labels=price_bins[:-1])
+    
+    flow_data = df.groupby("price_bin").agg({"buy_volume": "sum", "sell_volume": "sum"}).reset_index()
+    flow_data["price_bin"] = flow_data["price_bin"].astype(float)
+    flow_data["net_volume"] = flow_data["buy_volume"] - flow_data["sell_volume"]
+    
+    support = flow_data[flow_data["price_bin"] < current_price].nlargest(1, "buy_volume")["price_bin"].iloc[0] if not flow_data[flow_data["price_bin"] < current_price].empty else current_price
+    resistance = flow_data[flow_data["price_bin"] > current_price].nlargest(1, "sell_volume")["price_bin"].iloc[0] if not flow_data[flow_data["price_bin"] > current_price].empty else current_price
+    
+    net_pressure = df["buy_volume"].sum() - df["sell_volume"].sum()
+    
+    return flow_data, support, resistance, net_pressure
+
+def plot_crypto_flow(flow_data, current_price, support, resistance):
+    """Crear gráfica de Crypto Flow con compras y ventas."""
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=flow_data["price_bin"],
+        y=flow_data["buy_volume"],
+        name="Buy Volume",
+        marker_color="#32CD32",
+        width=flow_data["price_bin"].diff().mean() * 0.8,
+        hovertemplate="Price: $%{x:.2f}<br>Buy Volume: %{y:,.0f}"
+    ))
+    
+    fig.add_trace(go.Bar(
+        x=flow_data["price_bin"],
+        y=-flow_data["sell_volume"],
+        name="Sell Volume",
+        marker_color="#FF4500",
+        width=flow_data["price_bin"].diff().mean() * 0.8,
+        hovertemplate="Price: $%{x:.2f}<br>Sell Volume: %{y:,.0f}"
+    ))
+    
+    y_min = -flow_data["sell_volume"].max() * 1.1
+    y_max = flow_data["buy_volume"].max() * 1.1
+    fig.add_trace(go.Scatter(
+        x=[current_price, current_price],
+        y=[y_min, y_max],
+        mode="lines",
+        line=dict(color="#FFFFFF", dash="dash", width=2),
+        name="Current Price",
+        hovertemplate="Current Price: $%{x:.2f}"
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=[support, support],
+        y=[y_min, y_max],
+        mode="lines",
+        line=dict(color="#1E90FF", dash="dot", width=1),
+        name="Support",
+        hovertemplate="Support: $%{x:.2f}"
+    ))
+    fig.add_trace(go.Scatter(
+        x=[resistance, resistance],
+        y=[y_min, y_max],
+        mode="lines",
+        line=dict(color="#FFD700", dash="dot", width=1),
+        name="Resistance",
+        hovertemplate="Resistance: $%{x:.2f}"
+    ))
+    
+    fig.update_layout(
+        title="Crypto Flow (Buy/Sell Pressure)",
+        xaxis_title="Price Level (USD)",
+        yaxis_title="Volume (Buy/Sell)",
+        barmode="relative",
+        template="plotly_dark",
+        hovermode="x unified",
+        legend=dict(yanchor="top", y=1.1, xanchor="right", x=1.0),
+        height=500
+    )
+    return fig
 # --- Main App --
+
+# --- Main App ---
 def main():
     # Logo y título principal después de autenticación
     col1, col2 = st.columns([4, 1])
@@ -1246,10 +1532,11 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-   
-
-    # Resto de los tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Gummy Data Bubbles®", "Market Scanner", "News", "Institutional Holders", "Options Order Flow", "Analyst Rating Flow", "Elliott Pulse®"])
+    # Resto de los tabs (agregamos Tab 8)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        "Gummy Data Bubbles®", "Market Scanner", "News", "Institutional Holders", 
+        "Options Order Flow", "Analyst Rating Flow", "Elliott Pulse®", "Crypto Insights"
+    ])
 
     with tab1:
         #st.subheader("Options Scanner")
@@ -1818,9 +2105,79 @@ def main():
             )
             st.plotly_chart(fig, config={'staticPlot': False, 'displayModeBar': True}, use_container_width=True)
 
+    with tab8:
+        
+        crypto_list = get_crypto_list()
+        if not crypto_list:
+            st.error("No se pudo cargar la lista de criptomonedas.")
+            return
+        
+        crypto_symbol = st.selectbox("Select Cryptocurrency", crypto_list, index=crypto_list.index("BTCUSD") if "BTCUSD" in crypto_list else 0, key="crypto_symbol")
+        
+        with st.spinner(f"Fetching data for {crypto_symbol}..."):
+            quote = get_crypto_quote(crypto_symbol)
+            if not quote:
+                st.error(f"No se pudo obtener datos para {crypto_symbol}.")
+                return
+            
+            current_price = quote.get("price", 0)
+            st.markdown(f"### {quote.get('name', crypto_symbol)} ({crypto_symbol})")
+            st.write(f"- **Price**: ${current_price:,.2f}")
+            st.write(f"- **Change (24h)**: {quote.get('change', 0):,.2f} ({quote.get('changesPercentage', 0):.2f}%)")
+            st.write(f"- **Volume (24h)**: {quote.get('volume', 0):,.0f}")
+            st.write(f"- **Market Cap**: ${quote.get('marketCap', 0):,.0f}")
+            st.write(f"*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
+
+            historical, source = get_crypto_historical(crypto_symbol, limit=30)
+            if historical:
+                
+                bin_size = 100 if "BTC" in crypto_symbol else 10
+                
+                # Gráfica 1: Accumulation Zones
+                volume_data, key_levels, accumulation_score, target, entries, exits, trend = calculate_accumulation_zones(historical, current_price, bin_size)
+                st.markdown(f"**Accumulation Score**: {accumulation_score:,.0f} (avg volume per price level)")
+                st.write(f"**Trend**: {trend}")
+                st.write(f"**Key Accumulation Zones**: {', '.join([f'${level:.2f}' for level in key_levels])}")
+                st.write(f"**Possible Target**: ${target:.2f}")
+                st.write(f"**Possible Entries**: {', '.join([f'${entry:.2f}' for entry in entries])}")
+                st.write(f"**Possible Exits**: {', '.join([f'${exit:.2f}' for exit in exits])}")
+                fig1 = plot_accumulation_zones(volume_data, current_price, key_levels, target, entries, exits)
+                st.plotly_chart(fig1, use_container_width=True)
+
+                # Gráfica 2: Crypto Flow (Buy/Sell)
+                flow_data, support, resistance, net_pressure = calculate_crypto_flow(historical, current_price, bin_size)
+                pressure_color = "#32CD32" if net_pressure > 0 else "#FF4500"
+                st.markdown(f"**Net Pressure**: <span style='color:{pressure_color}'>{net_pressure:,.0f}</span> ({'Bullish' if net_pressure > 0 else 'Bearish'})", unsafe_allow_html=True)
+                st.write(f"- **Support**: ${support:.2f}")
+                st.write(f"- **Resistance**: ${resistance:.2f}")
+                fig2 = plot_crypto_flow(flow_data, current_price, support, resistance)
+                st.plotly_chart(fig2, use_container_width=True)
+
+                # Exportación de datos
+                df_export = pd.DataFrame(historical)[["date", "close", "volume"]]
+                df_export = df_export.merge(volume_data[["price_bin", "volume"]], left_on="close", right_on="price_bin", how="left", suffixes=("", "_zone"))
+                df_export["buy_volume"] = flow_data["buy_volume"].reindex(df_export.index, fill_value=0)
+                df_export["sell_volume"] = flow_data["sell_volume"].reindex(df_export.index, fill_value=0)
+                csv = df_export[["date", "close", "volume", "buy_volume", "sell_volume"]].to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Crypto Data",
+                    data=csv,
+                    file_name=f"{crypto_symbol}_crypto_data.csv",
+                    mime="text/csv",
+                    key="download_crypto_data"
+                )
+            else:
+                st.warning(f"No historical data available for {crypto_symbol} en FMP ni CoinGecko.")
+                fmp_response = requests.get(f"{FMP_BASE_URL}/historical-price-full/crypto/{crypto_symbol}", params={"apikey": FMP_API_KEY, "timeseries": 30}, headers=HEADERS_FMP).json()
+                coingecko_response = requests.get(f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart", params={"vs_currency": "usd", "days": 30, "interval": "daily"}, headers={"accept": "application/json"}).json()
+                st.write(f"**FMP Response**: {fmp_response}")
+                st.write(f"**CoinGecko Response (BTCUSD ejemplo)**: {coingecko_response}")
+
     st.markdown("---")
     st.markdown("*Developed by Ozy | © 2025*")
 
 if __name__ == "__main__":
     main()
-#####################################
+
+    ##############################################################################################
+    #############################################################################################
