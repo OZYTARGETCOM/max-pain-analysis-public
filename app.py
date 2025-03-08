@@ -134,14 +134,14 @@ if not st.session_state["authenticated"]:
     else:
         st.warning("No se encontró 'favicon.png' para pantalla de inicio. Coloca el archivo en 'C:/Users/urbin/TradingApp/' o en 'assets/'.")
     
-    st.title("🔒 Acceso VIP")
-    password = st.text_input("Ingresa tu contraseña", type="password")
-    if st.button("Iniciar Sesión"):
+    st.title("🔒 VIP Access")
+    password = st.text_input("Enter Your Password", type="password")
+    if st.button("login"):
         if authenticate_password(password):
             st.session_state["authenticated"] = True
-            st.success("✅ Acceso concedido! Haz clic en 'Iniciar Sesión' nuevamente.")
+            st.success("✅ Access granted! Click 'Login' again.")
     else:
-        st.error("❌ Acceso solo para clientes VIP.")
+        st.error("❌ Access only for VIP clients.")
     st.stop()
 
 ########################################################app
@@ -167,31 +167,125 @@ def fetch_api_data(url: str, params: Dict, headers: Dict, source: str) -> Option
             time.sleep(delay)
     return None
 
-@st.cache_data(ttl=CACHE_TTL)
+
 def get_current_price(ticker: str) -> float:
-    url = f"{FMP_BASE_URL}/quote/{ticker}"
-    params = {"apikey": FMP_API_KEY}
-    data = fetch_api_data(url, params, HEADERS_FMP, "FMP")
-    try:
-        if data and isinstance(data, list) and len(data) > 0:
-            price = float(data[0].get("price", 0.0))
-            if price > 0:
-                logger.info(f"FMP price for {ticker}: ${price:.2f}")
-                return price
-    except (ValueError, TypeError) as e:
-        logger.error(f"FMP price error: {e}")
-    url = f"{TRADIER_BASE_URL}/markets/quotes"
-    params = {"symbols": ticker}
-    data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier")
-    try:
-        if data and 'quotes' in data and 'quote' in data['quotes']:
-            price = float(data['quotes']['quote'].get("last", 0.0))
-            logger.info(f"Tradier price for {ticker}: ${price:.2f}")
+    current_time = datetime.now()  # Asumimos EST
+    today = current_time.date()
+    premarket_start = datetime.combine(today, datetime.min.time()).replace(hour=4, minute=0)  # 4:00 AM EST
+    premarket_reference = datetime.combine(today, datetime.min.time()).replace(hour=5, minute=0)  # 5:00 AM EST
+    market_open = datetime.combine(today, datetime.min.time()).replace(hour=9, minute=30)  # 9:30 AM EST
+    market_close = datetime.combine(today, datetime.min.time()).replace(hour=16, minute=0)  # 16:00 EST
+    aftermarket_end = datetime.combine(today, datetime.min.time()).replace(hour=20, minute=0)  # 20:00 EST
+
+    is_premarket = premarket_start <= current_time < market_open
+    is_regular_hours = market_open <= current_time < market_close
+    is_aftermarket = market_close <= current_time < aftermarket_end
+    is_post_aftermarket = current_time >= aftermarket_end
+    is_pre_premarket = current_time < premarket_start
+
+    # Post-aftermarket o pre-premarket: usar precio de 8:00 PM si existe
+    if (is_post_aftermarket or is_pre_premarket) and f"aftermarket_close_{ticker}" in st.session_state:
+        logger.info(f"Using stored aftermarket close price for {ticker}: ${st.session_state[f'aftermarket_close_{ticker}']:.2f}")
+        return st.session_state[f"aftermarket_close_{ticker}"]
+
+    # Premarket antes de 5:00 AM: usar precio de 5:00 AM si existe, sino aftermarket
+    if is_premarket and current_time < premarket_reference:
+        if f"premarket_5am_{ticker}" in st.session_state:
+            logger.info(f"Using stored 5:00 AM premarket price for {ticker}: ${st.session_state[f'premarket_5am_{ticker}']:.2f}")
+            return st.session_state[f"premarket_5am_{ticker}"]
+        elif f"aftermarket_close_{ticker}" in st.session_state:
+            logger.info(f"Using previous day aftermarket close for {ticker} before 5:00 AM: ${st.session_state[f'aftermarket_close_{ticker}']:.2f}")
+            return st.session_state[f"aftermarket_close_{ticker}"]
+
+    # Función auxiliar para precios en tiempo real
+    def fetch_extended_hours_price(ticker, start_time, end_time):
+        # Primero intentamos con Tradier timesales
+        url = f"{TRADIER_BASE_URL}/markets/timesales"
+        params = {
+            "symbol": ticker,
+            "interval": "1min",
+            "start": start_time.strftime('%Y-%m-%d %H:%M'),
+            "end": end_time.strftime('%Y-%m-%d %H:%M')
+        }
+        data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier Timesales")
+        try:
+            if data and 'series' in data and data['series'] and 'data' in data['series']['data']:
+                latest = data['series']['data'][-1]
+                price = float(latest.get("close", 0.0))
+                trade_time = latest.get("time", "N/A")
+                if price > 0 and trade_time != "N/A":
+                    trade_datetime = datetime.strptime(trade_time, '%Y-%m-%d %H:%M:%S')
+                    if start_time <= trade_datetime <= end_time + timedelta(minutes=10):  # Tolerancia de 10 min
+                        logger.info(f"Timesales price for {ticker}: ${price:.2f} | Time: {trade_time}")
+                        if end_time == aftermarket_end and trade_datetime >= aftermarket_end - timedelta(minutes=10):
+                            st.session_state[f"aftermarket_close_{ticker}"] = price
+                            logger.info(f"Saved aftermarket close for {ticker}: ${price:.2f}")
+                        elif end_time == premarket_reference and trade_datetime >= premarket_reference - timedelta(minutes=10):
+                            st.session_state[f"premarket_5am_{ticker}"] = price
+                            logger.info(f"Saved premarket 5:00 AM for {ticker}: ${price:.2f}")
+                        return price
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.error(f"Timesales error for {ticker}: {e} | Response: {data}")
+
+        # Fallback a Tradier quotes
+        url = f"{TRADIER_BASE_URL}/markets/quotes"
+        params = {"symbols": ticker, "greeks": "false"}
+        data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier Quotes")
+        try:
+            if data and 'quotes' in data and 'quote' in data['quotes']:
+                quote = data['quotes']['quote']
+                price = float(quote.get("last", 0.0))
+                trade_time = quote.get("trade_time", "N/A")
+                if price > 0:
+                    logger.info(f"Tradier quotes price for {ticker}: ${price:.2f} | Trade Time: {trade_time}")
+                    if end_time == aftermarket_end and current_time >= aftermarket_end - timedelta(minutes=10):
+                        st.session_state[f"aftermarket_close_{ticker}"] = price
+                        logger.info(f"Saved aftermarket close for {ticker}: ${price:.2f}")
+                    elif end_time == premarket_reference and current_time >= premarket_reference - timedelta(minutes=10):
+                        st.session_state[f"premarket_5am_{ticker}"] = price
+                        logger.info(f"Saved premarket 5:00 AM for {ticker}: ${price:.2f}")
+                    return price
+        except (ValueError, TypeError) as e:
+            logger.error(f"Tradier quotes error for {ticker}: {e} | Response: {data}")
+
+        # Fallback a FMP
+        url = f"{FMP_BASE_URL}/quote/{ticker}"
+        params = {"apikey": FMP_API_KEY}
+        data = fetch_api_data(url, params, HEADERS_FMP, "FMP")
+        try:
+            if data and isinstance(data, list) and len(data) > 0:
+                price = float(data[0].get("price", 0.0))
+                if price > 0:
+                    logger.info(f"FMP price for {ticker}: ${price:.2f}")
+                    if end_time == aftermarket_end and current_time >= aftermarket_end - timedelta(minutes=10):
+                        st.session_state[f"aftermarket_close_{ticker}"] = price
+                        logger.info(f"Saved aftermarket close for {ticker}: ${price:.2f}")
+                    return price
+        except (ValueError, TypeError) as e:
+            logger.error(f"FMP price error for {ticker}: {e} | Response: {data}")
+
+        return 0.0
+
+    # Tiempo real en premarket, regular y aftermarket
+    if is_premarket or is_regular_hours or is_aftermarket:
+        price = fetch_extended_hours_price(ticker, premarket_start if is_premarket else market_close, current_time)
+        if price > 0:
             return price
-        return 0.0
-    except (ValueError, TypeError) as e:
-        logger.error(f"Tradier price error: {e}")
-        return 0.0
+
+    # Último recurso: precio guardado o histórico si no hay nada
+    if f"aftermarket_close_{ticker}" in st.session_state:
+        logger.info(f"Using last known aftermarket close for {ticker}: ${st.session_state[f'aftermarket_close_{ticker}']:.2f}")
+        return st.session_state[f"aftermarket_close_{ticker}"]
+    
+    prices, _ = get_historical_prices_combined(ticker, limit=1)
+    if prices and len(prices) > 0:
+        last_close = float(prices[0])
+        logger.info(f"Using historical close price for {ticker} (4:00 PM): ${last_close:.2f}")
+        return last_close
+
+    logger.warning(f"No valid current price for {ticker} - falling back to 0.0")
+    return 0.0
+
 
 @st.cache_data(ttl=CACHE_TTL)
 def get_expiration_dates(ticker: str) -> List[str]:
@@ -1638,8 +1732,8 @@ def plot_liquidity_pulse(df, current_price, price_target):
         height=400
     )
     return fig
-# --- Main App --
-
+# --- Main App ---
+# --- Main App ---
 def main():
     # Logo y título principal después de autenticación
     col1, col2 = st.columns([4, 1])
@@ -1665,103 +1759,124 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-    # Resto de los tabs (agregamos Tab 8)
+    # Resto de los tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "Gummy Data Bubbles®", "Market Scanner", "News", "Institutional Holders", 
         "Options Order Flow", "Analyst Rating Flow", "Elliott Pulse®", "Crypto Insights"
     ])
 
     with tab1:
-        #st.subheader("Options Scanner")
+        st.subheader("Gummy Data Bubbles®")
         ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
         expiration_dates = get_expiration_dates(ticker)
         if not expiration_dates:
-            st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
-            return
+            st.error(f"What were you thinking, '{ticker}'? Try a valid ticker like SPY!")
+            st.stop()
+        
         expiration_date = st.selectbox("Expiration Date", expiration_dates, key="expiration_date")
-        with st.spinner("Fetching price..."):
-            current_price = get_current_price(ticker)
-            if current_price == 0.0:
-                st.error(f"Invalid ticker '{ticker}' or no price data available.")
-                return
-        st.markdown(f"**Current Price:** ${current_price:.2f}")
+        price_container = st.empty()
+        
+        current_price = get_current_price(ticker)
+        if current_price == 0.0:
+            st.warning(f"⚠️ {ticker}: No se pudo obtener precio en tiempo real. Usando precio por defecto o histórico.")
+            current_price = st.session_state.get(f"aftermarket_close_{ticker}", 0.0)
+        
+        # Actualización cada 30 segundos
+        if f"last_price_update_tab1_{ticker}" not in st.session_state:
+            st.session_state[f"last_price_update_tab1_{ticker}"] = time.time()
+            st.session_state[f"current_price_tab1_{ticker}"] = current_price
+        elif time.time() - st.session_state[f"last_price_update_tab1_{ticker}"] >= 30:
+            new_price = get_current_price(ticker)
+            if new_price != 0.0:
+                st.session_state[f"current_price_tab1_{ticker}"] = new_price
+                st.session_state[f"last_price_update_tab1_{ticker}"] = time.time()
+            elif st.session_state[f"current_price_tab1_{ticker}"] == 0.0:
+                st.session_state[f"current_price_tab1_{ticker}"] = st.session_state.get(f"aftermarket_close_{ticker}", 0.0)
+        
+        current_time = datetime.now()
+        if current_time.hour < 9 or current_time.hour >= 20:
+            label = "Aftermarket Close (8:00 PM)" if current_time.hour >= 20 else "Premarket Reference (5:00 AM)"
+            price_container.markdown(f"**{label}:** ${st.session_state[f'current_price_tab1_{ticker}']:.2f}")
+        else:
+            price_container.markdown(f"**Current Price:** ${st.session_state[f'current_price_tab1_{ticker}']:.2f}")
 
         with st.spinner(f"Fetching data for {expiration_date}..."):
             options_data = get_options_data(ticker, expiration_date)
             if not options_data:
                 st.error("No options data available for this ticker and expiration date.")
-                return
-            processed_data = {}
-            for opt in options_data:
-                if not opt or not isinstance(opt, dict):
-                    continue
-                strike = float(opt.get("strike", 0))
-                option_type = opt.get("option_type", "").upper()
-                if option_type not in ["CALL", "PUT"]:
-                    continue
-                oi = int(opt.get("open_interest", 0))
-                greeks = opt.get("greeks", {})
-                gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
-                if strike not in processed_data:
-                    processed_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
-                processed_data[strike][option_type]["OI"] += oi
-                processed_data[strike][option_type]["Gamma"] += gamma
-            if not processed_data:
-                st.error("No valid data to display.")
-                return
-            prices, _ = get_historical_prices_combined(ticker)
-            historical_prices = prices
-            touched_strikes = detect_touched_strikes(processed_data.keys(), historical_prices)
-            max_pain = calculate_max_pain_optimized(options_data)
-            df = analyze_contracts(ticker, expiration_date, current_price)
-            max_pain_strike, max_pain_df = calculate_max_pain(df)
+            else:
+                processed_data = {}
+                for opt in options_data:
+                    try:
+                        if not opt or not isinstance(opt, dict):
+                            continue
+                        strike = float(opt.get("strike", 0))
+                        option_type = opt.get("option_type", "").upper()
+                        if option_type not in ["CALL", "PUT"]:
+                            continue
+                        oi = int(opt.get("open_interest", 0))
+                        greeks = opt.get("greeks", {})
+                        gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
+                        if strike not in processed_data:
+                            processed_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
+                        processed_data[strike][option_type]["OI"] += oi
+                        processed_data[strike][option_type]["Gamma"] += gamma
+                    except (ValueError, TypeError) as e:
+                        logger.error(f"Error processing option data for {ticker}: {e}")
+                
+                if not processed_data:
+                    st.error("No valid data to display after processing.")
+                else:
+                    prices, _ = get_historical_prices_combined(ticker)
+                    historical_prices = prices
+                    touched_strikes = detect_touched_strikes(processed_data.keys(), historical_prices)
+                    max_pain = calculate_max_pain_optimized(options_data)
+                    df = analyze_contracts(ticker, expiration_date, st.session_state[f"current_price_tab1_{ticker}"])
+                    max_pain_strike, max_pain_df = calculate_max_pain(df)
 
-            # Gráfica 1: Gamma Exposure
-            gamma_fig = gamma_exposure_chart(processed_data, current_price, touched_strikes)
-            st.plotly_chart(gamma_fig, use_container_width=True)
-            gamma_df = pd.DataFrame({
-                "Strike": list(processed_data.keys()),
-                "CALL_Gamma": [processed_data[s]["CALL"]["Gamma"] for s in processed_data],
-                "PUT_Gamma": [processed_data[s]["PUT"]["Gamma"] for s in processed_data],
-                "CALL_OI": [processed_data[s]["CALL"]["OI"] for s in processed_data],
-                "PUT_OI": [processed_data[s]["PUT"]["OI"] for s in processed_data]
-            })
-            gamma_csv = gamma_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Gamma Exposure Data",
-                data=gamma_csv,
-                file_name=f"{ticker}_gamma_exposure_{expiration_date}.csv",
-                mime="text/csv",
-                key="download_gamma_tab1"
-            )
+                    gamma_fig = gamma_exposure_chart(processed_data, st.session_state[f"current_price_tab1_{ticker}"], touched_strikes)
+                    st.plotly_chart(gamma_fig, use_container_width=True)
+                    gamma_df = pd.DataFrame({
+                        "Strike": list(processed_data.keys()),
+                        "CALL_Gamma": [processed_data[s]["CALL"]["Gamma"] for s in processed_data],
+                        "PUT_Gamma": [processed_data[s]["PUT"]["Gamma"] for s in processed_data],
+                        "CALL_OI": [processed_data[s]["CALL"]["OI"] for s in processed_data],
+                        "PUT_OI": [processed_data[s]["PUT"]["OI"] for s in processed_data]
+                    })
+                    gamma_csv = gamma_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Gamma Exposure Data",
+                        data=gamma_csv,
+                        file_name=f"{ticker}_gamma_exposure_{expiration_date}.csv",
+                        mime="text/csv",
+                        key="download_gamma_tab1"
+                    )
 
-            # Gráfica 2: Skew Analysis
-            skew_fig, total_calls, total_puts = plot_skew_analysis_with_totals(options_data, current_price)
-            st.plotly_chart(skew_fig, use_container_width=True)
-            st.write(f"**Total CALLS:** {total_calls} | **Total PUTS:** {total_puts}")
-            skew_df = pd.DataFrame(options_data)[["strike", "option_type", "open_interest", "volume"]]
-            skew_csv = skew_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Skew Analysis Data",
-                data=skew_csv,
-                file_name=f"{ticker}_skew_analysis_{expiration_date}.csv",
-                mime="text/csv",
-                key="download_skew_tab1"
-            )
+                    skew_fig, total_calls, total_puts = plot_skew_analysis_with_totals(options_data, st.session_state[f"current_price_tab1_{ticker}"])
+                    st.plotly_chart(skew_fig, use_container_width=True)
+                    st.write(f"**Total CALLS:** {total_calls} | **Total PUTS:** {total_puts}")
+                    skew_df = pd.DataFrame(options_data)[["strike", "option_type", "open_interest", "volume"]]
+                    skew_csv = skew_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Skew Analysis Data",
+                        data=skew_csv,
+                        file_name=f"{ticker}_skew_analysis_{expiration_date}.csv",
+                        mime="text/csv",
+                        key="download_skew_tab1"
+                    )
 
-            # Gráfica 3: Max Pain Histogram
-            st.write(f"Current Price of {ticker}: ${current_price:.2f} (Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
-            st.write(f"**Max Pain Strike (Optimized):** {max_pain if max_pain else 'N/A'}")
-            max_pain_fig = plot_max_pain_histogram_with_levels(max_pain_df, current_price)
-            st.plotly_chart(max_pain_fig, use_container_width=True)
-            max_pain_csv = max_pain_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Max Pain Data",
-                data=max_pain_csv,
-                file_name=f"{ticker}_max_pain_{expiration_date}.csv",
-                mime="text/csv",
-                key="download_max_pain_tab1"
-            )
+                    st.write(f"Current Price of {ticker}: ${st.session_state[f'current_price_tab1_{ticker}']:.2f}")
+                    st.write(f"**Max Pain Strike (Optimized):** {max_pain if max_pain else 'N/A'}")
+                    max_pain_fig = plot_max_pain_histogram_with_levels(max_pain_df, st.session_state[f"current_price_tab1_{ticker}"])
+                    st.plotly_chart(max_pain_fig, use_container_width=True)
+                    max_pain_csv = max_pain_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Max Pain Data",
+                        data=max_pain_csv,
+                        file_name=f"{ticker}_max_pain_{expiration_date}.csv",
+                        mime="text/csv",
+                        key="download_max_pain_tab1"
+                    )
 
     with tab2:
         st.subheader("Market Scanner")
@@ -1773,7 +1888,7 @@ def main():
                 stock_list = get_stock_list_combined()
                 if not stock_list:
                     st.error("No se pudo obtener la lista de acciones.")
-                    return
+                    st.stop()
 
                 num_workers = min(50, max(10, len(stock_list) // 5))
                 results = []
@@ -1781,9 +1896,12 @@ def main():
                 with ThreadPoolExecutor(max_workers=num_workers) as executor:
                     futures = [executor.submit(scan_stock, symbol, scan_type) for symbol in stock_list]
                     for future in futures:
-                        result = future.result()
-                        if result:
-                            results.append(result)
+                        try:
+                            result = future.result()
+                            if result:
+                                results.append(result)
+                        except Exception as e:
+                            logger.error(f"Error scanning stock: {e}")
                 
                 if results:
                     df_results = pd.DataFrame(results[:max_results])
@@ -1799,12 +1917,12 @@ def main():
                         fig.update_layout(title="📊 Volume Distribution", xaxis_title="Stock Symbol", yaxis_title="Volume", template="plotly_dark")
                         st.plotly_chart(fig, use_container_width=True)
                     
-                    # Descarga CSV
+                    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
                     csv = pd.DataFrame(results).to_csv(index=False)
                     st.download_button(
                         label="📥 Download Market Scan Data",
                         data=csv,
-                        file_name=f"market_scan_{scan_type.replace(' ', '_').lower()}.csv",
+                        file_name=f"market_scan_{scan_type.replace(' ', '_').lower()}_{timestamp}.csv",
                         mime="text/csv",
                         key="download_tab2"
                     )
@@ -1833,6 +1951,30 @@ def main():
         st.subheader("Institutional Holders")
         ticker = st.text_input("Ticker for Holders (e.g., AAPL):", "AAPL", key="holders_ticker").upper()
         if ticker:
+            price_container = st.empty()
+            current_price = get_current_price(ticker)
+            if current_price == 0.0:
+                st.warning(f"⚠️ {ticker}: No se pudo obtener precio en tiempo real. Usando precio por defecto o histórico.")
+                current_price = st.session_state.get(f"aftermarket_close_{ticker}", 0.0)
+            
+            if f"last_price_update_tab4_{ticker}" not in st.session_state:
+                st.session_state[f"last_price_update_tab4_{ticker}"] = time.time()
+                st.session_state[f"current_price_tab4_{ticker}"] = current_price
+            elif time.time() - st.session_state[f"last_price_update_tab4_{ticker}"] >= 30:
+                new_price = get_current_price(ticker)
+                if new_price != 0.0:
+                    st.session_state[f"current_price_tab4_{ticker}"] = new_price
+                    st.session_state[f"last_price_update_tab4_{ticker}"] = time.time()
+                elif st.session_state[f"current_price_tab4_{ticker}"] == 0.0:
+                    st.session_state[f"current_price_tab4_{ticker}"] = st.session_state.get(f"aftermarket_close_{ticker}", 0.0)
+            
+            current_time = datetime.now()
+            if current_time.hour < 9 or current_time.hour >= 20:
+                label = "Aftermarket Close (8:00 PM)" if current_time.hour >= 20 else "Premarket Reference (5:00 AM)"
+                price_container.markdown(f"**{label}:** ${st.session_state[f'current_price_tab4_{ticker}']:.2f}")
+            else:
+                price_container.markdown(f"**Current Price:** ${st.session_state[f'current_price_tab4_{ticker}']:.2f}")
+            
             holders = get_institutional_holders_list(ticker)
             if holders is not None and not holders.empty:
                 def color_negative(row):
@@ -1847,7 +1989,6 @@ def main():
                     'Value': '${:,.0f}' if 'Value' in holders.columns else None
                 })
                 st.dataframe(styled_holders, use_container_width=True)
-                # Descarga CSV
                 holders_csv = holders.to_csv(index=False)
                 st.download_button(
                     label="📥 Download Holders Data",
@@ -1857,30 +1998,51 @@ def main():
                     key="download_tab4"
                 )
             else:
-                st.warning("No institutional holders data available.")
+                st.warning("No institutional holders data available. Check API connectivity or ticker validity.")
 
     with tab5:
-        st.subheader("Order Flow")
+        st.subheader("Options Order Flow")
         stock = st.text_input("Enter Stock Ticker (e.g., AAPL, MSFT):", value="SPY", key="stock_analysis").upper()
         expiration_dates = get_expiration_dates(stock)
         if not expiration_dates:
             st.error(f"No expiration dates found for '{stock}'. Please enter a valid stock ticker (e.g., SPY, AAPL).")
-            return
+            st.stop()
+        
         selected_expiration = st.selectbox("Select an Expiration Date:", expiration_dates, key="stock_exp_date")
         if stock:
             with st.spinner("Fetching data..."):
+                price_container = st.empty()
+                current_price = get_current_price(stock)
+                if current_price == 0.0:
+                    st.warning(f"⚠️ {stock}: No se pudo obtener precio en tiempo real. Usando precio por defecto o histórico.")
+                    current_price = st.session_state.get(f"aftermarket_close_{stock}", 0.0)
+                
+                if f"last_price_update_tab5_{stock}" not in st.session_state:
+                    st.session_state[f"last_price_update_tab5_{stock}"] = time.time()
+                    st.session_state[f"current_price_tab5_{stock}"] = current_price
+                elif time.time() - st.session_state[f"last_price_update_tab5_{stock}"] >= 30:
+                    new_price = get_current_price(stock)
+                    if new_price != 0.0:
+                        st.session_state[f"current_price_tab5_{stock}"] = new_price
+                        st.session_state[f"last_price_update_tab5_{stock}"] = time.time()
+                    elif st.session_state[f"current_price_tab5_{stock}"] == 0.0:
+                        st.session_state[f"current_price_tab5_{stock}"] = st.session_state.get(f"aftermarket_close_{stock}", 0.0)
+                
+                current_time = datetime.now()
+                if current_time.hour < 9 or current_time.hour >= 20:
+                    label = "Aftermarket Close (8:00 PM)" if current_time.hour >= 20 else "Premarket Reference (5:00 AM)"
+                    price_container.markdown(f"**{label}:** ${st.session_state[f'current_price_tab5_{stock}']:.2f}")
+                else:
+                    price_container.markdown(f"**Current Price:** ${st.session_state[f'current_price_tab5_{stock}']:.2f}")
+                
                 financial_metrics = get_financial_metrics(stock)
                 prices, volumes = get_historical_prices_fmp(stock)
                 if not prices or not volumes:
                     st.error(f"❌ Unable to fetch data for {stock}.")
                 else:
                     trend, confidence, predicted_price = speculate_next_day_movement(financial_metrics, prices, volumes)
-                    current_price = get_current_price(stock)
-                    if current_price == 0.0:
-                        st.error(f"❌ No se pudo obtener el precio actual para {stock}. Verifica el ticker o la conexión a la API.")
-                        return
                     st.markdown(f"### Metrics for {stock}")
-                    st.write(f"- **Current Price**: ${current_price:,.2f}")
+                    st.write(f"- **Current Price**: ${st.session_state[f'current_price_tab5_{stock}']:.2f}")
                     st.write(f"- **EBITDA**: ${financial_metrics.get('EBITDA', 0):,.2f}")
                     st.write(f"- **Revenue**: ${financial_metrics.get('Revenue', 0):,.2f}")
                     st.write(f"- **Net Income**: ${financial_metrics.get('Net Income', 0):,.2f}")
@@ -1895,18 +2057,24 @@ def main():
                     st.write(f"- **Trend**: {trend}")
                     st.write(f"- **Confidence**: {confidence:.2f}")
                     st.write(f"- **Predicted Price (Next Day)**: ${predicted_price:.2f}" if predicted_price is not None else "- **Predicted Price (Next Day)**: N/A")
+                    
                     option_data = get_option_data(stock, selected_expiration)
                     if not option_data.empty:
+                        option_data["option_type"] = option_data["option_type"].astype(str)
+                        if "action" not in option_data.columns:
+                            option_data["action"] = "buy"
+                        option_data["action"] = option_data["action"].astype(str)
+                        
                         option_data_list = option_data.to_dict('records')
-                        buy_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "buy")]
-                        sell_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "sell")]
-                        buy_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "buy")]
-                        sell_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "sell")]
+                        buy_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "buy")].groupby('strike', observed=False).sum(numeric_only=True)
+                        sell_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "sell")].groupby('strike', observed=False).sum(numeric_only=True)
+                        buy_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "buy")].groupby('strike', observed=False).sum(numeric_only=True)
+                        sell_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "sell")].groupby('strike', observed=False).sum(numeric_only=True)
                         all_strikes = sorted(set(option_data["strike"]))
-                        buy_calls_data = pd.DataFrame({"strike": all_strikes}).merge(buy_calls[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
-                        sell_calls_data = pd.DataFrame({"strike": all_strikes}).merge(sell_calls[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
-                        buy_puts_data = pd.DataFrame({"strike": all_strikes}).merge(buy_puts[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
-                        sell_puts_data = pd.DataFrame({"strike": all_strikes}).merge(sell_puts[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
+                        buy_calls_data = pd.DataFrame({"strike": all_strikes}).merge(buy_calls[["open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
+                        sell_calls_data = pd.DataFrame({"strike": all_strikes}).merge(sell_calls[["open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
+                        buy_puts_data = pd.DataFrame({"strike": all_strikes}).merge(buy_puts[["open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
+                        sell_puts_data = pd.DataFrame({"strike": all_strikes}).merge(sell_puts[["open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
                         fig = go.Figure()
 
                         fig.add_trace(go.Bar(
@@ -1961,31 +2129,32 @@ def main():
                         )
 
                         max_pain = calculate_max_pain_optimized(option_data_list)
-                        total_call_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "call" and row["strike"] > current_price)
-                        total_put_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "put" and row["strike"] < current_price)
+                        total_call_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "call" and row["strike"] > st.session_state[f"current_price_tab5_{stock}"])
+                        total_put_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "put" and row["strike"] < st.session_state[f"current_price_tab5_{stock}"])
                         total_oi = total_call_oi + total_put_oi
                         gamma_calls = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0 
                                         for row in option_data_list if row["option_type"] == "call" and "greeks" in row)
                         gamma_puts = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0 
                                         for row in option_data_list if row["option_type"] == "put" and "greeks" in row)
                         net_gamma = gamma_calls - gamma_puts
-                        max_pain_factor = -2 if current_price > max_pain else 2 if current_price < max_pain else 0
+                        max_pain_factor = -2 if st.session_state[f"current_price_tab5_{stock}"] > max_pain else 2 if st.session_state[f"current_price_tab5_{stock}"] < max_pain else 0
                         oi_pressure = (total_call_oi - total_put_oi) / max(total_oi, 1)
                         gamma_factor = net_gamma / 10000
                         combined_score = max_pain_factor + oi_pressure + gamma_factor
                         direction_mm = "Down" if combined_score < 0 else "Up" if combined_score > 0 else "Neutral"
-                        st.write(f"Debug: Current Price = {current_price}, Max Pain = {max_pain}, OI Pressure = {oi_pressure}, Net Gamma = {net_gamma}, Combined Score = {combined_score}, Direction = {direction_mm}")
+                        with st.expander("Debug Info"):
+                            st.write(f"Current Price = {st.session_state[f'current_price_tab5_{stock}']}, Max Pain = {max_pain}, OI Pressure = {oi_pressure:.4f}, Net Gamma = {net_gamma:.2f}, Combined Score = {combined_score:.2f}, Direction = {direction_mm}")
 
                         y_max = max(buy_calls_data["open_interest"].max() or 0, sell_calls_data["open_interest"].max() or 0) * 1.1 or 100
                         y_min = -y_max
                         fig.add_trace(go.Scatter(
-                            x=[current_price, current_price],
+                            x=[st.session_state[f"current_price_tab5_{stock}"], st.session_state[f"current_price_tab5_{stock}"]],
                             y=[y_min, y_max],
                             mode="lines",
                             line=dict(width=1, dash="dash", color="#39FF14"),
                             name="Current Price",
                             hovertemplate=(
-                                f"<b>Current Price:</b> ${current_price:.2f}<br>"
+                                f"<b>Current Price:</b> ${st.session_state[f'current_price_tab5_{stock}']:.2f}<br>"
                                 f"<b>Max Pain:</b> ${max_pain:.2f}<br>"
                                 f"<b>Total Call OI:</b> {total_call_oi:,}<br>"
                                 f"<b>Total Put OI:</b> {total_put_oi:,}<br>"
@@ -2001,9 +2170,9 @@ def main():
                         ))
 
                         fig.add_annotation(
-                            x=current_price,
+                            x=st.session_state[f"current_price_tab5_{stock}"],
                             y=y_max * 0.95,
-                            text=f"Price: ${current_price:.2f}",
+                            text=f"Price: ${st.session_state[f'current_price_tab5_{stock}']:.2f}",
                             showarrow=False,
                             font=dict(color="#39FF14", size=10),
                             bgcolor="rgba(0,0,0,0.5)",
@@ -2014,7 +2183,7 @@ def main():
 
                         score_color = "red" if combined_score < 0 else "green" if combined_score > 0 else "white"
                         fig.add_annotation(
-                            x=current_price,
+                            x=st.session_state[f"current_price_tab5_{stock}"],
                             y=y_max * 0.9,
                             text=f"MM Score: <span style='color:{score_color}'>{combined_score:.2f}</span><br>{direction_mm}",
                             showarrow=True,
@@ -2052,7 +2221,6 @@ def main():
                         )
 
                         st.plotly_chart(fig, use_container_width=True, height=600)
-                        # Descarga CSV
                         order_flow_df = pd.DataFrame({
                             "Strike": all_strikes,
                             "Buy_Call_OI": buy_calls_data["open_interest"],
@@ -2073,54 +2241,82 @@ def main():
                             mime="text/csv",
                             key="download_tab5"
                         )
+                    else:
+                        st.warning("No option data available for this expiration.")
 
     with tab6:
-        st.subheader("Rating Flow")
+        st.subheader("Analyst Rating Flow")
         col1, col2 = st.columns([1, 3])
         with col1:
             st.markdown("### Configuration")
             ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="alerts_ticker").upper()
             expiration_dates = get_expiration_dates(ticker)
             if not expiration_dates:
-                st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
-                return
+                st.error(f"What were you thinking, '{ticker}'? Try a valid ticker like SPY!")
+                st.stop()
+            
             expiration_date = st.selectbox("Expiration Date", expiration_dates, key="alerts_exp_date")
-            with st.spinner("Fetching price..."):
-                current_price = get_current_price(ticker)
-                if current_price == 0.0:
-                    st.error(f"Invalid ticker '{ticker}' or no price data available.")
-                    return
-            st.markdown("### Vol Filter")
-            volume_options = {
-                "0.1M": 10000,
-                "0.2M": 20000,
-                "0.3M": 30000,
-                "0.4M": 40000,
-                "0.5M": 50000,
-                "1.0M": 100000
-            }
-            selected_volume = st.selectbox("Min Open Interest (M)", list(volume_options.keys()), index=3, key="alerts_vol")
-            open_interest_threshold = volume_options[selected_volume]
-            st.markdown("### Gamma Filter")
-            gamma_options = {
-                "0.001": 0.001,
-                "0.01": 0.01,
-                "0.02": 0.02,
-                "0.03": 0.03,
-                "0.04": 0.04,
-                "0.05": 0.05
-            }
-            selected_gamma = st.selectbox("Min Gamma", list(gamma_options.keys()), index=2, key="alerts_gamma")
-            gamma_threshold = gamma_options[selected_gamma]
-            st.markdown(f"**Current Price:** ${current_price:.2f}  \n*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
+            price_container_col1 = st.empty()
+            current_price = get_current_price(ticker)
+            if current_price == 0.0:
+                st.warning(f"⚠️ {ticker}: No se pudo obtener precio en tiempo real. Usando precio por defecto o histórico.")
+                current_price = st.session_state.get(f"aftermarket_close_{ticker}", 0.0)
+            
+            if f"last_price_update_tab6_{ticker}" not in st.session_state:
+                st.session_state[f"last_price_update_tab6_{ticker}"] = time.time()
+                st.session_state[f"current_price_tab6_{ticker}"] = current_price
+            elif time.time() - st.session_state[f"last_price_update_tab6_{ticker}"] >= 30:
+                new_price = get_current_price(ticker)
+                if new_price != 0.0:
+                    st.session_state[f"current_price_tab6_{ticker}"] = new_price
+                    st.session_state[f"last_price_update_tab6_{ticker}"] = time.time()
+                elif st.session_state[f"current_price_tab6_{ticker}"] == 0.0:
+                    st.session_state[f"current_price_tab6_{ticker}"] = st.session_state.get(f"aftermarket_close_{ticker}", 0.0)
+            
+            current_time = datetime.now()
+            if current_time.hour < 9 or current_time.hour >= 20:
+                label = "Aftermarket Close (8:00 PM)" if current_time.hour >= 20 else "Premarket Reference (5:00 AM)"
+                price_container_col1.markdown(f"**{label}:** ${st.session_state[f'current_price_tab6_{ticker}']:.2f}")
+            else:
+                price_container_col1.markdown(f"**Current Price:** ${st.session_state[f'current_price_tab6_{ticker}']:.2f}")
+            
+            options_data = get_options_data(ticker, expiration_date)
+            if not options_data:
+                st.error("No options data available for this date.")
+            else:
+                total_oi_all = sum(int(opt.get("open_interest", 0)) for opt in options_data)
+                num_strikes = len(set(opt.get("strike", 0) for opt in options_data))
+                avg_oi = total_oi_all / num_strikes if num_strikes > 0 else 0
+                total_gamma = sum(float(opt.get("greeks", {}).get("gamma", 0)) for opt in options_data if isinstance(opt.get("greeks", {}), dict))
+                avg_gamma = total_gamma / len(options_data) if options_data else 0
+                
+                default_oi = max(0.001, min(5.0, avg_oi / 1_000_000))
+                st.markdown(f"**Avg OI per Strike:** {avg_oi:,.0f}")
+                open_interest_threshold = st.slider(
+                    "Min Open Interest (millions)", 
+                    0.001, 5.0, default_oi, step=0.001,
+                    key="alerts_vol_auto"
+                ) * 1_000_000
+                
+                default_gamma = max(0.0001, min(0.1, avg_gamma))
+                st.markdown(f"**Avg Gamma:** {avg_gamma:.4f}")
+                gamma_threshold = st.slider(
+                    "Min Gamma", 
+                    0.0001, 0.1, default_gamma, step=0.0001,
+                    key="alerts_gamma_auto"
+                )
+        
         with col2:
-            st.markdown(f"**Current Price:** ${current_price:.2f}  \n*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
+            price_container_col2 = st.empty()
+            current_time = datetime.now()
+            if current_time.hour < 9 or current_time.hour >= 20:
+                label = "Aftermarket Close (8:00 PM)" if current_time.hour >= 20 else "Premarket Reference (5:00 AM)"
+                price_container_col2.markdown(f"**{label}:** ${st.session_state[f'current_price_tab6_{ticker}']:.2f}")
+            else:
+                price_container_col2.markdown(f"**Current Price:** ${st.session_state[f'current_price_tab6_{ticker}']:.2f}")
+            
             with st.spinner(f"Generating alerts for {expiration_date}..."):
-                options_data = get_options_data(ticker, expiration_date)
-                if not options_data:
-                    st.error("No options data available for this date.")
-                    return
-                suggestions = generate_contract_suggestions(ticker, options_data, current_price, open_interest_threshold, gamma_threshold)
+                suggestions = generate_contract_suggestions(ticker, options_data, st.session_state[f"current_price_tab6_{ticker}"], open_interest_threshold, gamma_threshold)
                 if suggestions:
                     df = pd.DataFrame(suggestions)
                     df['Contract'] = df.apply(lambda row: f"{ticker} {row['Action']} {row['Type']} {row['Strike']}", axis=1)
@@ -2131,9 +2327,9 @@ def main():
                         if row['Max Pain']:
                             return ['color: #FFA500'] * len(row)
                         elif row['Type'] == "CALL":
-                            return ['color: #32CD32' if row['Action'] == "SELL" and row['Strike'] > current_price else 'color: #008000'] * len(row)
+                            return ['color: #32CD32' if row['Action'] == "SELL" and row['Strike'] > st.session_state[f"current_price_tab6_{ticker}"] else 'color: #008000'] * len(row)
                         elif row['Type'] == "PUT":
-                            return ['color: #FF4500' if row['Action'] == "SELL" and row['Strike'] < current_price else 'color: #FF0000'] * len(row)
+                            return ['color: #FF4500' if row['Action'] == "SELL" and row['Strike'] < st.session_state[f"current_price_tab6_{ticker}"] else 'color: #FF0000'] * len(row)
                         return [''] * len(row)
 
                     styled_df = df.style.apply(color_row, axis=1).format({
@@ -2147,7 +2343,6 @@ def main():
                         'Open Int.': '{:,.0f}'
                     })
                     st.dataframe(styled_df, height=400)
-                    # Descarga CSV
                     csv = df.to_csv(index=False)
                     st.download_button(
                         label="📥 Download Rating Flow Data",
@@ -2157,184 +2352,204 @@ def main():
                         key="download_tab6"
                     )
                 else:
-                    st.error(f"No alerts generated with Open Interest ≥ {selected_volume}, Gamma ≥ {selected_gamma}. Check logs.")
+                    st.error(f"No alerts generated with OI ≥ {open_interest_threshold/1_000_000:.3f}M (={int(open_interest_threshold):,}) and Gamma ≥ {gamma_threshold:.4f}. Try adjusting the sliders or check logs.")
 
     with tab7:
-        st.subheader("Elliott Pulse")
+        st.subheader("Elliott Pulse®")
         ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="elliott_ticker").upper()
         expiration_dates = get_expiration_dates(ticker)
         if not expiration_dates:
             st.error(f"No expiration dates found for '{ticker}'. Try a valid ticker (e.g., SPY).")
-            return
+            st.stop()
+        
         selected_expiration = st.selectbox("Select Expiration Date", expiration_dates, key="elliott_exp_date")
-
         with st.spinner(f"Fetching data for {ticker} on {selected_expiration}..."):
+            price_container = st.empty()
             current_price = get_current_price(ticker)
             if current_price == 0.0:
-                st.error(f"Unable to fetch current price for '{ticker}'.")
-                return
+                st.warning(f"⚠️ {ticker}: No se pudo obtener precio en tiempo real. Usando precio por defecto o histórico.")
+                current_price = st.session_state.get(f"aftermarket_close_{ticker}", 0.0)
+            
+            if f"last_price_update_tab7_{ticker}" not in st.session_state:
+                st.session_state[f"last_price_update_tab7_{ticker}"] = time.time()
+                st.session_state[f"current_price_tab7_{ticker}"] = current_price
+            elif time.time() - st.session_state[f"last_price_update_tab7_{ticker}"] >= 30:
+                new_price = get_current_price(ticker)
+                if new_price != 0.0:
+                    st.session_state[f"current_price_tab7_{ticker}"] = new_price
+                    st.session_state[f"last_price_update_tab7_{ticker}"] = time.time()
+                elif st.session_state[f"current_price_tab7_{ticker}"] == 0.0:
+                    st.session_state[f"current_price_tab7_{ticker}"] = st.session_state.get(f"aftermarket_close_{ticker}", 0.0)
+            
+            current_time = datetime.now()
+            if current_time.hour < 9 or current_time.hour >= 20:
+                label = "Aftermarket Close (8:00 PM)" if current_time.hour >= 20 else "Premarket Reference (5:00 AM)"
+                price_container.markdown(f"**{label}:** ${st.session_state[f'current_price_tab7_{ticker}']:.2f}")
+            else:
+                price_container.markdown(f"**Current Price:** ${st.session_state[f'current_price_tab7_{ticker}']:.2f}")
+            
             options_data = get_options_data(ticker, selected_expiration)
             if not options_data:
                 st.error(f"No options data available for {selected_expiration}.")
-                return
+            else:
+                total_oi_all = sum(int(opt.get("open_interest", 0)) for opt in options_data)
+                num_strikes = len(set(opt.get("strike", 0) for opt in options_data))
+                avg_oi = total_oi_all / num_strikes if num_strikes > 0 else 0
+                st.markdown(f"**Avg OI per Strike:** {avg_oi:,.0f}")
 
-            total_oi_all = sum(int(opt.get("open_interest", 0)) for opt in options_data)
-            num_strikes = len(set(opt.get("strike", 0) for opt in options_data))
-            avg_oi = total_oi_all / num_strikes if num_strikes > 0 else 0
-            st.markdown(f"**Avg OI per Strike:** {avg_oi:,.0f}")
+                default_volume = max(0.0001, min(5.0, avg_oi / 2_000_000))
+                volume_threshold = st.slider("Min Open Interest (millions)", 0.0001, 5.0, default_volume, step=0.0001, key="elliott_vol") * 1_000_000
 
-            default_volume = max(0.0001, min(5.0, avg_oi / 2_000_000))
-            volume_threshold = st.slider("Min Open Interest (millions)", 0.0001, 5.0, default_volume, step=0.0001, key="elliott_vol") * 1_000_000
+                strikes_data = {}
+                for opt in options_data:
+                    strike = float(opt.get("strike", 0))
+                    opt_type = opt.get("option_type", "").upper()
+                    oi = int(opt.get("open_interest", 0))
+                    greeks = opt.get("greeks", {})
+                    gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
+                    if strike not in strikes_data:
+                        strikes_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
+                    strikes_data[strike][opt_type]["OI"] += oi
+                    strikes_data[strike][opt_type]["Gamma"] += gamma * oi
 
-            strikes_data = {}
-            for opt in options_data:
-                strike = float(opt.get("strike", 0))
-                opt_type = opt.get("option_type", "").upper()
-                oi = int(opt.get("open_interest", 0))
-                greeks = opt.get("greeks", {})
-                gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
-                if strike not in strikes_data:
-                    strikes_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
-                strikes_data[strike][opt_type]["OI"] += oi
-                strikes_data[strike][opt_type]["Gamma"] += gamma * oi
-
-            strikes = sorted(strikes_data.keys())
-            call_gamma = []
-            put_gamma = []
-            net_gamma = []
-            total_oi = []
-            for strike in strikes:
-                call_oi = strikes_data[strike]["CALL"]["OI"]
-                put_oi = strikes_data[strike]["PUT"]["OI"]
-                if call_oi >= volume_threshold or put_oi >= volume_threshold:
-                    cg = strikes_data[strike]["CALL"]["Gamma"]
-                    pg = strikes_data[strike]["PUT"]["Gamma"]
-                    call_gamma.append(cg)
-                    put_gamma.append(-pg)
-                    net_gamma.append(cg - pg)
-                    total_oi.append(call_oi + put_oi)
-                else:
-                    call_gamma.append(0)
-                    put_gamma.append(0)
-                    net_gamma.append(0)
-                    total_oi.append(0)
-
-            significant_strikes = [(strike, ng, oi) for strike, ng, oi in zip(strikes, net_gamma, total_oi) if oi > volume_threshold]
-            if not significant_strikes:
-                st.warning(f"No significant strikes found above volume threshold ({volume_threshold/1_000_000:.4f}M).")
-                return
-
-            total_volume = sum(oi for _, _, oi in significant_strikes)
-            volume_cutoff = total_volume * 0.1
-            high_volume_strikes = [(strike, oi) for strike, _, oi in significant_strikes if oi >= volume_cutoff]
-
-            max_pain = None
-            min_loss = float('inf')
-            for strike in [s[0] for s in high_volume_strikes]:
-                call_loss = sum(max(0, s - strike) * strikes_data[s]["CALL"]["OI"] for s, _ in high_volume_strikes)
-                put_loss = sum(max(0, strike - s) * strikes_data[s]["PUT"]["OI"] for s, _ in high_volume_strikes)
-                total_loss = call_loss + put_loss
-                if total_loss < min_loss:
-                    min_loss = total_loss
-                    max_pain = strike
-            max_pain_gamma = strikes_data.get(max_pain, {"CALL": {"Gamma": 0}, "PUT": {"Gamma": 0}})["CALL"]["Gamma"] - \
-                            strikes_data.get(max_pain, {"CALL": {"Gamma": 0}, "PUT": {"Gamma": 0}})["PUT"]["Gamma"] if max_pain else 0
-
-            sorted_by_volume = sorted(significant_strikes, key=lambda x: x[2], reverse=True)
-            sorted_by_low_volume = sorted(significant_strikes, key=lambda x: x[2])
-
-            a_point = min(significant_strikes, key=lambda x: abs(x[0] - current_price)) if significant_strikes else (current_price, 0, 0)
-            b_point = sorted_by_volume[0] if sorted_by_volume else (current_price + 1, 0, 0)
-            c_point = sorted_by_low_volume[0] if sorted_by_low_volume else (current_price - 1, 0, 0)
-            d_point = (max_pain, max_pain_gamma, strikes_data.get(max_pain, {"CALL": {"OI": 0}, "PUT": {"OI": 0}})["CALL"]["OI"] + 
-                      strikes_data.get(max_pain, {"CALL": {"OI": 0}, "PUT": {"OI": 0}})["PUT"]["OI"]) if max_pain else (current_price, 0, 0)
-            e_point = max(significant_strikes, key=lambda x: abs(x[1])) if significant_strikes else (current_price + 2, 0, 0)
-
-            wave_points = [a_point, b_point, c_point, d_point, e_point]
-            wave_strikes = [point[0] for point in wave_points]
-            wave_gamma = [point[1] for point in wave_points]
-            wave_oi = [point[2] for point in wave_points]
-
-            max_pain_divisions = [max_pain / s if s != 0 and max_pain is not None else 0 for s in wave_strikes]
-            pressure = [oi / abs(s - max_pain) if max_pain is not None and s != max_pain and abs(s - max_pain) > 0 else 0 
-                        for s, oi in zip(wave_strikes, wave_oi)]
-            max_pressure = max(pressure) if pressure and max(pressure) > 0 else 1
-            pressure_normalized = [p / max_pressure * 100 for p in pressure]
-
-            fig = go.Figure()
-            fig.add_trace(go.Bar(x=strikes, y=call_gamma, name="CALL Gamma", marker_color="#32CD32", width=0.8, opacity=0.4))
-            fig.add_trace(go.Bar(x=strikes, y=put_gamma, name="PUT Gamma", marker_color="#FF4500", width=0.8, opacity=0.4))
-            fig.add_trace(go.Scatter(x=[current_price, current_price], y=[min(put_gamma) * 1.1, max(call_gamma) * 1.1], 
-                                    mode="lines", line=dict(color="#FFFFFF", dash="dash", width=2), name="Current Price"))
-
-            for i in range(len(wave_strikes) - 1):
-                start_strike = wave_strikes[i]
-                end_strike = wave_strikes[i + 1]
-                start_gamma = wave_gamma[i]
-                end_gamma = wave_gamma[i + 1]
-                if start_strike is not None and end_strike is not None:
-                    if (start_strike > current_price and end_strike < current_price) or \
-                       (start_strike < current_price and end_strike > current_price):
-                        line_color = "#FF4500" if start_strike > end_strike else "#32CD32"
+                strikes = sorted(strikes_data.keys())
+                call_gamma = []
+                put_gamma = []
+                net_gamma = []
+                total_oi = []
+                for strike in strikes:
+                    call_oi = strikes_data[strike]["CALL"]["OI"]
+                    put_oi = strikes_data[strike]["PUT"]["OI"]
+                    if call_oi >= volume_threshold or put_oi >= volume_threshold:
+                        cg = strikes_data[strike]["CALL"]["Gamma"]
+                        pg = strikes_data[strike]["PUT"]["Gamma"]
+                        call_gamma.append(cg)
+                        put_gamma.append(-pg)
+                        net_gamma.append(cg - pg)
+                        total_oi.append(call_oi + put_oi)
                     else:
-                        line_color = "#FFD700"
-                    fig.add_trace(go.Scatter(x=[start_strike, end_strike], y=[start_gamma, end_gamma], 
-                                            mode="lines", line=dict(color=line_color, width=1), showlegend=False))
+                        call_gamma.append(0)
+                        put_gamma.append(0)
+                        net_gamma.append(0)
+                        total_oi.append(0)
 
-            fig.add_trace(go.Scatter(x=wave_strikes, y=wave_gamma, mode="markers+text", name="Elliott Pulse",
-                                    marker=dict(size=8, symbol="circle", color="#FFD700"),
-                                    text=[f"${s:.2f}\n{letter}\n<span style='color:{'#FF4500' if p > 50 else '#32CD32'}'>{p:.0f}</span>" 
-                                          for s, letter, p in zip(wave_strikes, ["A", "B", "C", "D", "E"], pressure_normalized)],
-                                    textposition="top center",
-                                    textfont=dict(size=12),
-                                    customdata=[(s, g, o, mpd, p) for s, g, o, mpd, p in zip(wave_strikes, wave_gamma, wave_oi, max_pain_divisions, pressure_normalized)],
-                                    hovertemplate="Strike: $%{customdata[0]:.2f}<br>Gamma: %{customdata[1]:.2f}<br>OI: %{customdata[2]:,d}<br>Max Pain / Strike: %{customdata[3]:.2f}<br>MM Pressure: %{customdata[4]:.0f}"))
-            fig.add_trace(go.Scatter(x=[max_pain], y=[max_pain_gamma], mode="markers+text", name="Max Pain",
-                                    marker=dict(size=13, color="white", symbol="star"), text=[f"${max_pain:.2f}" if max_pain else "N/A"], 
-                                    textposition="bottom center"))
+                significant_strikes = [(strike, ng, oi) for strike, ng, oi in zip(strikes, net_gamma, total_oi) if oi > volume_threshold]
+                if not significant_strikes:
+                    st.warning(f"No significant strikes found above volume threshold ({volume_threshold/1_000_000:.4f}M).")
+                else:
+                    total_volume = sum(oi for _, _, oi in significant_strikes)
+                    volume_cutoff = total_volume * 0.1
+                    high_volume_strikes = [(strike, oi) for strike, _, oi in significant_strikes if oi >= volume_cutoff]
 
-            fig.update_layout(
-                title=f"Elliott Pulse {ticker} (Exp: {selected_expiration})",
-                xaxis_title="Strike Price",
-                yaxis_title="Gamma Exposure",
-                barmode="relative",
-                template="plotly_dark",
-                hovermode="x unified",
-                height=600,
-                legend=dict(yanchor="top", y=1.1, xanchor="right", x=1.0, bgcolor="rgba(0,0,0,0.5)"),
-                plot_bgcolor="#000000",
-                paper_bgcolor="#000000",
-                font=dict(color="#FFFFFF"),
-                xaxis=dict(gridcolor="rgba(255,255,255,0.1)"),
-                yaxis=dict(gridcolor="rgba(255,255,255,0.1)")
-            )
-            st.plotly_chart(fig, config={'staticPlot': False, 'displayModeBar': True}, use_container_width=True)
-            # Descarga CSV
-            elliott_df = pd.DataFrame({
-                "Strike": strikes,
-                "CALL_Gamma": call_gamma,
-                "PUT_Gamma": put_gamma,
-                "Net_Gamma": net_gamma,
-                "Total_OI": total_oi,
-                "Wave_Point": ["A" if s == wave_strikes[0] else "B" if s == wave_strikes[1] else "C" if s == wave_strikes[2] else "D" if s == wave_strikes[3] else "E" if s == wave_strikes[4] else "" for s in strikes],
-                "Max_Pain_Division": [max_pain / s if s != 0 and max_pain is not None else 0 for s in strikes],
-                "MM_Pressure": [oi / abs(s - max_pain) if max_pain is not None and s != max_pain and abs(s - max_pain) > 0 else 0 for s, oi in zip(strikes, total_oi)]
-            })
-            elliott_csv = elliott_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Elliott Pulse Data",
-                data=elliott_csv,
-                file_name=f"{ticker}_elliott_pulse_{selected_expiration}.csv",
-                mime="text/csv",
-                key="download_tab7"
-            )
+                    max_pain = None
+                    min_loss = float('inf')
+                    for strike in [s[0] for s in high_volume_strikes]:
+                        call_loss = sum(max(0, s - strike) * strikes_data[s]["CALL"]["OI"] for s, _ in high_volume_strikes)
+                        put_loss = sum(max(0, strike - s) * strikes_data[s]["PUT"]["OI"] for s, _ in high_volume_strikes)
+                        total_loss = call_loss + put_loss
+                        if total_loss < min_loss:
+                            min_loss = total_loss
+                            max_pain = strike
+                    if max_pain is None:
+                        max_pain = st.session_state[f"current_price_tab7_{ticker}"]
+                    max_pain_gamma = strikes_data.get(max_pain, {"CALL": {"Gamma": 0}, "PUT": {"Gamma": 0}})["CALL"]["Gamma"] - \
+                                    strikes_data.get(max_pain, {"CALL": {"Gamma": 0}, "PUT": {"Gamma": 0}})["PUT"]["Gamma"]
+
+                    sorted_by_volume = sorted(significant_strikes, key=lambda x: x[2], reverse=True)
+                    sorted_by_low_volume = sorted(significant_strikes, key=lambda x: x[2])
+
+                    a_point = min(significant_strikes, key=lambda x: abs(x[0] - st.session_state[f"current_price_tab7_{ticker}"])) if significant_strikes else (st.session_state[f"current_price_tab7_{ticker}"], 0, 0)
+                    b_point = sorted_by_volume[0] if sorted_by_volume else (st.session_state[f"current_price_tab7_{ticker}"] + 1, 0, 0)
+                    c_point = sorted_by_low_volume[0] if sorted_by_low_volume else (st.session_state[f"current_price_tab7_{ticker}"] - 1, 0, 0)
+                    d_point = (max_pain, max_pain_gamma, strikes_data.get(max_pain, {"CALL": {"OI": 0}, "PUT": {"OI": 0}})["CALL"]["OI"] + 
+                              strikes_data.get(max_pain, {"CALL": {"OI": 0}, "PUT": {"OI": 0}})["PUT"]["OI"])
+                    e_point = max(significant_strikes, key=lambda x: abs(x[1])) if significant_strikes else (st.session_state[f"current_price_tab7_{ticker}"] + 2, 0, 0)
+
+                    wave_points = [a_point, b_point, c_point, d_point, e_point]
+                    wave_strikes = [point[0] for point in wave_points]
+                    wave_gamma = [point[1] for point in wave_points]
+                    wave_oi = [point[2] for point in wave_points]
+
+                    max_pain_divisions = [max_pain / s if s != 0 else 0 for s in wave_strikes]
+                    pressure = [oi / abs(s - max_pain) if s != max_pain and abs(s - max_pain) > 0 else 0 
+                                for s, oi in zip(wave_strikes, wave_oi)]
+                    max_pressure = max(pressure) if pressure and max(pressure) > 0 else 1
+                    pressure_normalized = [p / max_pressure * 100 for p in pressure]
+
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(x=strikes, y=call_gamma, name="CALL Gamma", marker_color="#32CD32", width=0.8, opacity=0.4))
+                    fig.add_trace(go.Bar(x=strikes, y=put_gamma, name="PUT Gamma", marker_color="#FF4500", width=0.8, opacity=0.4))
+                    fig.add_trace(go.Scatter(x=[st.session_state[f"current_price_tab7_{ticker}"], st.session_state[f"current_price_tab7_{ticker}"]], y=[min(put_gamma) * 1.1, max(call_gamma) * 1.1], 
+                                            mode="lines", line=dict(color="#FFFFFF", dash="dash", width=2), name="Current Price"))
+
+                    for i in range(len(wave_strikes) - 1):
+                        start_strike = wave_strikes[i]
+                        end_strike = wave_strikes[i + 1]
+                        start_gamma = wave_gamma[i]
+                        end_gamma = wave_gamma[i + 1]
+                        if start_strike is not None and end_strike is not None:
+                            if (start_strike > st.session_state[f"current_price_tab7_{ticker}"] and end_strike < st.session_state[f"current_price_tab7_{ticker}"]) or \
+                               (start_strike < st.session_state[f"current_price_tab7_{ticker}"] and end_strike > st.session_state[f"current_price_tab7_{ticker}"]):
+                                line_color = "#FF4500" if start_strike > end_strike else "#32CD32"
+                            else:
+                                line_color = "#FFD700"
+                            fig.add_trace(go.Scatter(x=[start_strike, end_strike], y=[start_gamma, end_gamma], 
+                                                    mode="lines", line=dict(color=line_color, width=1), showlegend=False))
+
+                    fig.add_trace(go.Scatter(x=wave_strikes, y=wave_gamma, mode="markers+text", name="Elliott Pulse",
+                                            marker=dict(size=8, symbol="circle", color="#FFD700"),
+                                            text=[f"${s:.2f}\n{letter}\n<span style='color:{'#FF4500' if p > 50 else '#32CD32'}'>{p:.0f}</span>" 
+                                                  for s, letter, p in zip(wave_strikes, ["A", "B", "C", "D", "E"], pressure_normalized)],
+                                            textposition="top center",
+                                            textfont=dict(size=12),
+                                            customdata=[(s, g, o, mpd, p) for s, g, o, mpd, p in zip(wave_strikes, wave_gamma, wave_oi, max_pain_divisions, pressure_normalized)],
+                                            hovertemplate="Strike: $%{customdata[0]:.2f}<br>Gamma: %{customdata[1]:.2f}<br>OI: %{customdata[2]:,d}<br>Max Pain / Strike: %{customdata[3]:.2f}<br>MM Pressure: %{customdata[4]:.0f}"))
+                    fig.add_trace(go.Scatter(x=[max_pain], y=[max_pain_gamma], mode="markers+text", name="Max Pain",
+                                            marker=dict(size=13, color="white", symbol="star"), text=[f"${max_pain:.2f}"], 
+                                            textposition="bottom center"))
+
+                    fig.update_layout(
+                        title=f"Elliott Pulse {ticker} (Exp: {selected_expiration})",
+                        xaxis_title="Strike Price",
+                        yaxis_title="Gamma Exposure",
+                        barmode="relative",
+                        template="plotly_dark",
+                        hovermode="x unified",
+                        height=600,
+                        legend=dict(yanchor="top", y=1.1, xanchor="right", x=1.0, bgcolor="rgba(0,0,0,0.5)"),
+                        plot_bgcolor="#000000",
+                        paper_bgcolor="#000000",
+                        font=dict(color="#FFFFFF"),
+                        xaxis=dict(gridcolor="rgba(255,255,255,0.1)"),
+                        yaxis=dict(gridcolor="rgba(255,255,255,0.1)")
+                    )
+                    st.plotly_chart(fig, config={'staticPlot': False, 'displayModeBar': True}, use_container_width=True)
+                    elliott_df = pd.DataFrame({
+                        "Strike": strikes,
+                        "CALL_Gamma": call_gamma,
+                        "PUT_Gamma": put_gamma,
+                        "Net_Gamma": net_gamma,
+                        "Total_OI": total_oi,
+                        "Wave_Point": ["A" if s == wave_strikes[0] else "B" if s == wave_strikes[1] else "C" if s == wave_strikes[2] else "D" if s == wave_strikes[3] else "E" if s == wave_strikes[4] else "" for s in strikes],
+                        "Max_Pain_Division": [max_pain / s if s != 0 else 0 for s in strikes],
+                        "MM_Pressure": [oi / abs(s - max_pain) if s != max_pain and abs(s - max_pain) > 0 else 0 for s, oi in zip(strikes, total_oi)],
+                        "Current_Price": [st.session_state[f"current_price_tab7_{ticker}"]] * len(strikes)
+                    })
+                    elliott_csv = elliott_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Elliott Pulse Data",
+                        data=elliott_csv,
+                        file_name=f"{ticker}_elliott_pulse_{selected_expiration}.csv",
+                        mime="text/csv",
+                        key="download_tab7"
+                    )
 
     with tab8:
         st.subheader("Crypto Insights")
         crypto_list = get_crypto_list()
         if not crypto_list:
             st.error("No se pudo cargar la lista de criptomonedas.")
-            return
+            st.stop()
         
         crypto_symbol = st.selectbox("Select Cryptocurrency", crypto_list, index=crypto_list.index("BTCUSD") if "BTCUSD" in crypto_list else 0, key="crypto_symbol")
         
@@ -2342,74 +2557,91 @@ def main():
             quote = get_crypto_quote(crypto_symbol)
             if not quote:
                 st.error(f"No se pudo obtener datos para {crypto_symbol}.")
-                return
-            
-            current_price = quote.get("price", 0)
-            st.markdown(f"### {quote.get('name', crypto_symbol)} ({crypto_symbol})")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.write(f"- **Price**: ${current_price:,.2f}")
-                st.write(f"- **Change (24h)**: {quote.get('change', 0):,.2f} ({quote.get('changesPercentage', 0):.2f}%)")
-            with col2:
-                st.write(f"- **Volume (24h)**: {quote.get('volume', 0):,.0f}")
-                st.write(f"- **Market Cap**: ${quote.get('marketCap', 0):,.0f}")
-            with col3:
-                st.write(f"*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
-            
-            historical = get_crypto_historical_coingecko(crypto_symbol, days=30)
-            if historical:
-                
-                bin_size = 100 if "BTC" in crypto_symbol else 10
-                
-                # Gráfica 1: Volume Power Flow con velas de ballenas
-                flow_data, support, resistance, accumulation_zones = calculate_volume_power_flow(historical, current_price, bin_size)
-                fig1 = plot_volume_power_flow(flow_data, current_price, support, resistance, accumulation_zones)
-                st.plotly_chart(fig1, use_container_width=True)
-                flow_csv = flow_data.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Volume Power Flow Data",
-                    data=flow_csv,
-                    file_name=f"{crypto_symbol}_volume_power_flow.csv",
-                    mime="text/csv",
-                    key="download_flow_tab8"
-                )
-                
-                # Gráfica 2: Liquidity Pulse
-                df, net_pressure, trend, volatility, price_target = calculate_liquidity_pulse(historical, current_price)
-                fig2 = plot_liquidity_pulse(df, current_price, price_target)
-                st.plotly_chart(fig2, use_container_width=True)
-                liquidity_csv = df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Liquidity Pulse Data",
-                    data=liquidity_csv,
-                    file_name=f"{crypto_symbol}_liquidity_pulse.csv",
-                    mime="text/csv",
-                    key="download_liquidity_tab8"
-                )
-                
-                # Panel de métricas
-                st.subheader("Key Metrics")
+            else:
+                current_price = quote.get("price", 0)
+                st.markdown(f"### {quote.get('name', crypto_symbol)} ({crypto_symbol})")
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    pressure_color = "#32CD32" if net_pressure > 0 else "#FF4500"
-                    st.markdown(f"**Net Pressure**: <span style='color:{pressure_color}'>{net_pressure:,.0f}</span> ({trend})", unsafe_allow_html=True)
+                    price_container_col1 = st.empty()
+                    if f"last_price_update_tab8_{crypto_symbol}" not in st.session_state:
+                        st.session_state[f"last_price_update_tab8_{crypto_symbol}"] = time.time()
+                        st.session_state[f"current_price_tab8_{crypto_symbol}"] = current_price
+                    elif time.time() - st.session_state[f"last_price_update_tab8_{crypto_symbol}"] >= 30:
+                        new_quote = get_crypto_quote(crypto_symbol)
+                        new_price = new_quote.get("price", 0) if new_quote else 0
+                        if new_price != 0.0:
+                            st.session_state[f"current_price_tab8_{crypto_symbol}"] = new_price
+                            st.session_state[f"last_price_update_tab8_{crypto_symbol}"] = time.time()
+                    
+                    current_time = datetime.now()
+                    if current_time.hour < 9 or current_time.hour >= 20:
+                        label = "Aftermarket Close (8:00 PM)" if current_time.hour >= 20 else "Premarket Reference (5:00 AM)"
+                        price_container_col1.markdown(f"- **{label}:** ${st.session_state[f'current_price_tab8_{crypto_symbol}']:.2f}")  # Cambiado a markdown para consistencia
+                    else:
+                        price_container_col1.markdown(f"- **Price:** ${st.session_state[f'current_price_tab8_{crypto_symbol}']:.2f}")  # Cambiado a markdown para consistencia
+                    st.write(f"- **Change (24h)**: {quote.get('change', 0):,.2f} ({quote.get('changesPercentage', 0):.2f}%)")
                 with col2:
-                    st.write(f"**Volatility (Annualized)**: {volatility:.2f}%")
+                    st.write(f"- **Volume (24h)**: {quote.get('volume', 0):,.0f}")
+                    st.write(f"- **Market Cap**: ${quote.get('marketCap', 0):,.0f}")
                 with col3:
-                    st.write(f"**Projected Target**: ${price_target:,.2f}")
+                    st.write(f"*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
                 
-                st.write("**Support**: ${:.2f} | **Resistance**: ${:.2f}".format(support, resistance))
-                st.write("**Whale Accumulation Zones**: " + ", ".join([f"${zone:.2f}" for zone in accumulation_zones["price_bin"]]))
-                
+                historical = get_crypto_historical_coingecko(crypto_symbol, days=30)
+                if not historical:
+                    st.warning(f"No historical data from CoinGecko for {crypto_symbol}. Trying alternative source...")
+                    try:
+                        response = requests.get(f"{FMP_BASE_URL}/historical-price-full/{crypto_symbol}?apikey={FMP_API_KEY}&series=30")
+                        data = response.json()
+                        if "historical" in data:
+                            historical = [{"date": day["date"], "close": day["close"], "volume": day["volume"]} for day in data["historical"]]
+                    except Exception as e:
+                        logger.error(f"Fallback FMP failed for {crypto_symbol}: {e}")
+                        historical = []
 
-            else:
-                st.warning(f"No historical data available for {crypto_symbol}.")
+                if historical:
+                    bin_size = st.slider("Bin Size for Volume Flow", 1, 200, 100 if "BTC" in crypto_symbol else 10, key="bin_size_tab8")
+                    
+                    flow_data, support, resistance, accumulation_zones = calculate_volume_power_flow(historical, st.session_state[f"current_price_tab8_{crypto_symbol}"], bin_size)
+                    fig1 = plot_volume_power_flow(flow_data, st.session_state[f"current_price_tab8_{crypto_symbol}"], support, resistance, accumulation_zones)
+                    st.plotly_chart(fig1, use_container_width=True)
+                    flow_csv = flow_data.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Volume Power Flow Data",
+                        data=flow_csv,
+                        file_name=f"{crypto_symbol}_volume_power_flow.csv",
+                        mime="text/csv",
+                        key="download_flow_tab8"
+                    )
+                    
+                    df, net_pressure, trend, volatility, price_target = calculate_liquidity_pulse(historical, st.session_state[f"current_price_tab8_{crypto_symbol}"])
+                    fig2 = plot_liquidity_pulse(df, st.session_state[f"current_price_tab8_{crypto_symbol}"], price_target)
+                    st.plotly_chart(fig2, use_container_width=True)
+                    liquidity_csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Liquidity Pulse Data",
+                        data=liquidity_csv,
+                        file_name=f"{crypto_symbol}_liquidity_pulse.csv",
+                        mime="text/csv",
+                        key="download_liquidity_tab8"
+                    )
+                    
+                    st.subheader("Key Metrics")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        pressure_color = "#32CD32" if net_pressure > 0 else "#FF4500"
+                        st.markdown(f"**Net Pressure**: <span style='color:{pressure_color}'>{net_pressure:,.0f}</span> ({trend})", unsafe_allow_html=True)
+                    with col2:
+                        st.write(f"**Volatility (Annualized)**: {volatility:.2f}%")
+                    with col3:
+                        st.write(f"**Projected Target**: ${price_target:,.2f}")
+                    
+                    st.write("**Support**: ${:.2f} | **Resistance**: ${:.2f}".format(support, resistance))
+                    st.write("**Whale Accumulation Zones**: " + ", ".join([f"${zone:.2f}" for zone in accumulation_zones["price_bin"]]))
+                else:
+                    st.error(f"No historical data available for {crypto_symbol} from any source.")
 
     st.markdown("---")
     st.markdown("*Developed by Ozy | © 2025*")
 
 if __name__ == "__main__":
-    main()
-
-    ##############################################################################################
-    #############################################################################################
+    main()  
