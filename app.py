@@ -2363,7 +2363,7 @@ def main():
             # Intentar con FMP primero, luego CoinGecko como respaldo
             historical = get_crypto_historical_fmp(crypto_symbol, limit=30)
             if not historical:
-                st.warning(f"No historical data from FMP for {crypto_symbol}. Intentando CoinGecko...")
+                
                 historical = get_crypto_historical_coingecko(crypto_symbol, days=30)
             
             # Normalizar historical para asegurar que sea un diccionario
