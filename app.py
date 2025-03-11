@@ -17,6 +17,11 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
 from typing import List, Dict, Optional, Tuple
+import streamlit as st
+import streamlit.components.v1 as components
+import math
+
+
 
 # --- Configuración inicial de página (primer comando de Streamlit) ---
 st.set_page_config(
@@ -1231,11 +1236,11 @@ def get_crypto_list():
     params = {"apikey": FMP_API_KEY}
     data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto List")
     if data and isinstance(data, list):
-        crypto_symbols = [item["symbol"] for item in data if "symbol" in item and "USD" in item["symbol"]]
+        crypto_symbols = [item["symbol"] for item in data if "symbol" in item]
         logger.info(f"Found {len(crypto_symbols)} crypto symbols")
-        return crypto_symbols[:50]  # Limitamos a 50 para rendimiento
+        return crypto_symbols
     logger.error("No crypto symbols found")
-    return ["BTCUSD", "ETHUSD", "XRPUSD"]  # Fallback
+    return []
 
 @st.cache_data(ttl=CACHE_TTL)
 def get_crypto_quote(crypto_symbol: str):
@@ -1244,58 +1249,54 @@ def get_crypto_quote(crypto_symbol: str):
     params = {"apikey": FMP_API_KEY}
     data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto Quote")
     if data and isinstance(data, list) and len(data) > 0:
-        logger.info(f"Quote retrieved for {crypto_symbol}: Price=${data[0].get('price', 0):,.2f}")
         return data[0]
     logger.error(f"No quote data for {crypto_symbol}")
     return {}
 
 @st.cache_data(ttl=CACHE_TTL)
-def get_crypto_historical_fmp(crypto_symbol: str, limit: int = 30) -> Optional[Dict]:
+def get_crypto_historical_fmp(crypto_symbol: str, limit: int = 30):
     """Obtener precios históricos de una criptomoneda desde FMP."""
-    url = f"{FMP_BASE_URL}/historical-price-full/{crypto_symbol}"  # Corregido endpoint
+    url = f"{FMP_BASE_URL}/historical-price-full/crypto/{crypto_symbol}"
     params = {"apikey": FMP_API_KEY, "timeseries": limit}
     data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto Historical")
     if data and "historical" in data and len(data["historical"]) > 0:
-        historical = {
-            "date": [entry["date"] for entry in data["historical"]],
-            "close": [float(entry["close"]) for entry in data["historical"]],
-            "volume": [int(entry["volume"]) for entry in data["historical"]]
-        }
-        logger.info(f"FMP: Retrieved {len(historical['date'])} historical data points for {crypto_symbol}")
-        return historical
+        logger.info(f"FMP: Retrieved {len(data['historical'])} historical data points for {crypto_symbol}")
+        return data["historical"]
     logger.warning(f"FMP: No historical data for {crypto_symbol}. Response: {data}")
     return None
 
 @st.cache_data(ttl=CACHE_TTL)
-def get_crypto_historical_coingecko(crypto_symbol: str, days: int = 30) -> Optional[Dict]:
-    """Obtener datos históricos de CoinGecko para una criptomoneda."""
+def get_crypto_historical_coingecko(crypto_symbol: str, days: int = 30):
+    """Obtener precios históricos de una criptomoneda desde CoinGecko."""
     symbol_to_id = {
         "BTCUSD": "bitcoin",
         "ETHUSD": "ethereum",
-        "XRPUSD": "ripple",
-        # Agrega más según get_crypto_list()
+        "OTRUMPUSD": "trump-coin",
+        "TRUMPUSD": "maga"
     }
-    coin_id = symbol_to_id.get(crypto_symbol, crypto_symbol.lower().replace("usd", ""))
-    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
+    crypto_id = symbol_to_id.get(crypto_symbol, crypto_symbol.lower().replace("usd", ""))
+    url = f"https://api.coingecko.com/api/v3/coins/{crypto_id}/market_chart"
     params = {"vs_currency": "usd", "days": days, "interval": "daily"}
-    headers = {"Accept": "application/json"}
-    
+    headers = {"accept": "application/json"}
     try:
         response = requests.get(url, params=params, headers=headers, timeout=10)
         response.raise_for_status()
-        chart_data = response.json()
-        if "prices" in chart_data and "total_volumes" in chart_data:
-            historical = {
-                "date": [datetime.fromtimestamp(price[0] / 1000).strftime('%Y-%m-%d') for price in chart_data["prices"]],
-                "close": [float(price[1]) for price in chart_data["prices"]],
-                "volume": [int(vol[1]) for vol in chart_data["total_volumes"]]
-            }
-            logger.info(f"CoinGecko: Retrieved {len(historical['date'])} historical data points for {crypto_symbol}")
+        data = response.json()
+        if "prices" in data and len(data["prices"]) > 0:
+            historical = [
+                {
+                    "date": datetime.fromtimestamp(price[0] / 1000).strftime("%Y-%m-%d"),
+                    "close": price[1],
+                    "volume": vol[1] if i < len(data["total_volumes"]) else 0
+                }
+                for i, (price, vol) in enumerate(zip(data["prices"], data["total_volumes"]))
+            ]
+            logger.info(f"CoinGecko: Retrieved {len(historical)} historical data points for {crypto_symbol} (ID: {crypto_id})")
             return historical
-        logger.error(f"No prices or volumes in CoinGecko response for {crypto_symbol}: {chart_data}")
+        logger.warning(f"CoinGecko: No historical data for {crypto_symbol}. Response: {data}")
         return None
-    except requests.RequestException as e:
-        logger.error(f"Error fetching CoinGecko historical data for {crypto_symbol}: {e}")
+    except Exception as e:
+        logger.error(f"CoinGecko: Error fetching data for {crypto_symbol}: {str(e)}")
         return None
 
 # --- Nuevas funciones para cripto (necesarias para Tab 8) ---
@@ -1643,7 +1644,6 @@ def plot_liquidity_pulse(df, current_price, price_target):
     )
     return fig
 # --- Main App --
-
 def main():
     # Logo y título principal después de autenticación
     col1, col2 = st.columns([4, 1])
@@ -1669,10 +1669,10 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-    # Resto de los tabs (agregamos Tab 8)
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    # Resto de los tabs (agregamos Tab 9)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
         "Gummy Data Bubbles®", "Market Scanner", "News", "Institutional Holders", 
-        "Options Order Flow", "Analyst Rating Flow", "Elliott Pulse®", "Crypto Insights"
+        "Options Order Flow", "Analyst Rating Flow", "Elliott Pulse®", "Crypto Insights", "Earnings Calendar"
     ])
 
     with tab1:
@@ -2332,109 +2332,3 @@ def main():
                 mime="text/csv",
                 key="download_tab7"
             )
-
-    with tab8:
-        st.subheader("Crypto Insights")
-        crypto_list = get_crypto_list()
-        if not crypto_list:
-            st.error("No se pudo cargar la lista de criptomonedas.")
-            return
-        
-        crypto_symbol = st.selectbox("Select Cryptocurrency", crypto_list, index=crypto_list.index("BTCUSD") if "BTCUSD" in crypto_list else 0, key="crypto_symbol")
-        
-        with st.spinner(f"Fetching data for {crypto_symbol}..."):
-            quote = get_crypto_quote(crypto_symbol)
-            if not quote:
-                st.error(f"No se pudo obtener datos para {crypto_symbol}.")
-                return
-            
-            current_price = quote.get("price", 0)
-            st.markdown(f"### {quote.get('name', crypto_symbol)} ({crypto_symbol})")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.write(f"- **Price**: ${current_price:,.2f}")
-                st.write(f"- **Change (24h)**: {quote.get('change', 0):,.2f} ({quote.get('changesPercentage', 0):.2f}%)")
-            with col2:
-                st.write(f"- **Volume (24h)**: {quote.get('volume', 0):,.0f}")
-                st.write(f"- **Market Cap**: ${quote.get('marketCap', 0):,.0f}")
-            with col3:
-                st.write(f"*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
-            
-            # Intentar con FMP primero, luego CoinGecko como respaldo
-            historical = get_crypto_historical_fmp(crypto_symbol, limit=30)
-            if not historical:
-                
-                historical = get_crypto_historical_coingecko(crypto_symbol, days=30)
-            
-            # Normalizar historical para asegurar que sea un diccionario
-            if isinstance(historical, list):
-                # Si es una lista (formato viejo), asumir que son entradas diarias
-                try:
-                    historical = {
-                        "date": [entry["date"] for entry in historical],
-                        "close": [float(entry["close"]) for entry in historical],
-                        "volume": [int(entry["volume"]) for entry in historical]
-                    }
-                except (KeyError, TypeError) as e:
-                    logger.error(f"Error normalizando historical como lista para {crypto_symbol}: {e}")
-                    historical = None
-            
-            if historical and all(key in historical for key in ["date", "close", "volume"]):
-                bin_size = 100 if "BTC" in crypto_symbol else 10
-                
-                # Gráfica 1: Volume Power Flow
-                flow_data, support, resistance, accumulation_zones = calculate_volume_power_flow(historical, current_price, bin_size)
-                if not flow_data.empty:
-                    fig1 = plot_volume_power_flow(flow_data, current_price, support, resistance, accumulation_zones)
-                    st.plotly_chart(fig1, use_container_width=True)
-                    flow_csv = flow_data.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download Volume Power Flow Data",
-                        data=flow_csv,
-                        file_name=f"{crypto_symbol}_volume_power_flow.csv",
-                        mime="text/csv",
-                        key="download_flow_tab8"
-                    )
-                else:
-                    st.warning("No se pudo generar Volume Power Flow (datos procesados vacíos).")
-                
-                # Gráfica 2: Liquidity Pulse
-                df, net_pressure, trend, volatility, price_target = calculate_liquidity_pulse(historical, current_price)
-                if not df.empty:
-                    fig2 = plot_liquidity_pulse(df, current_price, price_target)
-                    st.plotly_chart(fig2, use_container_width=True)
-                    liquidity_csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download Liquidity Pulse Data",
-                        data=liquidity_csv,
-                        file_name=f"{crypto_symbol}_liquidity_pulse.csv",
-                        mime="text/csv",
-                        key="download_liquidity_tab8"
-                    )
-                    
-                    # Panel de métricas
-                    st.subheader("Key Metrics")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        pressure_color = "#32CD32" if net_pressure > 0 else "#FF4500"
-                        st.markdown(f"**Net Pressure**: <span style='color:{pressure_color}'>{net_pressure:,.0f}</span> ({trend})", unsafe_allow_html=True)
-                    with col2:
-                        st.write(f"**Volatility (Annualized)**: {volatility:.2f}%")
-                    with col3:
-                        st.write(f"**Projected Target**: ${price_target:,.2f}")
-                    
-                    st.write("**Support**: ${:.2f} | **Resistance**: ${:.2f}".format(support, resistance))
-                    st.write("**Whale Accumulation Zones**: " + ", ".join([f"${zone:.2f}" for zone in accumulation_zones["price_bin"]]))
-                else:
-                    st.warning("No se pudo generar Liquidity Pulse (datos procesados vacíos).")
-            else:
-                st.warning(f"No historical data available for {crypto_symbol} desde FMP ni CoinGecko. Revisa el log.")
-
-    st.markdown("---")
-    st.markdown("*Developed by Ozy | © 2025*")
-
-if __name__ == "__main__":
-    main()
-
-    ##############################################################################################
-    #############################################################################################
