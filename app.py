@@ -2332,3 +2332,267 @@ def main():
                 mime="text/csv",
                 key="download_tab7"
             )
+
+    with tab8:
+        st.subheader("Crypto Insights")
+        crypto_list = get_crypto_list()
+        if not crypto_list:
+            st.error("No se pudo cargar la lista de criptomonedas.")
+            return
+        
+        crypto_symbol = st.selectbox("Select Cryptocurrency", crypto_list, index=crypto_list.index("BTCUSD") if "BTCUSD" in crypto_list else 0, key="crypto_symbol_tab8")
+        
+        with st.spinner(f"Fetching data for {crypto_symbol}..."):
+            quote = get_crypto_quote(crypto_symbol)
+            if not quote:
+                st.error(f"No se pudo obtener datos para {crypto_symbol}.")
+                return
+            
+            current_price = quote.get("price", 0)
+            st.markdown(f"### {quote.get('name', crypto_symbol)} ({crypto_symbol})")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.write(f"- **Price**: ${current_price:,.2f}")
+                st.write(f"- **Change (24h)**: {quote.get('change', 0):,.2f} ({quote.get('changesPercentage', 0):.2f}%)")
+            with col2:
+                st.write(f"- **Volume (24h)**: {quote.get('volume', 0):,.0f}")
+                st.write(f"- **Market Cap**: ${quote.get('marketCap', 0):,.0f}")
+            with col3:
+                st.write(f"*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
+            
+            historical = get_crypto_historical_coingecko(crypto_symbol, days=30)
+            if historical:
+                bin_size = 100 if "BTC" in crypto_symbol else 10
+                
+                flow_data, support, resistance, accumulation_zones = calculate_volume_power_flow(historical, current_price, bin_size)
+                fig1 = plot_volume_power_flow(flow_data, current_price, support, resistance, accumulation_zones)
+                st.plotly_chart(fig1, use_container_width=True)
+                flow_csv = flow_data.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Volume Power Flow Data",
+                    data=flow_csv,
+                    file_name=f"{crypto_symbol}_volume_power_flow.csv",
+                    mime="text/csv",
+                    key="download_flow_tab8"
+                )
+                
+                df, net_pressure, trend, volatility, price_target = calculate_liquidity_pulse(historical, current_price)
+                fig2 = plot_liquidity_pulse(df, current_price, price_target)
+                st.plotly_chart(fig2, use_container_width=True)
+                liquidity_csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Liquidity Pulse Data",
+                    data=liquidity_csv,
+                    file_name=f"{crypto_symbol}_liquidity_pulse.csv",
+                    mime="text/csv",
+                    key="download_liquidity_tab8"
+                )
+                
+                st.subheader("Key Metrics")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    pressure_color = "#32CD32" if net_pressure > 0 else "#FF4500"
+                    st.markdown(f"**Net Pressure**: <span style='color:{pressure_color}'>{net_pressure:,.0f}</span> ({trend})", unsafe_allow_html=True)
+                with col2:
+                    st.write(f"**Volatility (Annualized)**: {volatility:.2f}%")
+                with col3:
+                    st.write(f"**Projected Target**: ${price_target:,.2f}")
+                
+                st.write("**Support**: ${:.2f} | **Resistance**: ${:.2f}".format(support, resistance))
+                st.write("**Whale Accumulation Zones**: " + ", ".join([f"${zone:.2f}" for zone in accumulation_zones["price_bin"]]))
+                
+            else:
+                st.warning(f"No historical data available for {crypto_symbol}.")
+
+    with tab9:
+        st.subheader("Earnings Calendar")
+
+        # Selector de fechas y filtro dinámico
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            start_date = st.date_input("Start Date", value=datetime.now().date(), min_value=datetime.now().date() - timedelta(days=365))
+        with col2:
+            end_date = st.date_input("End Date", value=start_date + timedelta(days=2), min_value=start_date)
+        with col3:
+            sort_by = st.selectbox("Sort By", ["Date", "Symbol", "Possible Movement", "EPS", "Revenue"], index=0)
+
+        @st.cache_data
+        def fetch_api_data(url, params, headers, source):
+            try:
+                response = requests.get(url, params=params, headers=headers, timeout=5)
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                logger.error(f"Error fetching {source} data: {e}")
+                return []
+
+        def get_earnings_calendar(start_date: datetime, end_date: datetime) -> List[Dict]:
+            url = f"{FMP_BASE_URL}/earning_calendar"
+            params = {
+                "apikey": FMP_API_KEY,
+                "from": start_date.strftime("%Y-%m-%d"),
+                "to": end_date.strftime("%Y-%m-%d")
+            }
+            data = fetch_api_data(url, params, HEADERS_FMP, "FMP Earnings")
+            if not data or not isinstance(data, list):
+                logger.error(f"No earnings data from FMP: {data}")
+                st.error(f"No earnings data from FMP: {data}")
+                return []
+            earnings = []
+            for item in data:
+                symbol = item.get("symbol", "")
+                event_date = item.get("date", "")
+                try:
+                    event_date_obj = datetime.strptime(event_date, "%Y-%m-%d").date()
+                    if not (start_date <= event_date_obj <= end_date):
+                        continue
+                except ValueError:
+                    logger.warning(f"Invalid date format in earnings: {event_date}")
+                    continue
+                eps_est = item.get("epsEstimated")
+                revenue_est = item.get("revenueEstimated", 0)
+                time = item.get("time", "N/A").lower()
+                try:
+                    revenue_est = float(revenue_est) if revenue_est is not None else 0
+                except (ValueError, TypeError):
+                    revenue_est = 0
+                if eps_est is None or revenue_est < 1_000_000:
+                    continue
+                
+                # Corrección de Pre-Market y After-Market
+                if time == "bmo":
+                    time_display = "Pre-Market"
+                    time_factor = 1.0
+                elif time == "amc":
+                    time_display = "After-Market"
+                    time_factor = 1.3
+                else:
+                    time_display = "N/A"
+                    time_factor = 0.7
+
+                # Fórmula profesional afinada para Possible Movement (%)
+                base_volatility = 6.5
+                volatility_factor = 12 * (1 + math.tanh(abs(eps_est) - 1))
+                eps_relevance = abs(eps_est) / (revenue_est / 1_000_000_000 + 0.1)
+                eps_impact = abs(eps_est) * volatility_factor * eps_relevance
+                size_adjustment = 1 / (math.log10(revenue_est / 1_000_000 + 1) / 4 if revenue_est > 0 else 1)
+                market_sensitivity = 0.9 + 0.2 * (1 - math.exp(-abs(eps_est)))
+                movement = (base_volatility + eps_impact) * size_adjustment * time_factor * market_sensitivity
+                movement = max(5.0, min(40.0, movement))
+
+                earnings.append({
+                    "Date": event_date,
+                    "Time": time_display,
+                    "Symbol": symbol,
+                    "Details": f"EPS: {eps_est:.2f} | Rev: ${revenue_est / 1_000_000:,.1f}M",
+                    "Logo": f"https://logo.clearbit.com/{symbol.lower()}.com",
+                    "PossibleMovement": round(movement, 2),
+                    "EPS": eps_est,
+                    "Revenue": revenue_est
+                })
+            logger.info(f"Retrieved {len(earnings)} relevant US earnings events")
+            # Ordenar según selección
+            if sort_by == "Possible Movement":
+                earnings.sort(key=lambda x: x["PossibleMovement"], reverse=True)
+            elif sort_by == "EPS":
+                earnings.sort(key=lambda x: x["EPS"], reverse=True)
+            elif sort_by == "Revenue":
+                earnings.sort(key=lambda x: x["Revenue"], reverse=True)
+            elif sort_by == "Symbol":
+                earnings.sort(key=lambda x: x["Symbol"])
+            else:  # Date
+                earnings.sort(key=lambda x: x["Date"])
+            return earnings
+
+        with st.spinner(f"Fetching earnings from {start_date} to {end_date}..."):
+            earnings_events = get_earnings_calendar(start_date, end_date)
+
+        if earnings_events:
+            earnings_html = """
+            <style>
+                .calendar-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    background: linear-gradient(135deg, #1E1E1E, #2A2A2A);
+                    color: #FFFFFF;
+                    font-family: 'Helvetica Neue', Arial, sans-serif;
+                    font-size: 14px;
+                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+                    border-radius: 8px;
+                }
+                .calendar-table th {
+                    background-color: #2D2D2D;
+                    color: #32CD32;
+                    font-weight: 600;
+                    text-align: center;
+                    padding: 12px;
+                    border-bottom: 2px solid #555555;
+                    text-transform: uppercase;
+                }
+                .calendar-table td {
+                    padding: 10px;
+                    border-bottom: 1px solid #444444;
+                    vertical-align: middle;
+                    text-align: center;
+                }
+                .calendar-table td.logo {
+                    width: 100px;
+                    height: 100px;
+                    background-color: #2D2D2D;
+                    border-radius: 50%;
+                }
+                .calendar-table td.logo img {
+                    width: 80px;
+                    height: 80px;
+                    object-fit: contain;
+                }
+                .calendar-table tr:hover {
+                    background-color: #333333;
+                }
+            </style>
+            <table class="calendar-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Logo</th>
+                        <th>Symbol</th>
+                        <th>Details</th>
+                        <th>Possible Movement (%)</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
+            for event in earnings_events:
+                logo = f'<img src="{event.get("Logo", "")}" width="80" height="80" alt="{event.get("Symbol", "N/A")}" onerror="this.src=\'https://via.placeholder.com/80\'">'
+                earnings_html += f"""
+                    <tr>
+                        <td>{event["Date"]}</td>
+                        <td>{event["Time"]}</td>
+                        <td class="logo">{logo}</td>
+                        <td>{event["Symbol"]}</td>
+                        <td>{event["Details"]}</td>
+                        <td>{event["PossibleMovement"]}</td>
+                    </tr>
+                """
+            earnings_html += """
+                </tbody>
+            </table>
+            """
+            components.html(earnings_html, height=400, scrolling=True)
+
+            earnings_csv = pd.DataFrame(earnings_events).drop(columns=["Logo", "EPS", "Revenue"], errors="ignore").to_csv(index=False)
+            st.download_button(
+                label="📥 Download Earnings Calendar",
+                data=earnings_csv,
+                file_name=f"earnings_calendar_{start_date}_to_{end_date}.csv",
+                mime="text/csv",
+                key="download_earnings_tab9"
+            )
+        else:
+            st.info(f"No earnings events found from {start_date} to {end_date}.")
+    st.markdown("---")
+    st.markdown("*Developed by Ozy | © 2025*")
+
+if __name__ == "__main__":
+    main()
