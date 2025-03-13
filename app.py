@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+from scipy import stats
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -20,9 +21,19 @@ from typing import List, Dict, Optional, Tuple
 import streamlit as st
 import streamlit.components.v1 as components
 import math
+import krakenex
 
 
 
+
+# Configurar cliente de Kraken con las claves proporcionadas
+API_KEY = "kyFpw+5fbrFIMDuWJmtkbbbr/CgH/MS63wv7dRz3rndamK/XnjNOVkgP"
+PRIVATE_KEY = "7xbaBIp902rSBVdIvtfrUNbRHEHMkfMHPEf4rssz+ZwSwjUZFegjdyyYZzcE5DbBrUbtFdGRRGRjTuTnEblZWA=="
+kraken = krakenex.API(key=API_KEY, secret=PRIVATE_KEY)
+
+# Configuración de logging (ya lo tienes)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 # --- Configuración inicial de página (primer comando de Streamlit) ---
 st.set_page_config(
     page_title="𝗢 𝗭 𝗬 |  DATA®",
@@ -310,21 +321,30 @@ def get_stock_list_combined():
 def analyze_contracts(ticker, expiration, current_price):
     url = f"{TRADIER_BASE_URL}/markets/options/chains"
     params = {"symbol": ticker, "expiration": expiration, "greeks": True}
-    response = requests.get(url, headers=HEADERS_TRADIER, params=params)
-    if response.status_code != 200:
-        st.error("Error retrieving option contracts.")
+    try:
+        response = requests.get(url, headers=HEADERS_TRADIER, params=params, timeout=10)  # Timeout de 10 segundos
+        if response.status_code != 200:
+            st.error(f"Error retrieving option contracts: {response.status_code}")
+            return pd.DataFrame()
+        options = response.json().get("options", {}).get("option", [])
+        if not options:
+            st.warning("No contracts available.")
+            return pd.DataFrame()
+        df = pd.DataFrame(options)
+        for col in ['strike', 'option_type', 'open_interest', 'volume', 'bid', 'ask', 'last_volume', 'trade_date', 'bid_exchange', 'delta', 'gamma', 'break_even']:
+            if col not in df.columns:
+                df[col] = 0
+        df['trade_date'] = datetime.now().strftime('%Y-%m-%d')
+        df['break_even'] = df.apply(lambda row: row['strike'] + row['bid'] if row['option_type'] == 'call' else row['strike'] - row['bid'], axis=1)
+        return df
+    except requests.exceptions.ReadTimeout:
+        st.error(f"Timeout retrieving option contracts for {ticker}. Tradier API did not respond.")
+        logger.error(f"ReadTimeout in analyze_contracts for {ticker}, expiration {expiration}")
         return pd.DataFrame()
-    options = response.json().get("options", {}).get("option", [])
-    if not options:
-        st.warning("No contracts available.")
+    except requests.RequestException as e:
+        st.error(f"Error retrieving option contracts for {ticker}: {str(e)}")
+        logger.error(f"RequestException in analyze_contracts: {str(e)}")
         return pd.DataFrame()
-    df = pd.DataFrame(options)
-    for col in ['strike', 'option_type', 'open_interest', 'volume', 'bid', 'ask', 'last_volume', 'trade_date', 'bid_exchange', 'delta', 'gamma', 'break_even']:
-        if col not in df.columns:
-            df[col] = 0
-    df['trade_date'] = datetime.now().strftime('%Y-%m-%d')
-    df['break_even'] = df.apply(lambda row: row['strike'] + row['bid'] if row['option_type'] == 'call' else row['strike'] - row['bid'], axis=1)
-    return df
 
 def style_and_sort_table(df):
     ordered_columns = ['strike', 'option_type', 'open_interest', 'volume', 'trade_date', 'bid', 'ask', 'last_volume', 'bid_exchange', 'delta', 'gamma', 'break_even']
@@ -351,9 +371,13 @@ def select_best_contracts(df, current_price):
         economic_contract = None
     return closest_contract, economic_contract
 
+# Versión original para opciones (usada en Tab 1)
+# Versión original para opciones (usada en Tab 1)
 def calculate_max_pain(df):
-    if df.empty:
-        return None, pd.DataFrame()
+    """Calcula el Max Pain para opciones."""
+    if df.empty or 'strike' not in df.columns:
+        logger.error("DataFrame vacío o sin columna 'strike' en calculate_max_pain")
+        return None, pd.DataFrame(columns=['strike', 'total_loss'])
     strikes = df['strike'].unique()
     max_pain_data = []
     for strike in strikes:
@@ -365,11 +389,15 @@ def calculate_max_pain(df):
         max_pain_data.append({'strike': strike, 'total_loss': total_loss})
     max_pain_df = pd.DataFrame(max_pain_data)
     if max_pain_df.empty:
+        logger.warning("No se generaron datos de Max Pain")
         return None, max_pain_df
     max_pain_strike = max_pain_df.loc[max_pain_df['total_loss'].idxmin()]
     return max_pain_strike, max_pain_df.sort_values(by='total_loss', ascending=True)
 
 def calculate_support_resistance_mid(max_pain_table, current_price):
+    """Calcula niveles de soporte y resistencia basados en Max Pain."""
+    if max_pain_table.empty or 'strike' not in max_pain_table.columns:
+        return current_price, current_price, current_price
     puts = max_pain_table[max_pain_table['strike'] <= current_price]
     calls = max_pain_table[max_pain_table['strike'] > current_price]
     support_level = puts.loc[puts['total_loss'].idxmin()]['strike'] if not puts.empty else current_price
@@ -378,6 +406,12 @@ def calculate_support_resistance_mid(max_pain_table, current_price):
     return support_level, resistance_level, mid_level
 
 def plot_max_pain_histogram_with_levels(max_pain_table, current_price):
+    """Crea un histograma de Max Pain con niveles."""
+    if max_pain_table.empty:
+        fig = go.Figure()
+        fig.update_layout(title="Max Pain Histogram (No Data)", template="plotly_white")
+        return fig
+    
     support_level, resistance_level, mid_level = calculate_support_resistance_mid(max_pain_table, current_price)
     max_pain_table['loss_category'] = max_pain_table['total_loss'].apply(
         lambda x: 'High Loss' if x > max_pain_table['total_loss'].quantile(0.75) else ('Low Loss' if x < max_pain_table['total_loss'].quantile(0.25) else 'Neutral')
@@ -386,7 +420,7 @@ def plot_max_pain_histogram_with_levels(max_pain_table, current_price):
     fig = px.bar(max_pain_table, x='strike', y='total_loss', title="Max Pain Histogram with Levels",
                  labels={'total_loss': 'Total Loss', 'strike': 'Strike Price'}, color='loss_category', color_discrete_map=color_map)
     fig.update_layout(xaxis_title="Strike Price", yaxis_title="Total Loss", template="plotly_white", font=dict(size=14, family="Open Sans"),
-                      title=dict(text="📊 Analysis loss  Options", font=dict(size=18), x=0.5), hovermode="x",
+                      title=dict(text="📊 Analysis loss Options", font=dict(size=18), x=0.5), hovermode="x",
                       yaxis=dict(showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="#FFFF00", spikethickness=1.5))
     mean_loss = max_pain_table['total_loss'].mean()
     fig.add_hline(y=mean_loss, line_width=1, line_dash="dash", line_color="#00FF00", annotation_text=f"Mean Loss: {mean_loss:.2f}", annotation_position="top right", annotation_font=dict(color="#00FF00", size=12))
@@ -867,7 +901,7 @@ def get_financial_metrics(symbol: str) -> Dict[str, float]:
             "COGS": latest_income.get("costOfRevenue", 0), "Tax Rate": latest_income.get("incomeTaxExpense", 0) / latest_income.get("incomeBeforeTax", 1) if latest_income.get("incomeBeforeTax", 1) != 0 else 0
         }
     except Exception as e:
-        st.warning(f"⚠️ Error fetching financial metrics for {symbol}: {str(e)}")
+        
         return {}
 
 def get_historical_prices_fmp(symbol: str, period: str = "daily", limit: int = 30) -> (List[float], List[int]):
@@ -881,7 +915,7 @@ def get_historical_prices_fmp(symbol: str, period: str = "daily", limit: int = 3
         volumes = [day["volume"] for day in data["historical"]]
         return prices, volumes
     except Exception as e:
-        st.warning(f"⚠️ Error fetching historical data for {symbol}: {str(e)}")
+        
         return [], []
 
 def speculate_next_day_movement(metrics: Dict[str, float], prices: List[float], volumes: List[int]) -> (str, float, Optional[float]):
@@ -1229,206 +1263,352 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
 # --- Nuevas funciones para cripto (necesarias para Tab 8) ---
 # --- Nuevas funciones para cripto (necesarias para Tab 8) ---
 # --- Nuevas funciones para cripto (necesarias para Tab 8) ---
-@st.cache_data(ttl=CACHE_TTL)
-def get_crypto_list():
-    """Obtener lista de criptomonedas disponibles desde FMP."""
-    url = f"{FMP_BASE_URL}/symbol/available-cryptocurrencies"
-    params = {"apikey": FMP_API_KEY}
-    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto List")
-    if data and isinstance(data, list):
-        crypto_symbols = [item["symbol"] for item in data if "symbol" in item]
-        logger.info(f"Found {len(crypto_symbols)} crypto symbols")
-        return crypto_symbols
-    logger.error("No crypto symbols found")
-    return []
+# Línea ~500: Funciones de soporte para el Tab 8
+# Línea ~500: Funciones de soporte para el Tab 8
+# Línea ~500: Funciones de soporte para el Tab 8
 
-@st.cache_data(ttl=CACHE_TTL)
-def get_crypto_quote(crypto_symbol: str):
-    """Obtener precio actual y datos de una criptomoneda desde FMP."""
-    url = f"{FMP_BASE_URL}/quote/{crypto_symbol}"
-    params = {"apikey": FMP_API_KEY}
-    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto Quote")
-    if data and isinstance(data, list) and len(data) > 0:
-        return data[0]
-    logger.error(f"No quote data for {crypto_symbol}")
-    return {}
 
-@st.cache_data(ttl=CACHE_TTL)
-def get_crypto_historical_fmp(crypto_symbol: str, limit: int = 30):
-    """Obtener precios históricos de una criptomoneda desde FMP."""
-    url = f"{FMP_BASE_URL}/historical-price-full/crypto/{crypto_symbol}"
-    params = {"apikey": FMP_API_KEY, "timeseries": limit}
-    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto Historical")
-    if data and "historical" in data and len(data["historical"]) > 0:
-        logger.info(f"FMP: Retrieved {len(data['historical'])} historical data points for {crypto_symbol}")
-        return data["historical"]
-    logger.warning(f"FMP: No historical data for {crypto_symbol}. Response: {data}")
-    return None
+# Línea ~500: Funciones de soporte
+# Línea ~500: Funciones de soporte
+# Versión original para opciones (usada en Tab 1)
+# Línea ~500: Funciones de soporte
+# Versión original para opciones (usada en Tab 1)
 
-@st.cache_data(ttl=CACHE_TTL)
-def get_crypto_historical_coingecko(crypto_symbol: str, days: int = 30):
-    """Obtener precios históricos de una criptomoneda desde CoinGecko."""
-    symbol_to_id = {
-        "BTCUSD": "bitcoin",
-        "ETHUSD": "ethereum",
-        "OTRUMPUSD": "trump-coin",
-        "TRUMPUSD": "maga"
-    }
-    crypto_id = symbol_to_id.get(crypto_symbol, crypto_symbol.lower().replace("usd", ""))
-    url = f"https://api.coingecko.com/api/v3/coins/{crypto_id}/market_chart"
-    params = {"vs_currency": "usd", "days": days, "interval": "daily"}
-    headers = {"accept": "application/json"}
+# Funciones para el Tab 8
+# Línea ~500: Funciones de soporte
+
+# Versión original para opciones (usada en Tab 1)
+def calculate_max_pain(df):
+    """Calcula el Max Pain para opciones."""
+    if df.empty:
+        return None, pd.DataFrame()
+    strikes = df['strike'].unique()
+    max_pain_data = []
+    for strike in strikes:
+        call_losses = ((strike - df[df['option_type'] == 'call']['strike']).clip(lower=0) * 
+                       df[df['option_type'] == 'call']['open_interest']).sum()
+        put_losses = ((df[df['option_type'] == 'put']['strike'] - strike).clip(lower=0) * 
+                      df[df['option_type'] == 'put']['open_interest']).sum()
+        total_loss = call_losses + put_losses
+        max_pain_data.append({'strike': strike, 'total_loss': total_loss})
+    max_pain_df = pd.DataFrame(max_pain_data)
+    if max_pain_df.empty:
+        return None, max_pain_df
+    max_pain_strike = max_pain_df.loc[max_pain_df['total_loss'].idxmin()]
+    return max_pain_strike, max_pain_df.sort_values(by='total_loss', ascending=True)
+
+
+
+# Funciones para el Tab 8
+# Funciones para el Tab 8
+# Funciones para el Tab 8
+# Funciones para el Tab 8
+def kraken_pair_to_api_format(ticker: str) -> str:
+    """Convierte un ticker (e.g., BTC) al formato de Kraken (e.g., XXBTZUSD)."""
+    base = ticker.upper()
+    quote = "USD"
+    if base == "BTC":
+        base = "XBT"
+    return f"X{base}Z{quote}"
+
+def fetch_order_book(ticker: str, depth: int = 500) -> Tuple[pd.DataFrame, pd.DataFrame, float]:
+    """Obtiene el libro de órdenes en vivo desde Kraken con máxima profundidad."""
+    api_pair = kraken_pair_to_api_format(ticker)
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        if "prices" in data and len(data["prices"]) > 0:
-            historical = [
-                {
-                    "date": datetime.fromtimestamp(price[0] / 1000).strftime("%Y-%m-%d"),
-                    "close": price[1],
-                    "volume": vol[1] if i < len(data["total_volumes"]) else 0
-                }
-                for i, (price, vol) in enumerate(zip(data["prices"], data["total_volumes"]))
-            ]
-            logger.info(f"CoinGecko: Retrieved {len(historical)} historical data points for {crypto_symbol} (ID: {crypto_id})")
-            return historical
-        logger.warning(f"CoinGecko: No historical data for {crypto_symbol}. Response: {data}")
-        return None
+        response = kraken.query_public("Depth", {"pair": api_pair, "count": depth})
+        if "error" in response and response["error"]:
+            logger.error(f"Error fetching order book for {ticker}/USD: {response['error']}")
+            return pd.DataFrame(), pd.DataFrame(), 0.0
+        
+        result = response["result"][api_pair]
+        bids = pd.DataFrame(result["bids"], columns=["Price", "Volume", "Timestamp"]).astype(float)
+        asks = pd.DataFrame(result["asks"], columns=["Price", "Volume", "Timestamp"]).astype(float)
+        
+        if bids.empty or asks.empty:
+            logger.warning(f"Empty order book received for {ticker}/USD: bids={len(bids)}, asks={len(asks)}")
+        
+        best_bid = bids["Price"].max() if not bids.empty else 0
+        best_ask = asks["Price"].min() if not asks.empty else 0
+        current_price = (best_bid + best_ask) / 2 if best_bid and best_ask else 0.0
+        
+        logger.info(f"Fetched order book for {ticker}/USD: {len(bids)} bids, {len(asks)} asks")
+        return bids, asks, current_price
     except Exception as e:
-        logger.error(f"CoinGecko: Error fetching data for {crypto_symbol}: {str(e)}")
-        return None
+        logger.error(f"Error fetching order book for {ticker}/USD: {e}")
+        return pd.DataFrame(), pd.DataFrame(), 0.0
 
-# --- Nuevas funciones para cripto (necesarias para Tab 8) ---
-# --- Nuevas funciones para cripto (necesarias para Tab 8) ---
-@st.cache_data(ttl=CACHE_TTL)
-def get_crypto_list():
-    """Obtener lista de criptomonedas disponibles desde FMP."""
-    url = f"{FMP_BASE_URL}/symbol/available-cryptocurrencies"
-    params = {"apikey": FMP_API_KEY}
-    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto List")
-    if data and isinstance(data, list):
-        crypto_symbols = [item["symbol"] for item in data if "symbol" in item]
-        logger.info(f"Found {len(crypto_symbols)} crypto symbols")
-        return crypto_symbols
-    logger.error("No crypto symbols found")
-    return []
-
-@st.cache_data(ttl=CACHE_TTL)
-def get_crypto_quote(crypto_symbol: str):
-    """Obtener precio actual y datos de una criptomoneda desde FMP."""
-    url = f"{FMP_BASE_URL}/quote/{crypto_symbol}"
-    params = {"apikey": FMP_API_KEY}
-    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto Quote")
-    if data and isinstance(data, list) and len(data) > 0:
-        return data[0]
-    logger.error(f"No quote data for {crypto_symbol}")
-    return {}
-
-@st.cache_data(ttl=CACHE_TTL)
-def get_crypto_historical_fmp(crypto_symbol: str, limit: int = 30):
-    """Obtener precios históricos de una criptomoneda desde FMP."""
-    url = f"{FMP_BASE_URL}/historical-price-full/crypto/{crypto_symbol}"
-    params = {"apikey": FMP_API_KEY, "timeseries": limit}
-    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto Historical")
-    if data and "historical" in data and len(data["historical"]) > 0:
-        logger.info(f"FMP: Retrieved {len(data['historical'])} historical data points for {crypto_symbol}")
-        return data["historical"]
-    logger.warning(f"FMP: No historical data for {crypto_symbol}. Response: {data}")
-    return None
-
-@st.cache_data(ttl=CACHE_TTL)
-def get_crypto_historical_coingecko(crypto_symbol: str, days: int = 30):
-    """Obtener precios históricos de una criptomoneda desde CoinGecko."""
-    symbol_to_id = {
-        "BTCUSD": "bitcoin",
-        "ETHUSD": "ethereum",
-        "OTRUMPUSD": "trump-coin",
-        "TRUMPUSD": "maga"
+def fetch_coingecko_data(ticker: str) -> dict:
+    """Obtiene datos de mercado desde CoinGecko, incluyendo volatilidad."""
+    coin_map = {
+        "BTC": "bitcoin",
+        "ETH": "ethereum",
+        "XRP": "ripple",
+        "LTC": "litecoin",
+        "ADA": "cardano"
     }
-    crypto_id = symbol_to_id.get(crypto_symbol, crypto_symbol.lower().replace("usd", ""))
-    url = f"https://api.coingecko.com/api/v3/coins/{crypto_id}/market_chart"
-    params = {"vs_currency": "usd", "days": days, "interval": "daily"}
-    headers = {"accept": "application/json"}
+    coin_id = coin_map.get(ticker.upper(), ticker.lower())
+    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}"
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        response.raise_for_status()
+        response = requests.get(url, timeout=5)
+        if response.status_code != 200:
+            logger.error(f"Error fetching CoinGecko data for {ticker}: {response.status_code}")
+            return {}
         data = response.json()
-        if "prices" in data and len(data["prices"]) > 0:
-            historical = [
-                {
-                    "date": datetime.fromtimestamp(price[0] / 1000).strftime("%Y-%m-%d"),
-                    "close": price[1],
-                    "volume": vol[1] if i < len(data["total_volumes"]) else 0
-                }
-                for i, (price, vol) in enumerate(zip(data["prices"], data["total_volumes"]))
-            ]
-            logger.info(f"CoinGecko: Retrieved {len(historical)} historical data points for {crypto_symbol} (ID: {crypto_id})")
-            return historical
-        logger.warning(f"CoinGecko: No historical data for {crypto_symbol}. Response: {data}")
-        return None
+        market_data = data.get("market_data", {})
+        # URL para datos históricos de 24h
+        history_url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency=usd&days=1&interval=hourly"
+        history_response = requests.get(history_url, timeout=5)
+        history_data = history_response.json() if history_response.status_code == 200 else {"prices": []}
+        prices = [price[1] for price in history_data.get("prices", [])]
+        volatility = stats.stdev([p / prices[0] * 100 - 100 for p in prices]) * (365 ** 0.5) if len(prices) > 1 else 0  # Volatilidad anualizada
+        return {
+            "price": market_data.get("current_price", {}).get("usd", 0),
+            "change_value": market_data.get("price_change_24h", 0),
+            "change_percent": market_data.get("price_change_percentage_24h", 0),
+            "volume": market_data.get("total_volume", {}).get("usd", 0),
+            "market_cap": market_data.get("market_cap", {}).get("usd", 0),
+            "volatility": volatility
+        }
     except Exception as e:
-        logger.error(f"CoinGecko: Error fetching data for {crypto_symbol}: {str(e)}")
-        return None
+        logger.error(f"Error fetching CoinGecko data for {ticker}: {str(e)}")
+        return {}
 
-# --- Nuevas funciones para cripto (Tab 8: Crypto Command Center) ---
-@st.cache_data(ttl=CACHE_TTL)
-def get_crypto_list():
-    """Obtener lista de criptomonedas disponibles desde FMP."""
-    url = f"{FMP_BASE_URL}/symbol/available-cryptocurrencies"
-    params = {"apikey": FMP_API_KEY}
-    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto List")
-    if data and isinstance(data, list):
-        crypto_symbols = [item["symbol"] for item in data if "symbol" in item]
-        logger.info(f"Found {len(crypto_symbols)} crypto symbols")
-        return crypto_symbols
-    logger.error("No crypto symbols found")
-    return []
+def calculate_crypto_max_pain(bids: pd.DataFrame, asks: pd.DataFrame) -> float:
+    """Calcula el Max Pain basado en el libro de órdenes de criptomonedas."""
+    if bids.empty or asks.empty:
+        return 0.0
+    
+    all_prices = sorted(set(bids["Price"].tolist() + asks["Price"].tolist()))
+    min_price = min(all_prices)
+    max_price = max(all_prices)
+    price_range = np.linspace(min_price, max_price, 200)  # Más precisión
+    
+    max_pain_losses = {}
+    for price in price_range:
+        bid_loss = bids[bids["Price"] < price]["Volume"].sum() * (price - bids[bids["Price"] < price]["Price"]).sum()
+        ask_loss = asks[asks["Price"] > price]["Volume"].sum() * (asks[asks["Price"] > price]["Price"] - price).sum()
+        total_loss = bid_loss + ask_loss
+        max_pain_losses[price] = total_loss
+    
+    max_pain_price = min(max_pain_losses, key=max_pain_losses.get, default=0.0)
+    return max_pain_price
 
-@st.cache_data(ttl=CACHE_TTL)
-def get_crypto_quote(crypto_symbol: str):
-    """Obtener precio actual y datos de una criptomoneda desde FMP."""
-    url = f"{FMP_BASE_URL}/quote/{crypto_symbol}"
-    params = {"apikey": FMP_API_KEY}
-    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Crypto Quote")
-    if data and isinstance(data, list) and len(data) > 0:
-        return data[0]
-    logger.error(f"No quote data for {crypto_symbol}")
-    return {}
-
-@st.cache_data(ttl=CACHE_TTL)
-def get_crypto_historical_coingecko(crypto_symbol: str, days: int = 30):
-    """Obtener precios históricos de una criptomoneda desde CoinGecko."""
-    symbol_to_id = {
-        "BTCUSD": "bitcoin",
-        "ETHUSD": "ethereum",
-        "OTRUMPUSD": "trump-coin",
-        "TRUMPUSD": "maga"
+def calculate_metrics_with_whales(bids: pd.DataFrame, asks: pd.DataFrame, current_price: float, market_volatility: float) -> dict:
+    """Calcula métricas avanzadas con órdenes de ballenas y volatilidad de mercado."""
+    total_bid_volume = bids["Volume"].sum() if not bids.empty else 0
+    total_ask_volume = asks["Volume"].sum() if not asks.empty else 0
+    total_volume = total_bid_volume + total_ask_volume
+    net_pressure = total_bid_volume - total_ask_volume if total_volume > 0 else 0
+    pressure_index = (net_pressure / total_volume * 100) if total_volume > 0 else 0  # Índice de presión
+    
+    # Órdenes de ballenas
+    whale_threshold = max(bids["Volume"].quantile(0.95) if not bids.empty else 0, 
+                          asks["Volume"].quantile(0.95) if not asks.empty else 0, 
+                          50.0)  # Top 5% o 50 unidades
+    whale_bids = bids[bids["Volume"] >= whale_threshold] if not bids.empty else pd.DataFrame()
+    whale_asks = asks[asks["Volume"] >= whale_threshold] if not asks.empty else pd.DataFrame()
+    
+    whale_bid_volume = whale_bids["Volume"].sum() if not whale_bids.empty else 0
+    whale_ask_volume = whale_asks["Volume"].sum() if not whale_asks.empty else 0
+    whale_net_pressure = whale_bid_volume - whale_ask_volume
+    whale_pressure_weight = (whale_bid_volume + whale_ask_volume) / total_volume if total_volume > 0 else 0
+    
+    whale_bid_price = (whale_bids["Price"] * whale_bids["Volume"]).sum() / whale_bid_volume if whale_bid_volume > 0 else current_price
+    whale_ask_price = (whale_asks["Price"] * whale_asks["Volume"]).sum() / whale_ask_volume if whale_ask_volume > 0 else current_price
+    
+    # Support y Resistance basados en acumulaciones de volumen
+    bids["CumVolume"] = bids["Volume"].cumsum()
+    asks["CumVolume"] = asks["Volume"].cumsum()
+    support = bids[bids["CumVolume"] >= total_bid_volume * 0.25]["Price"].min() if not bids.empty else current_price  # 25% del volumen bid
+    resistance = asks[asks["CumVolume"] >= total_ask_volume * 0.25]["Price"].max() if not asks.empty else current_price  # 25% del volumen ask
+    
+    # Whale Accumulation Zones (clústeres)
+    whale_zones = []
+    if not whale_bids.empty:
+        whale_zones.extend(whale_bids["Price"].tolist())
+    if not whale_asks.empty:
+        whale_zones.extend(whale_asks["Price"].tolist())
+    whale_zones = sorted(set(whale_zones))[:6]  # Limitar a 6 zonas
+    
+    # Fórmula personalizada para target (mi toque especial)
+    max_pain_price = calculate_crypto_max_pain(bids, asks)
+    if max_pain_price != 0.0 and current_price != 0.0:
+        distance_to_max_pain = max_pain_price - current_price
+        whale_influence = (whale_bid_price * whale_bid_volume - whale_ask_price * whale_ask_volume) / (whale_bid_volume + whale_ask_volume + 1) if (whale_bid_volume + whale_ask_volume) > 0 else 0
+        whale_factor = whale_pressure_weight * whale_influence * 3  # Más peso a ballenas
+        volatility_factor = market_volatility / 100  # Volatilidad de CoinGecko como amplificador
+        possible_move = (distance_to_max_pain * (pressure_index / 100) + whale_factor) * (1 + volatility_factor)
+        target_price = current_price + possible_move
+        direction = "BUY" if current_price < target_price else "SELL" if current_price > target_price else "HOLD"
+        
+        # Trader's Edge Score (mi sorpresa)
+        whale_momentum = whale_net_pressure / (whale_bid_volume + whale_ask_volume + 1) * 100 if (whale_bid_volume + whale_ask_volume) > 0 else 0
+        edge_score = (pressure_index * 0.4 + whale_momentum * 0.4 + volatility_factor * 20)  # Puntuación de 0 a 100
+    else:
+        target_price = current_price
+        direction = "HOLD"
+        edge_score = 0
+    
+    return {
+        "net_pressure": net_pressure,
+        "volatility": market_volatility,  # De CoinGecko
+        "support": support,
+        "resistance": resistance,
+        "whale_zones": whale_zones,
+        "target_price": target_price,
+        "direction": direction,
+        "trend": "Bullish" if net_pressure > 0 else "Bearish" if net_pressure < 0 else "Neutral",
+        "whale_bids": whale_bids,
+        "whale_asks": whale_asks,
+        "edge_score": edge_score
     }
-    crypto_id = symbol_to_id.get(crypto_symbol, crypto_symbol.lower().replace("usd", ""))
-    url = f"https://api.coingecko.com/api/v3/coins/{crypto_id}/market_chart"
-    params = {"vs_currency": "usd", "days": days, "interval": "daily"}
-    headers = {"accept": "application/json"}
-    try:
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        if "prices" in data and len(data["prices"]) > 0:
-            historical = [
-                {
-                    "date": datetime.fromtimestamp(price[0] / 1000).strftime("%Y-%m-%d"),
-                    "close": price[1],
-                    "volume": vol[1] if i < len(data["total_volumes"]) else 0
-                }
-                for i, (price, vol) in enumerate(zip(data["prices"], data["total_volumes"]))
-            ]
-            logger.info(f"CoinGecko: Retrieved {len(historical)} historical data points for {crypto_symbol} (ID: {crypto_id})")
-            return historical
-        logger.warning(f"CoinGecko: No historical data for {crypto_symbol}. Response: {data}")
-        return None
-    except Exception as e:
-        logger.error(f"CoinGecko: Error fetching data for {crypto_symbol}: {str(e)}")
-        return None
+
+def plot_order_book_bubbles_with_max_pain(bids: pd.DataFrame, asks: pd.DataFrame, current_price: float, ticker: str, market_volatility: float) -> Tuple[go.Figure, dict]:
+    """Crea un gráfico de burbujas con Max Pain, órdenes de ballenas y niveles clave."""
+    fig = go.Figure()
+    
+    # Órdenes regulares
+    if not bids.empty:
+        fig.add_trace(go.Scatter(
+            x=bids["Price"],
+            y=[0] * len(bids),
+            mode="markers",
+            name="Bids",
+            marker=dict(
+                size=bids["Volume"] * 20 / bids["Volume"].max(),
+                color="#32CD32",
+                opacity=0.7,
+                line=dict(width=0.5, color="white")
+            ),
+            customdata=bids[["Price", "Volume"]],
+            hovertemplate="<b>Price:</b> $%{customdata[0]:.2f}<br><b>Volume:</b> %{customdata[1]:.2f}"
+        ))
+    
+    if not asks.empty:
+        fig.add_trace(go.Scatter(
+            x=asks["Price"],
+            y=[0] * len(asks),
+            mode="markers",
+            name="Asks",
+            marker=dict(
+                size=asks["Volume"] * 20 / asks["Volume"].max(),
+                color="#FF4500",
+                opacity=0.7,
+                line=dict(width=0.5, color="white")
+            ),
+            customdata=asks[["Price", "Volume"]],
+            hovertemplate="<b>Price:</b> $%{customdata[0]:.2f}<br><b>Volume:</b> %{customdata[1]:.2f}"
+        ))
+    
+    metrics = calculate_metrics_with_whales(bids, asks, current_price, market_volatility)
+    
+    # Resaltar órdenes de ballenas
+    if not metrics["whale_bids"].empty:
+        fig.add_trace(go.Scatter(
+            x=metrics["whale_bids"]["Price"],
+            y=[0] * len(metrics["whale_bids"]),
+            mode="markers",
+            name="Whale Bids",
+            marker=dict(
+                size=metrics["whale_bids"]["Volume"] * 20 / bids["Volume"].max(),
+                color="#00FF00",
+                opacity=0.9,
+                line=dict(width=2, color="white")
+            ),
+            customdata=metrics["whale_bids"][["Price", "Volume"]],
+            hovertemplate="<b>Whale Bid Price:</b> $%{customdata[0]:.2f}<br><b>Volume:</b> %{customdata[1]:.2f}"
+        ))
+    
+    if not metrics["whale_asks"].empty:
+        fig.add_trace(go.Scatter(
+            x=metrics["whale_asks"]["Price"],
+            y=[0] * len(metrics["whale_asks"]),
+            mode="markers",
+            name="Whale Asks",
+            marker=dict(
+                size=metrics["whale_asks"]["Volume"] * 20 / asks["Volume"].max(),
+                color="#FF0000",
+                opacity=0.9,
+                line=dict(width=2, color="white")
+            ),
+            customdata=metrics["whale_asks"][["Price", "Volume"]],
+            hovertemplate="<b>Whale Ask Price:</b> $%{customdata[0]:.2f}<br><b>Volume:</b> %{customdata[1]:.2f}"
+        ))
+    
+    # Líneas de precio actual y target
+    if current_price > 0:
+        fig.add_vline(
+            x=current_price,
+            line=dict(color="#FFD700", width=1, dash="dash"),
+            annotation_text=f"Current: ${current_price:.2f}",
+            annotation_position="top left",
+            annotation_font=dict(color="#FFD700", size=10)
+        )
+    
+    if metrics["target_price"] != current_price:
+        fig.add_vline(
+            x=metrics["target_price"],
+            line=dict(color="#39FF14", width=1, dash="dot"),
+            annotation_text=f"Target: ${metrics['target_price']:.2f} ({metrics['direction']})",
+            annotation_position="top right",
+            annotation_font=dict(color="#39FF14", size=10)
+        )
+    
+    # Líneas de soporte y resistencia
+    fig.add_vline(
+        x=metrics["support"],
+        line=dict(color="#1E90FF", width=1, dash="dot"),
+        annotation_text=f"Support: ${metrics['support']:.2f}",
+        annotation_position="bottom left",
+        annotation_font=dict(color="#1E90FF", size=8)
+    )
+    fig.add_vline(
+        x=metrics["resistance"],
+        line=dict(color="#FF4500", width=1, dash="dot"),
+        annotation_text=f"Resistance: ${metrics['resistance']:.2f}",
+        annotation_position="bottom right",
+        annotation_font=dict(color="#FF4500", size=8)
+    )
+    
+    fig.update_layout(
+        title=f"FlowS {ticker}/USD | Strategy",
+        xaxis_title="Price (USD)",
+        yaxis_title="",
+        template="plotly_dark",
+        plot_bgcolor="#1E1E1E",
+        paper_bgcolor="#1E1E1E",
+        font=dict(color="#FFFFFF", size=12),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        height=600,
+        showlegend=True,
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.1)")
+    
+    return fig, metrics
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def calculate_volume_power_flow(historical_data, current_price, bin_size=100):
     """Calcular flujo de volumen por precio con Power Index y datos para velas de ballenas."""
@@ -1676,7 +1856,6 @@ def main():
     ])
 
     with tab1:
-        #st.subheader("Options Scanner")
         ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
         expiration_dates = get_expiration_dates(ticker)
         if not expiration_dates:
@@ -1718,9 +1897,7 @@ def main():
             touched_strikes = detect_touched_strikes(processed_data.keys(), historical_prices)
             max_pain = calculate_max_pain_optimized(options_data)
             df = analyze_contracts(ticker, expiration_date, current_price)
-            max_pain_strike, max_pain_df = calculate_max_pain(df)
-
-            # Gráfica 1: Gamma Exposure
+            max_pain_strike, max_pain_df = calculate_max_pain(df)  # Ahora debería funcionar
             gamma_fig = gamma_exposure_chart(processed_data, current_price, touched_strikes)
             st.plotly_chart(gamma_fig, use_container_width=True)
             gamma_df = pd.DataFrame({
@@ -1738,8 +1915,6 @@ def main():
                 mime="text/csv",
                 key="download_gamma_tab1"
             )
-
-            # Gráfica 2: Skew Analysis
             skew_fig, total_calls, total_puts = plot_skew_analysis_with_totals(options_data, current_price)
             st.plotly_chart(skew_fig, use_container_width=True)
             st.write(f"**Total CALLS:** {total_calls} | **Total PUTS:** {total_puts}")
@@ -1752,8 +1927,6 @@ def main():
                 mime="text/csv",
                 key="download_skew_tab1"
             )
-
-            # Gráfica 3: Max Pain Histogram
             st.write(f"Current Price of {ticker}: ${current_price:.2f} (Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
             st.write(f"**Max Pain Strike (Optimized):** {max_pain if max_pain else 'N/A'}")
             max_pain_fig = plot_max_pain_histogram_with_levels(max_pain_df, current_price)
@@ -2335,74 +2508,49 @@ def main():
 
     with tab8:
         st.subheader("Crypto Insights")
-        crypto_list = get_crypto_list()
-        if not crypto_list:
-            st.error("No se pudo cargar la lista de criptomonedas.")
-            return
         
-        crypto_symbol = st.selectbox("Select Cryptocurrency", crypto_list, index=crypto_list.index("BTCUSD") if "BTCUSD" in crypto_list else 0, key="crypto_symbol_tab8")
+        ticker = st.text_input("Enter Crypto Ticker (e.g., BTC, ETH, XRP):", value="BTC", key="crypto_ticker_tab8").upper()
+        selected_pair = f"{ticker}/USD"
         
-        with st.spinner(f"Fetching data for {crypto_symbol}..."):
-            quote = get_crypto_quote(crypto_symbol)
-            if not quote:
-                st.error(f"No se pudo obtener datos para {crypto_symbol}.")
-                return
-            
-            current_price = quote.get("price", 0)
-            st.markdown(f"### {quote.get('name', crypto_symbol)} ({crypto_symbol})")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.write(f"- **Price**: ${current_price:,.2f}")
-                st.write(f"- **Change (24h)**: {quote.get('change', 0):,.2f} ({quote.get('changesPercentage', 0):.2f}%)")
-            with col2:
-                st.write(f"- **Volume (24h)**: {quote.get('volume', 0):,.0f}")
-                st.write(f"- **Market Cap**: ${quote.get('marketCap', 0):,.0f}")
-            with col3:
-                st.write(f"*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
-            
-            historical = get_crypto_historical_coingecko(crypto_symbol, days=30)
-            if historical:
-                bin_size = 100 if "BTC" in crypto_symbol else 10
-                
-                flow_data, support, resistance, accumulation_zones = calculate_volume_power_flow(historical, current_price, bin_size)
-                fig1 = plot_volume_power_flow(flow_data, current_price, support, resistance, accumulation_zones)
-                st.plotly_chart(fig1, use_container_width=True)
-                flow_csv = flow_data.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Volume Power Flow Data",
-                    data=flow_csv,
-                    file_name=f"{crypto_symbol}_volume_power_flow.csv",
-                    mime="text/csv",
-                    key="download_flow_tab8"
-                )
-                
-                df, net_pressure, trend, volatility, price_target = calculate_liquidity_pulse(historical, current_price)
-                fig2 = plot_liquidity_pulse(df, current_price, price_target)
-                st.plotly_chart(fig2, use_container_width=True)
-                liquidity_csv = df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Liquidity Pulse Data",
-                    data=liquidity_csv,
-                    file_name=f"{crypto_symbol}_liquidity_pulse.csv",
-                    mime="text/csv",
-                    key="download_liquidity_tab8"
-                )
-                
-                st.subheader("Key Metrics")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    pressure_color = "#32CD32" if net_pressure > 0 else "#FF4500"
-                    st.markdown(f"**Net Pressure**: <span style='color:{pressure_color}'>{net_pressure:,.0f}</span> ({trend})", unsafe_allow_html=True)
-                with col2:
-                    st.write(f"**Volatility (Annualized)**: {volatility:.2f}%")
-                with col3:
-                    st.write(f"**Projected Target**: ${price_target:,.2f}")
-                
-                st.write("**Support**: ${:.2f} | **Resistance**: ${:.2f}".format(support, resistance))
-                st.write("**Whale Accumulation Zones**: " + ", ".join([f"${zone:.2f}" for zone in accumulation_zones["price_bin"]]))
-                
-            else:
-                st.warning(f"No historical data available for {crypto_symbol}.")
+        refresh_button = st.button("Refresh Orders", key="refresh_tab8")
+        
+        placeholder = st.empty()
+        
+        if refresh_button or "tab8_initialized" not in st.session_state:
+            with st.spinner(f"Fetching data for {selected_pair}..."):
+                try:
+                    market_data = fetch_coingecko_data(ticker)
+                    if not market_data:
+                        st.error(f"Failed to fetch market data for {ticker} from Ozyforward files.")
+                    else:
+                        bids, asks, current_price = fetch_order_book(ticker, depth=500)
+                        if bids.empty or asks.empty:
+                            st.error(f"Failed to fetch order book for {selected_pair}. Verify the ticker.")
+                        else:
+                            with placeholder.container():
+                                st.markdown(f"### Bitcoin USD ({ticker}USD)")
+                                st.write(f"**Price**: ${market_data['price']:,.2f}")
+                                st.write(f"**Change (24h)**: {market_data['change_value']:,.2f} ({market_data['change_percent']:.2f}%)")
+                                st.write(f"**Volume (24h)**: {market_data['volume']:,.0f}")
+                                st.write(f"**Market Cap**: ${market_data['market_cap']:,.0f}")
+                                
+                                fig, order_metrics = plot_order_book_bubbles_with_max_pain(bids, asks, current_price, ticker, market_data['volatility'])
+                                st.plotly_chart(fig, use_container_width=True, key=f"plotly_chart_tab8_{ticker}_{int(time.time())}")
+                                
+                                st.subheader("Key Metrics")
+                                pressure_color = "#32CD32" if order_metrics['net_pressure'] > 0 else "#FF4500" if order_metrics['net_pressure'] < 0 else "#FFFFFF"
+                                st.write(f"**Net Pressure**: <span style='color:{pressure_color}'>{order_metrics['net_pressure']:,.0f}</span> ({order_metrics['trend']})", unsafe_allow_html=True)
+                                st.write(f"**Volatility (Annualized)**: {order_metrics['volatility']:.2f}%")
+                                st.write(f"**Projected Target**: ${order_metrics['target_price']:,.2f}")
+                                st.write(f"**Support**: ${order_metrics['support']:.2f} | **Resistance**: ${order_metrics['resistance']:.2f}")
+                                st.write("**Whale Accumulation Zones**: " + ", ".join([f"${zone:.2f}" for zone in order_metrics['whale_zones']]))
+                                edge_color = "#32CD32" if order_metrics['edge_score'] > 50 else "#FF4500" if order_metrics['edge_score'] < 30 else "#FFD700"
+                                st.write(f"**Trader's Edge Score**: <span style='color:{edge_color}'>{order_metrics['edge_score']:.1f}</span> (0-100)", unsafe_allow_html=True)
+                            
+                            st.session_state["tab8_initialized"] = True
+                except Exception as e:
+                    st.error(f"Error processing data for {selected_pair}: {str(e)}")
+                    logger.error(f"Error in Tab 8: {str(e)}")
 
     with tab9:
         st.subheader("Earnings Calendar")
