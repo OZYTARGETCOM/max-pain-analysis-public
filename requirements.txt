@@ -7,3 +7,5 @@ beautifulsoup4
 bcrypt
 scikit-learn
 matplotlib>=3.5.0
+krakenex==2.1.0  # Para Kraken API
+scipy==1.13.1    # Para cálculos estadísticos en volatilidad
