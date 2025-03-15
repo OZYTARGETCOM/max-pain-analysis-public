@@ -154,13 +154,15 @@ if not st.session_state["authenticated"]:
     st.title("🔒 VIP")
     password = st.text_input("Enter your password", type="password")
     if st.button("LogIn"):
-        if authenticate_password(password):
+        if not password:  # Validación de contraseña vacía
+            st.error("❌ Por favor, ingresa una contraseña.")
+        elif authenticate_password(password):
             st.session_state["authenticated"] = True
-            st.success("✅ Access granted! Click'LogIn' Again.")
-    else:
-        #st.error("❌ Acceso solo para clientes VIP.")
-     st.stop()
-
+            st.success("✅ ¡Access granted! The application will now load..")
+            st.rerun()  # Reejecuta la app para cargar el contenido autenticado
+        else:
+            st.error("❌ Incorrect or unauthorized password.")
+    st.stop()
 ########################################################app
 
 
@@ -2993,3 +2995,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+            
