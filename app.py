@@ -3017,30 +3017,111 @@ def main():
         st.markdown("*Developed by Ozy | © 2025*")
 
     with tab10:
-        st.header("Ventaja Psicológica del Juego del MM / MM Game Psychological Edge")
-        
-        st.subheader("Puntos clave antes de hacer trading / Key Points Before Trading")
-        st.markdown("""
-        1. **Sigue el juego del Market Maker - Stick to the Market Maker’s game**: Alinea tus trades con los grandes jugadores (MM) observando sus movimientos en zonas de liquidez, no persigas el hype retail; camina un poco antes para despejar la mente. / Align your trades with the big players (MM) by watching their moves in liquidity zones, not chasing retail hype; take a short walk beforehand to clear your mind.  
-        2. **Domina la gestión del dinero - Master money management**: Haz que tu objetivo sea definir cuánto estás dispuesto a perder, arriesgando solo el 1-2% de tu cuenta por operación para mantenerte en el juego; no operes si estás triste o emocionalmente inestable. / Make your goal to define how much you’re willing to lose, risking only 1-2% of your account per trade to stay in the game; don’t trade if you’re sad or emotionally unstable.  
-        3. **Analiza la exposición al gamma - Analyze gamma exposure**: Revisa el gamma de opciones para medir qué tan rápido cambia el delta, evitando trampas del MM cerca del vencimiento; piensa por qué manipulan estos niveles para atrapar traders. / Check options gamma to gauge how fast delta shifts, avoiding MM squeezes near expiration; think about why they manipulate these levels to trap traders.  
-        4. **Coloca un stop-loss firme - Set a hard stop-loss**: Usa niveles de soporte del MM para tu stop, no suposiciones, y corta pérdidas antes de que se descontrolen; opera de pie para mantenerte alerta y enfocado. / Place a stop based on MM support levels, not random guesses, to cut losses before they spiral; trade standing up to stay alert and focused.  
-        5. **Confirma con señales del MM - Confirm with MM signals**: Busca acción del precio en niveles clave (como order blocks) y picos de gamma para entrar con su flujo; si tienes monitores, dile a tu equipo que revisen el monitor de blocks para confirmar y reflexiona para qué manipulan el mercado aquí. / Look for price action at key levels (like order blocks) and gamma spikes to time your entry with their flow; if you have monitors, tell your team to check the blocks monitor to confirm and reflect on what they’re manipulating the market for here.  
-        6. **Controla tus emociones - Keep emotions in check**: Sigue la disciplina del MM—no vendas por pánico ni te sobreapalances solo porque la multitud lo hace; levántate y muévete si llevas mucho tiempo sentado para evitar decisiones impulsivas. / Follow the MM’s disciplined lead—don’t panic-sell or over-leverage just because the crowd does; get up and move if you’ve been sitting too long to avoid impulsive decisions.  
-        7. **Prueba con simulación - Test with paper trading**: Practica trades imitando patrones del MM (como movimientos por gamma) para afinar tu ventaja sin riesgo real; usa este tiempo para entender cómo tu estado mental afecta tus operaciones. / Simulate trades mirroring MM patterns (like gamma-driven moves) to refine your edge without real risk; use this time to understand how your mental state impacts your trading.  
-        8. **Sigue el volumen y el gamma - Track volume and gamma**: Alto volumen con cambios en gamma muestra compromiso del MM—opera con ellos, no contra ellos; camina unos minutos cada hora para mantener la claridad mental. / High volume paired with gamma shifts shows MM commitment—trade with them, not against them; walk for a few minutes every hour to keep mental clarity.  
-        9. **Registra cada paso - Log every move**: Anota tus trades con niveles del MM, datos de gamma y resultados para aprender su estrategia con el tiempo; incluye cómo te sentías para detectar patrones psicológicos. / Record your trades with MM levels, gamma insights, and outcomes to learn their playbook over time; include how you felt to spot psychological patterns.  
-        10. **Sal con precisión - Exit with precision**: Toma ganancias en zonas de resistencia del MM o cuando el gamma indique un reversal, asegurando beneficios antes de que se desvanezcan; piensa en cómo el MM usa estas zonas para engañar a los demás. / Take profits at MM resistance zones or when gamma peaks signal a reversal, locking in gains before they fade; think about how the MM uses these zones to trick others.
-        """)
+        trading_points = [
+            ("Sigue los Order Blocks del MM / Spot order blocks of the MM", 
+             "Identifica zonas de order blocks (acumulación o distribución del MM) en niveles de liquidez clave. Opera con su flujo, no contra él. Camina antes de la sesión para alinear tu mente con su juego. / Spot order blocks (MM accumulation or distribution) at key liquidity zones. Trade with their flow, not against it. Walk before the session to sync your mind with their game.", 
+             "#2A2A3D"),  # Gris azulado oscuro
+            ("Domina el Riesgo Institucional / Master Institutional Risk", 
+             "Limita el riesgo al 1-2% por posición, ajustado por VaR (Value at Risk) si operas portafolios grandes. No entres si tu estado emocional compromete el análisis de datos duros. / Cap risk at 1-2% per position, adjusted by VaR for large portfolios. Don’t trade if your emotional state clouds hard data analysis.", 
+             "#1A2E2A"),  # Verde oscuro
+            ("Analiza la Exposición al Gamma / Analyze Gamma Exposure", 
+             "Monitorea el gamma de opciones para prever cambios bruscos en el delta. Anticipa trampas del MM cerca de vencimientos (gamma squeezes) y reflexiona: ¿dónde están cazando stops? / Track options gamma to predict sharp delta shifts. Anticipate MM traps near expirations (gamma squeezes) and ask: Where are they hunting stops?", 
+             "#3D2A2A"),  # Marrón oscuro
+            ("Stop-Loss Basado en Liquidez / Liquidity-Based Stop-Loss", 
+             "Coloca stops en niveles de liquidez del MM (debajo de soportes o encima de resistencias), no en zonas aleatorias. Corta rápido: en trading institucional, preservar capital es prioridad. Opera de pie para máxima alerta. / Set stops at MM liquidity levels (below support or above resistance), not random zones. Cut fast: in institutional trading, capital preservation is king. Trade standing for peak alertness.", 
+             "#2A2A3D"),  # Gris azulado oscuro
+            ("Confirma con Flujo Institucional / Confirm with Institutional Flow", 
+             "Busca order flow en order blocks con picos de volumen y gamma. Usa herramientas como footprint charts o monitores de bloques si tienes acceso. Pregúntate: ¿qué están acumulando o descargando? / Look for order flow in order blocks with volume and gamma spikes. Use footprint charts or block monitors if available. Ask: What are they accumulating or unloading?", 
+             "#1E2A3D"),  # Azul oscuro
+            ("Controla la Psicología bajo Presión / Control Psychology Under Pressure", 
+             "Evita reaccionar a volatilidad intradía o ruido de mercado. La disciplina del MM es tu modelo: no te sobreapalances ni cedas a la euforia. Muévete cada hora para no quemarte. / Don’t react to intraday volatility or market noise. MM discipline is your model: no over-leverage or euphoria. Move hourly to avoid burnout.", 
+             "#2E2A1E"),  # Marrón grisáceo oscuro
+            ("Simula con Datos Reales / Simulate with Real Data", 
+             "Usa simulación con datos históricos de order flow y gamma para replicar movimientos del MM. Analiza cómo tu toma de decisiones resiste bajo presión institucional. / Simulate with historical order flow and gamma data to mirror MM moves. Test how your decision-making holds under institutional pressure.", 
+             "#1A2E2A"),  # Verde oscuro
+            ("Sigue el Volumen Institucional / Track Institutional Volume", 
+             "Alto volumen en niveles clave con cambios en gamma confirma compromiso del MM. Opera con ellos cuando el smart money entra; usa volume profile para precisión. Camina para mantener claridad. / High volume at key levels with gamma shifts confirms MM commitment. Trade with them when smart money steps in; use volume profile for precision. Walk to stay clear-headed.", 
+             "#2A2A3D"),  # Gris azulado oscuro
+            ("Registra Cada Movimiento / Log Every Move", 
+             "Documenta trades con niveles de order blocks, gamma, volumen y resultados. Incluye tu estado mental para ajustar sesgos. Los institucionales viven de datos, no de intuición. / Log trades with order blocks, gamma, volume, and outcomes. Add your mental state to tweak biases. Institutionals live on data, not gut feel.", 
+             "#1E2A3D"),  # Azul oscuro
+            ("Sal en Zonas de Liquidez / Exit at Liquidity Zones", 
+             "Toma ganancias en resistencias del MM o cuando el gamma indique un reversal. Usa liquidity grabs a tu favor: el MM a menudo empuja precios para atrapar a los débiles. / Take profits at MM resistance or when gamma signals a reversal. Leverage liquidity grabs: MM often pushes prices to trap the weak.", 
+             "#3D2A2A"),  # Marrón oscuro
+            ("Filtra el Ruido del Retail / Filter Retail Noise", 
+             "Ignora hype de redes sociales o noticias sin respaldo en order flow. Los institucionales confían en el DOM (Depth of Market) y el precio, no en titulares. / Ignore retail hype on social media or news without order flow backing. Institutionals trust DOM (Depth of Market) and price, not headlines.", 
+             "#2E2A1E"),  # Marrón grisáceo oscuro
+            ("Ajusta por Volatilidad / Adjust for Volatility", 
+             "En días de alta volatilidad (vencimientos, eventos macro), reduce tamaño de posición. En días tranquilos, busca order blocks profundos para entradas sólidas. Adapta como el MM. / On high-volatility days (expirations, macro events), shrink position size. On quiet days, target deep order blocks for strong entries. Adapt like the MM.", 
+             "#1A2E2A"),  # Verde oscuro
+            ("Explota las Ineficiencias / Exploit Inefficiencies", 
+             "Busca desbalances entre order flow y gamma (ej. short squeezes o stop runs). Los institucionales ganan donde el retail pierde: opera con ventaja, no con esperanza. / Hunt imbalances between order flow and gamma (e.g., short squeezes or stop runs). Institutionals win where retail loses: trade with edge, not hope.", 
+             "#2A2A3D"),  # Gris azulado oscuro
+            ("Piensa como el MM / Think Like the MM", 
+             "Pregúntate: ¿dónde colocan liquidez para atraer volumen? Usa su lógica (atrapar stops, forzar reversals) para anticipar y alinearte. Reflexiona entre sesiones. / Ask: Where do they place liquidity to draw volume? Use their logic (trap stops, force reversals) to anticipate and align. Reflect between sessions.", 
+             "#1E2A3D"),  # Azul oscuro
+            ("Monitorea el Skew y la Volatilidad Implícita / Monitor Skew and Implied Volatility", 
+             "Analiza el skew de opciones (asimetría en volatilidad implícita) para detectar sesgos del MM hacia alzas o bajas. Un skew pronunciado puede señalar liquidity grabs o stop hunts. Usa esta data para afinar entradas. / Track options skew (implied volatility asymmetry) to spot MM bias toward upside or downside. Sharp skew can signal liquidity grabs or stop hunts. Use it to fine-tune entries.", 
+             "#3D2A2A"),  # Marrón oscuro
+            ("Aprovecha el Dark Pool Flow / Leverage Dark Pool Flow", 
+             "Si tienes acceso a datos de dark pools (volumen institucional oculto), busca confirmación de order blocks. El MM usa estos flujos para mover mercados sin alertar al retail. Alinea tus trades con este smart money. / If you have dark pool data (hidden institutional volume), confirm order blocks. MM uses these flows to move markets without tipping off retail. Align trades with this smart money.", 
+             "#2E2A1E"),  # Marrón grisáceo oscuro
+            ("Juega el Juego del Spoofing Legal / Play the Legal Spoofing Game", 
+             "Detecta patrones de spoofing (órdenes falsas del MM para engañar) en el DOM o tape. No luches contra ellos; úsalos para entrar cuando el precio revierta tras el flush de liquidez. Requiere velocidad y precisión. / Spot spoofing patterns (MM fake orders to mislead) in the DOM or tape. Don’t fight them; use them to enter when price reverses after the liquidity flush. Demands speed and precision.", 
+             "#1A2E2A")  # Verde oscuro
+        ]
 
-        st.subheader("Invertir a largo plazo y tener éxito / Best Points for Long-Term Investing Success")
-        st.markdown("""
-        - **Invierte en sectores favoritos del MM - Invest in MM-favored sectors**: Elige acciones con fundamentos sólidos que los Market Makers apoyen, como empresas blue-chip con volumen constante; no decidas si estás emocionalmente agotado y nunca vendas en pérdidas. / Pick stocks with strong fundamentals that Market Makers support, like blue-chip firms with consistent volume; don’t decide if you’re emotionally drained and never sell at a loss.  
-        - **Diversifica con cabeza - Spread your money smart**: Reparte tu capital entre activos que el MM no pueda sacudir fácilmente—acciones, bonos, ETFs—para un crecimiento estable; reflexiona sobre por qué el MM deja ciertos activos estables y compra más en rojo para aprovechar caídas. / Diversify across assets MM can’t easily shake out—stocks, bonds, and ETFs—for steady growth; reflect on why the MM keeps certain assets stable and buy more in the red to capitalize on dips.  
-        - **Mira el panorama completo - Focus on the big picture**: Compra y mantén empresas con ganancias sólidas y bajo ruido de gamma, ignorando los juegos cortoplacistas del MM; camina para pensar a largo plazo sin estrés y nunca vendas en pérdidas. / Buy and hold companies with solid earnings and low gamma noise, ignoring short-term MM games; walk to think long-term without stress and never sell at a loss.  
-        - **Reinvierte como experto - Reinvest like a pro**: Usa los dividendos para comprar más activos respaldados por el MM y aprovechar el interés compuesto; hazlo con calma, no por impulso, y compra más en rojo cuando los precios bajen. / Compound your returns by plowing dividends back into MM-backed assets for exponential gains; do it calmly, not on impulse, and buy more in the red when prices drop.  
-        - **Sé paciente, confía en la tendencia - Stay patient, trust the trend**: Deja que el tiempo juegue a tu favor—mantén tus inversiones frente a manipulaciones del MM y confía en el alza a largo plazo; levántate y analiza por qué el MM no puede detener el crecimiento global, nunca vendas en pérdidas y compra más en rojo. / Let time work for you—hold through MM manipulations and trust the market’s long-term rise; stand up and analyze why the MM can’t stop global growth, never sell at a loss, and buy more in the red.
-        """)
+        for i, (title, content, color) in enumerate(trading_points, 1):
+            with st.expander(f"{i}. {title}"):
+                st.markdown(f"""
+                <div style='background-color: {color}; padding: 10px; border-radius: 5px; color: #FFFFFF;'>
+                    {content}
+                </div>
+                """, unsafe_allow_html=True)
+
+        # Sección de Inversión a Largo Plazo
+        st.subheader("Inversión a largo plazo para institucionales / Long-Term Investing for Institutionals")
+        
+        investing_points = [
+            ("Horizontes por Edad y Objetivo / Horizons by Age and Goal", 
+             "Invierte según el ciclo: 5-10 años para capital activo, 15-20 para crecimiento sostenido, 30+ para legado o fondos soberanos. Elige activos con fundamentales sólidos, no especulación. / Invest by cycle: 5-10 years for active capital, 15-20 for sustained growth, 30+ for legacy or sovereign funds. Pick assets with solid fundamentals, not speculation.", 
+             "#2A2A3D"),  # Gris azulado oscuro
+            ("Diversifica con Precisión / Diversify with Precision", 
+             "Reparte entre clases de activos (acciones, bonos, materias primas) según correlaciones y riesgo ajustado (Sharpe ratio). Compra más en caídas si el order flow institucional lo respalda. / Spread across asset classes (stocks, bonds, commodities) by correlations and risk-adjusted return (Sharpe ratio). Buy more on dips if institutional order flow supports it.", 
+             "#1A2E2A"),  # Verde oscuro
+            ("Foco en Valor Fundamental / Focus on Fundamental Value", 
+             "Selecciona empresas con flujo de caja robusto, baja deuda y ventaja estructural. Ignora ruido de corto plazo: los institucionales miran décadas, no días. / Choose firms with strong cash flow, low debt, and structural edge. Ignore short-term noise: institutionals eye decades, not days.", 
+             "#3D2A2A"),  # Marrón oscuro
+            ("Reinversión Estratégica / Strategic Reinvestment", 
+             "Usa ganancias para aumentar exposición en activos con smart money detrás. Aprovecha caídas para acumular: el MM exagera el miedo para comprar barato. / Reinvest profits to boost exposure to smart money-backed assets. Capitalize on dips: MM overplays fear to buy low.", 
+             "#1E2A3D"),  # Azul oscuro
+            ("Paciencia Institucional / Institutional Patience", 
+             "Mantén posiciones a través de ciclos económicos: el crecimiento global supera las crisis (dato histórico). Compra más en rojo con análisis de order flow, no pánico. / Hold through economic cycles: global growth outlasts crises (historical fact). Buy more in the red with order flow analysis, not panic.", 
+             "#2E2A1E"),  # Marrón grisáceo oscuro
+            ("Visión Macro Avanzada / Advanced Macro Vision", 
+             "Invierte en sectores con respaldo institucional (tecnología, infraestructura, energía limpia) según datos macro (PIB, tasas, demografía). Ajusta con calma, no por modas. / Invest in institutionally backed sectors (tech, infrastructure, clean energy) based on macro data (GDP, rates, demographics). Adjust calmly, not on trends.", 
+             "#2A2A3D"),  # Gris azulado oscuro
+            ("Contrario con Datos / Contrarian with Data", 
+             "Aumenta posiciones en caídas si el volume profile y fundamentales lo justifican. El MM usa el pánico retail para acumular; tú haz lo mismo con ventaja. / Build positions on dips if volume profile and fundamentals hold. MM uses retail panic to accumulate; you do the same with an edge.", 
+             "#1A2E2A"),  # Verde oscuro
+            ("Gestión Activa Pasiva / Active-Passive Management", 
+             "Combina tenencia pasiva (ETFs, índices) con compras activas en order blocks de largo plazo. Rebalancea según smart money, no emociones. / Blend passive holding (ETFs, indexes) with active buys at long-term order blocks. Rebalance by smart money, not emotion.", 
+             "#3D2A2A"),  # Marrón oscuro
+            ("Incorpora Derivados para Cobertura / Use Derivatives for Hedging", 
+             "Usa futuros o opciones para cubrir portafolios contra caídas sin vender activos clave. Los institucionales protegen ganancias sin sacrificar exposición a largo plazo. Ajusta según gamma y volatility index (VIX). / Use futures or options to hedge portfolios against dips without selling core assets. Institutionals shield gains without losing long-term exposure. Adjust by gamma and volatility index (VIX).", 
+             "#1E2A3D"),  # Azul oscuro
+            ("Explota Ciclos de Rebalancing / Exploit Rebalancing Cycles", 
+             "Aprovecha ventanas de rebalancing institucional (fin de mes, trimestre) cuando el MM ajusta posiciones. Compra en caídas inducidas por estos flujos; el volume profile te dirá dónde entran. / Exploit institutional rebalancing windows (month-end, quarter-end) when MM adjusts positions. Buy dips driven by these flows; volume profile shows where they step in.", 
+             "#2E2A1E")  # Marrón grisáceo oscuro
+        ]
+
+        for i, (title, content, color) in enumerate(investing_points, 1):
+            with st.expander(f"{i}. {title}"):
+                st.markdown(f"""
+                <div style='background-color: {color}; padding: 10px; border-radius: 5px; color: #FFFFFF;'>
+                    {content}
+                </div>
+                """, unsafe_allow_html=True)
         st.markdown("---")
         st.markdown("*Developed by Ozy | © 2025*")
 
