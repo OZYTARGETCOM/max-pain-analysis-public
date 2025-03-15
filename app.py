@@ -53,6 +53,7 @@ HEADERS_FMP = {"Accept": "application/json"}
 HEADERS_TRADIER = {"Authorization": f"Bearer {TRADIER_API_KEY}", "Accept": "application/json"}
 
 # --- Constantes ---
+# --- Constantes ---
 PASSWORDS_DB = "auth_data/passwords.db"
 CACHE_TTL = 300
 MAX_RETRIES = 5
@@ -64,7 +65,6 @@ def initialize_passwords_db():
     os.makedirs("auth_data", exist_ok=True)
     conn = sqlite3.connect(PASSWORDS_DB)
     c = conn.cursor()
-    # Nueva tabla con usage_count, ip1, ip2
     c.execute('''CREATE TABLE IF NOT EXISTS passwords 
                  (password TEXT PRIMARY KEY, usage_count INTEGER DEFAULT 0, ip1 TEXT DEFAULT '', ip2 TEXT DEFAULT '')''')
     initial_passwords = [
@@ -146,9 +146,10 @@ def authenticate_password(input_password):
                 logger.info(f"Repeat authentication successful for {input_password} from IP: {local_ip}")
                 return True
             else:
-                st.warning("⚠️ This password has already been used from two different IPs.")
+                st.error("❌ This password has already been used by two IPs. To get your own access to OzyTarget, text 'OzyTarget Access' to 678-978-9414.")
                 logger.warning(f"Authentication attempt for {input_password} from IP {local_ip} rejected; already used from {data['ip1']} and {data['ip2']}")
                 return False
+    st.error("❌ Incorrect password. If you don’t have access, text 'OzyTarget Access' to 678-978-9414 to purchase your subscription.")
     logger.warning(f"Authentication failed: Invalid password {input_password}")
     return False
 
@@ -160,24 +161,15 @@ def get_local_ip():
         logger.error("Error obtaining local IP.")
         return None
 
-# Estilos personalizados globales
-st.markdown("""
-    <style>
-    .stApp {background-color: #1E1E1E;}
-    .stTextInput, .stSelectbox {background-color: #2D2D2D; color: #FFFFFF;}
-    .stSpinner > div > div {border-color: #32CD32 !important;}
-    </style>
-""", unsafe_allow_html=True)
-
 # Pantalla de autenticación con logo
 initialize_passwords_db()
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    logo_path = "assets/favicon.png"  # Intenta en assets primero
+    logo_path = "assets/favicon.png"
     if not os.path.exists(logo_path):
-        logo_path = "favicon.png"  # Luego en la raíz
+        logo_path = "favicon.png"
     if os.path.exists(logo_path):
         st.markdown("<div style='display: flex; justify-content: center; align-items: center; margin-bottom: 20px;'>", unsafe_allow_html=True)
         st.image(logo_path, width=150)
@@ -194,8 +186,7 @@ if not st.session_state["authenticated"]:
             st.session_state["authenticated"] = True
             st.success("✅ Access granted! The application will now load.")
             st.rerun()
-        else:
-            st.error("❌ Incorrect or unauthorized password.")
+        # El mensaje de error ya está manejado dentro de authenticate_password
     st.stop()
 ########################################################app
 
