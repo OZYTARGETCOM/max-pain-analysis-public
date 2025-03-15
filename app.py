@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from scipy import stats
 import plotly.express as px
 import plotly.graph_objects as go
@@ -18,11 +20,10 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
 from typing import List, Dict, Optional, Tuple
-import streamlit as st
 import streamlit.components.v1 as components
 import math
 import krakenex
-
+import base64
 
 
 
@@ -42,9 +43,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- Configuración de Logging ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+
+
+
 
 # --- Configuración de APIs ---
 FMP_API_KEY = "bQ025fPNVrYcBN4KaExd1N3Xczyk44wM"
@@ -150,17 +151,178 @@ if not st.session_state["authenticated"]:
     else:
         st.warning("No se encontró 'favicon.png' para pantalla de inicio. Coloca el archivo en 'C:/Users/urbin/TradingApp/' o en 'assets/'.")
     
-    st.title("🔒 Acceso VIP")
-    password = st.text_input("Ingresa tu contraseña", type="password")
-    if st.button("Iniciar Sesión"):
+    st.title("🔒 VIP")
+    password = st.text_input("Enter your password", type="password")
+    if st.button("LogIn"):
         if authenticate_password(password):
             st.session_state["authenticated"] = True
-            st.success("✅ Acceso concedido! Haz clic en 'Iniciar Sesión' nuevamente.")
+            st.success("✅ Access granted! Click'LogIn' Again.")
     else:
-        st.error("❌ Acceso solo para clientes VIP.")
-    st.stop()
+        #st.error("❌ Acceso solo para clientes VIP.")
+     st.stop()
 
 ########################################################app
+
+
+
+
+
+
+@st.cache_data(ttl=3600)
+def fetch_logo_url(symbol: str) -> str:
+    """Obtiene la URL del logo de Clearbit con un fallback como base64."""
+    url = f"https://logo.clearbit.com/{symbol.lower()}.com"
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            logger.info(f"Logo fetched for {symbol}")
+            return f"data:image/png;base64,{base64.b64encode(response.content).decode('utf-8')}"
+    except Exception as e:
+        logger.warning(f"Failed to fetch logo for {symbol}: {e}")
+    default_logo_path = "default_logo.png"
+    if os.path.exists(default_logo_path):
+        with open(default_logo_path, "rb") as f:
+            return f"data:image/png;base64,{base64.b64encode(f.read()).decode('utf-8')}"
+    logger.info(f"Using fallback logo for {symbol}")
+    return "https://via.placeholder.com/100"
+
+@st.cache_data(ttl=86400)
+def get_top_traded_stocks() -> set:
+    """Obtiene una lista de las acciones más operadas desde FMP."""
+    url = f"{FMP_BASE_URL}/stock-screener"
+    params = {
+        "apikey": FMP_API_KEY,
+        "marketCapMoreThan": 10_000_000_000,
+        "volumeMoreThan": 1_000_000,
+        "exchange": "NASDAQ,NYSE",
+        "limit": 100
+    }
+    try:
+        response = requests.get(url, params=params, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        top_stocks = {stock["symbol"] for stock in data if stock.get("isActivelyTrading", True)}
+        logger.info(f"Fetched {len(top_stocks)} top traded stocks")
+        return top_stocks
+    except Exception as e:
+        logger.error(f"Error fetching top traded stocks: {e}")
+        # Fallback básico
+        return {"AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META", "JPM", "WMT", "SPY"}
+
+def group_by_day_of_week(events: List[Dict], start_date: datetime, end_date: datetime) -> Dict[str, List[Dict]]:
+    """Agrupa eventos por día de la semana entre start_date y end_date."""
+    grouped = {}
+    for event in events:
+        event_date = datetime.strptime(event["Date"], "%Y-%m-%d").date()
+        if start_date <= event_date <= end_date:
+            day_name = event_date.strftime("%A")
+            date_str = event_date.strftime("%Y-%m-%d")
+            key = f"{day_name} ({date_str})"
+            if key not in grouped:
+                grouped[key] = []
+            grouped[key].append(event)
+    sorted_grouped = dict(sorted(grouped.items(), key=lambda x: datetime.strptime(x[0].split("(")[1].strip(")"), "%Y-%m-%d")))
+    logger.info(f"Grouped {len(events)} events into {len(sorted_grouped)} days")
+    return sorted_grouped
+
+@st.cache_data(ttl=86400)
+def get_implied_volatility(symbol: str) -> Optional[float]:
+    """Obtiene la volatilidad implícita promedio de opciones cercanas desde Tradier."""
+    expiration_dates = get_expiration_dates(symbol)
+    if not expiration_dates:
+        logger.warning(f"No expiration dates for {symbol}")
+        return None
+    nearest_exp = expiration_dates[0]
+    url = f"{TRADIER_BASE_URL}/markets/options/chains"
+    params = {"symbol": symbol, "expiration": nearest_exp, "greeks": "true"}
+    try:
+        response = requests.get(url, headers=HEADERS_TRADIER, params=params, timeout=5)
+        response.raise_for_status()
+        data = response.json().get("options", {}).get("option", [])
+        ivs = [float(opt.get("implied_volatility", 0)) for opt in data if opt.get("implied_volatility")]
+        if ivs:
+            avg_iv = sum(ivs) / len(ivs)
+            logger.info(f"Average IV for {symbol}: {avg_iv}")
+            return avg_iv
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching IV for {symbol}: {e}")
+        return None
+
+@st.cache_data(ttl=86400)
+def get_historical_earnings_movement(symbol: str) -> Optional[float]:
+    """Obtiene el movimiento promedio histórico post-earnings desde FMP."""
+    url = f"{FMP_BASE_URL}/historical/earning_calendar/{symbol}"
+    params = {"apikey": FMP_API_KEY, "limit": 4}
+    try:
+        response = requests.get(url, params=params, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        if not data or not isinstance(data, list):
+            return None
+        price_url = f"{FMP_BASE_URL}/historical-price-full/{symbol}"
+        price_data = requests.get(price_url, params={"apikey": FMP_API_KEY, "timeseries": 10}).json().get("historical", [])
+        movements = []
+        for earning in data:
+            earning_date = earning.get("date")
+            if not earning_date:
+                continue
+            earning_date_obj = datetime.strptime(earning_date, "%Y-%m-%d").date()
+            for i, price in enumerate(price_data):
+                price_date = datetime.strptime(price["date"], "%Y-%m-%d").date()
+                if price_date >= earning_date_obj and i > 0:
+                    prev_close = price_data[i-1]["close"]
+                    post_close = price["close"]
+                    movement = abs((post_close - prev_close) / prev_close * 100)
+                    movements.append(movement)
+                    break
+        if movements:
+            avg_movement = sum(movements) / len(movements)
+            logger.info(f"Historical earnings movement for {symbol}: {avg_movement}%")
+            return avg_movement
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching historical earnings for {symbol}: {e}")
+        return None
+
+def calculate_possible_movement(symbol, eps_est, revenue_est, time):
+    """Calcula el Possible Movement con precisión cercana a cero."""
+    iv = get_implied_volatility(symbol)
+    if iv is None:
+        iv = 0.3  # Fallback
+
+    hist_movement = get_historical_earnings_movement(symbol)
+    if hist_movement is None:
+        hist_movement = 5.0  # Fallback
+
+    eps_impact = abs(eps_est) * iv * 10
+    revenue_impact = (revenue_est / 1_000_000_000) * 0.05
+    time_factor = 1.0 if time == "bmo" else 1.2 if time == "amc" else 0.8
+
+    movement = (hist_movement * 0.5 + iv * 100 * 0.3 + eps_impact * 0.15 + revenue_impact * 0.05) * time_factor
+    return round(max(1.0, min(50.0, movement)), 2)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1851,8 +2013,8 @@ def main():
 
     # Resto de los tabs (agregamos Tab 9)
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
-        "Gummy Data Bubbles®", "Market Scanner", "News", "Institutional Holders", 
-        "Options Order Flow", "Analyst Rating Flow", "Elliott Pulse®", "Crypto Insights", "Earnings Calendar"
+        "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |", 
+        "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |", "Earnings Calendar |"
     ])
 
     with tab1:
@@ -2553,22 +2715,25 @@ def main():
                     logger.error(f"Error in Tab 8: {str(e)}")
 
     with tab9:
-        st.subheader("Earnings Calendar")
+        #st.subheader("Earnings Calendar")
 
-        # Selector de fechas y filtro dinámico
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            start_date = st.date_input("Start Date", value=datetime.now().date(), min_value=datetime.now().date() - timedelta(days=365))
-        with col2:
-            end_date = st.date_input("End Date", value=start_date + timedelta(days=2), min_value=start_date)
-        with col3:
-            sort_by = st.selectbox("Sort By", ["Date", "Symbol", "Possible Movement", "EPS", "Revenue"], index=0)
+        # Rango automático: próxima semana completa (lunes a domingo)
+        today = datetime.now().date()
+        days_to_next_monday = (7 - today.weekday()) % 7  # Días hasta el próximo lunes
+        if days_to_next_monday == 0:  # Si hoy es lunes, saltar a la próxima semana
+            days_to_next_monday = 7
+        start_date = today + timedelta(days=days_to_next_monday)  # Próximo lunes
+        end_date = start_date + timedelta(days=6)  # Próximo domingo
+
+        # Selector de ordenamiento
+        sort_by = st.selectbox("Sort By", ["Date", "Symbol", "Possible Movement", "EPS", "Revenue", "Time"], index=0)
 
         @st.cache_data
         def fetch_api_data(url, params, headers, source):
             try:
                 response = requests.get(url, params=params, headers=headers, timeout=5)
                 response.raise_for_status()
+                logger.info(f"{source} API call successful: {len(response.json())} items")
                 return response.json()
             except Exception as e:
                 logger.error(f"Error fetching {source} data: {e}")
@@ -2584,8 +2749,9 @@ def main():
             data = fetch_api_data(url, params, HEADERS_FMP, "FMP Earnings")
             if not data or not isinstance(data, list):
                 logger.error(f"No earnings data from FMP: {data}")
-                st.error(f"No earnings data from FMP: {data}")
+                st.error(f"No earnings data received from FMP: {data}")
                 return []
+            top_stocks = get_top_traded_stocks()
             earnings = []
             for item in data:
                 symbol = item.get("symbol", "")
@@ -2607,18 +2773,19 @@ def main():
                 if eps_est is None or revenue_est < 1_000_000:
                     continue
                 
-                # Corrección de Pre-Market y After-Market
                 if time == "bmo":
                     time_display = "Pre-Market"
                     time_factor = 1.0
+                    time_sort_value = 0
                 elif time == "amc":
                     time_display = "After-Market"
                     time_factor = 1.3
+                    time_sort_value = 1
                 else:
                     time_display = "N/A"
                     time_factor = 0.7
+                    time_sort_value = 2
 
-                # Fórmula profesional afinada para Possible Movement (%)
                 base_volatility = 6.5
                 volatility_factor = 12 * (1 + math.tanh(abs(eps_est) - 1))
                 eps_relevance = abs(eps_est) / (revenue_est / 1_000_000_000 + 0.1)
@@ -2631,105 +2798,185 @@ def main():
                 earnings.append({
                     "Date": event_date,
                     "Time": time_display,
+                    "TimeSortValue": time_sort_value,
                     "Symbol": symbol,
                     "Details": f"EPS: {eps_est:.2f} | Rev: ${revenue_est / 1_000_000:,.1f}M",
-                    "Logo": f"https://logo.clearbit.com/{symbol.lower()}.com",
-                    "PossibleMovement": round(movement, 2),
+                    "Logo": fetch_logo_url(symbol),
+                    "Possible Movement (%)": round(movement, 2),
                     "EPS": eps_est,
-                    "Revenue": revenue_est
+                    "Revenue": revenue_est,
+                    "IsTopStock": symbol in top_stocks
                 })
-            logger.info(f"Retrieved {len(earnings)} relevant US earnings events")
-            # Ordenar según selección
+            logger.info(f"Processed {len(earnings)} earnings events")
+            if not earnings:
+                logger.warning("No earnings events after filtering")
+            
+            # Ordenar según criterio
             if sort_by == "Possible Movement":
-                earnings.sort(key=lambda x: x["PossibleMovement"], reverse=True)
+                earnings.sort(key=lambda x: x["Possible Movement (%)"], reverse=True)
             elif sort_by == "EPS":
                 earnings.sort(key=lambda x: x["EPS"], reverse=True)
             elif sort_by == "Revenue":
                 earnings.sort(key=lambda x: x["Revenue"], reverse=True)
             elif sort_by == "Symbol":
                 earnings.sort(key=lambda x: x["Symbol"])
+            elif sort_by == "Time":
+                earnings.sort(key=lambda x: (x["TimeSortValue"], x["Date"]))
             else:  # Date
                 earnings.sort(key=lambda x: x["Date"])
             return earnings
 
         with st.spinner(f"Fetching earnings from {start_date} to {end_date}..."):
             earnings_events = get_earnings_calendar(start_date, end_date)
+            logger.info(f"Finished fetching: {len(earnings_events)} events retrieved")
 
         if earnings_events:
+            # Agrupar por día de la semana (sin paginación)
+            grouped_events = group_by_day_of_week(earnings_events, start_date, end_date)
+
+            # Diseño de tarjetas con calendario
             earnings_html = """
             <style>
-                .calendar-table {
+                .earnings-container {
                     width: 100%;
-                    border-collapse: collapse;
                     background: linear-gradient(135deg, #1E1E1E, #2A2A2A);
-                    color: #FFFFFF;
-                    font-family: 'Helvetica Neue', Arial, sans-serif;
-                    font-size: 14px;
-                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-                    border-radius: 8px;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+                    overflow-y: auto;
+                    max-height: 600px;
                 }
-                .calendar-table th {
+                .date-section {
+                    margin-bottom: 20px;
+                }
+                .date-header {
                     background-color: #2D2D2D;
                     color: #32CD32;
+                    padding: 10px;
+                    font-size: 18px;
                     font-weight: 600;
                     text-align: center;
-                    padding: 12px;
-                    border-bottom: 2px solid #555555;
-                    text-transform: uppercase;
+                    border-radius: 5px;
+                    cursor: default;
                 }
-                .calendar-table td {
+                .cards-container {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 20px;
                     padding: 10px;
-                    border-bottom: 1px solid #444444;
-                    vertical-align: middle;
-                    text-align: center;
                 }
-                .calendar-table td.logo {
-                    width: 100px;
-                    height: 100px;
-                    background-color: #2D2D2D;
-                    border-radius: 50%;
+                .earning-card {
+                    width: 300px;
+                    background: linear-gradient(145deg, #252525, #303030);
+                    border: 1px solid #555555;
+                    border-radius: 10px;
+                    padding: 15px;
+                    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+                    transition: transform 0.3s ease, box-shadow 0.3s ease;
+                    position: relative;
+                    overflow: hidden;
                 }
-                .calendar-table td.logo img {
+                .earning-card.top-stock {
+                    border: 2px solid #FFD700;
+                    background: linear-gradient(145deg, #303030, #404040);
+                }
+                .earning-card:hover {
+                    transform: translateY(-5px) scale(1.05);
+                    box-shadow: 0 10px 25px rgba(50, 205, 50, 0.2);
+                }
+                .earning-card img {
                     width: 80px;
                     height: 80px;
                     object-fit: contain;
+                    border-radius: 50%;
+                    margin: 0 auto;
+                    display: block;
                 }
-                .calendar-table tr:hover {
-                    background-color: #333333;
+                .earning-card .info {
+                    color: #FFFFFF;
+                    font-size: 14px;
+                    text-align: center;
+                    margin-top: 10px;
+                }
+                .earning-card .info .symbol {
+                    font-size: 18px;
+                    font-weight: 600;
+                    color: #32CD32;
+                }
+                .earning-card .info .highlight {
+                    color: #FFD700;
+                }
+                .tooltip {
+                    visibility: hidden;
+                    width: 250px;
+                    background: #2D2D2D;
+                    color: #FFFFFF;
+                    text-align: left;
+                    border-radius: 6px;
+                    padding: 10px;
+                    position: absolute;
+                    z-index: 1;
+                    top: 100%;
+                    left: 50%;
+                    margin-left: -125px;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+                    font-size: 12px;
+                }
+                .earning-card:hover .tooltip {
+                    visibility: visible;
                 }
             </style>
-            <table class="calendar-table">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Time</th>
-                        <th>Logo</th>
-                        <th>Symbol</th>
-                        <th>Details</th>
-                        <th>Possible Movement (%)</th>
-                    </tr>
-                </thead>
-                <tbody>
+            <div class="earnings-container">
             """
-            for event in earnings_events:
-                logo = f'<img src="{event.get("Logo", "")}" width="80" height="80" alt="{event.get("Symbol", "N/A")}" onerror="this.src=\'https://via.placeholder.com/80\'">'
-                earnings_html += f"""
-                    <tr>
-                        <td>{event["Date"]}</td>
-                        <td>{event["Time"]}</td>
-                        <td class="logo">{logo}</td>
-                        <td>{event["Symbol"]}</td>
-                        <td>{event["Details"]}</td>
-                        <td>{event["PossibleMovement"]}</td>
-                    </tr>
-                """
-            earnings_html += """
-                </tbody>
-            </table>
-            """
-            components.html(earnings_html, height=400, scrolling=True)
 
-            earnings_csv = pd.DataFrame(earnings_events).drop(columns=["Logo", "EPS", "Revenue"], errors="ignore").to_csv(index=False)
+            if not grouped_events:
+                earnings_html += "<p style='color: #FFFFFF; text-align: center;'>No events to display for next week.</p>"
+            else:
+                for day, events in grouped_events.items():
+                    earnings_html += f"""
+                    <div class="date-section">
+                        <div class="date-header">{day}</div>
+                        <div class="cards-container">
+                    """
+                    for event in events:
+                        class_name = "earning-card top-stock" if event["IsTopStock"] else "earning-card"
+                        logo = f'<img src="{event.get("Logo", "")}" alt="{event.get("Symbol", "N/A")}">'
+                        tooltip = f"""
+                            <div class="tooltip">
+                                <b>Date:</b> {event["Date"]}<br>
+                                <b>Time:</b> {event["Time"]}<br>
+                                <b>Symbol:</b> {event["Symbol"]}<br>
+                                <b>EPS:</b> {event["EPS"]:.2f}<br>
+                                <b>Revenue:</b> ${event["Revenue"] / 1_000_000:,.1f}M<br>
+                                <b>Possible Movement:</b> {event["Possible Movement (%)"]}%
+                            </div>
+                        """
+                        earnings_html += f"""
+                            <div class="{class_name}">
+                                {logo}
+                                <div class="info">
+                                    <div class="symbol">{event["Symbol"]}</div>
+                                    <div>{event["Time"]}</div>
+                                    <div>{event["Details"]}</div>
+                                    <div class="highlight">Move: {event["Possible Movement (%)"]}%</div>
+                                    {tooltip}
+                                </div>
+                            </div>
+                        """
+                    earnings_html += """
+                        </div>
+                    </div>
+                    """
+
+            earnings_html += """
+            </div>
+            """
+
+            # Mostrar tarjetas con desplazamiento
+            components.html(earnings_html, height=600, scrolling=True)
+
+            # Descarga CSV
+            earnings_csv = pd.DataFrame(earnings_events).drop(columns=["Logo", "EPS", "Revenue", "TimeSortValue", "IsTopStock"], errors="ignore").to_csv(index=False)
             st.download_button(
                 label="📥 Download Earnings Calendar",
                 data=earnings_csv,
@@ -2738,9 +2985,11 @@ def main():
                 key="download_earnings_tab9"
             )
         else:
-            st.info(f"No earnings events found from {start_date} to {end_date}.")
-    st.markdown("---")
-    st.markdown("*Developed by Ozy | © 2025*")
+            st.info(f"No earnings events found from {start_date} to {end_date}. Check logs for details.")
+            logger.warning("No earnings events retrieved or processed")
+
+        st.markdown("---")
+        st.markdown("*Developed by Ozy | © 2025*")
 
 if __name__ == "__main__":
     main()
