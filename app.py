@@ -162,6 +162,7 @@ def get_local_ip():
         return None
 
 # Pantalla de autenticación con logo
+# Pantalla de autenticación con logo
 initialize_passwords_db()
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -177,16 +178,67 @@ if not st.session_state["authenticated"]:
     else:
         st.warning("No 'favicon.png' found for login screen. Place it in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
     
-    st.title("🔒 VIP")
+    st.title("🔒 VIP ACCESS")
+    
+    # Estilo personalizado para el mensaje de carga
+    st.markdown("""
+    <style>
+    .loading-container {
+        text-align: center;
+        padding: 20px;
+        background: linear-gradient(135deg, #1E1E1E, #2A2A2A);
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    }
+    .loading-text {
+        font-size: 24px;
+        font-weight: bold;
+        color: #32CD32;
+        text-shadow: 0 0 10px #32CD32;
+    }
+    .sub-text {
+        font-size: 16px;
+        color: #FFD700;
+        margin-top: 10px;
+    }
+    .spinner {
+        font-size: 30px;
+        animation: spin 1.5s linear infinite;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     password = st.text_input("Enter your password", type="password")
     if st.button("LogIn"):
         if not password:
             st.error("❌ Please enter a password.")
         elif authenticate_password(password):
             st.session_state["authenticated"] = True
-            st.success("✅ Access granted! The application will now load.")
+            # Temporizador regresivo de 7 segundos
+            with st.empty():
+                for seconds in range(7, 0, -1):
+                    st.markdown(f"""
+                    <div class="loading-container">
+                        <div class="loading-text">✅ ACCESS GRANTED</div>
+                        <div class="sub-text">OzyTarget Scanner initializing in {seconds}...</div>
+                        <div class="spinner">🔄</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    time.sleep(1)  # Espera 1 segundo por cada conteo
+                # Mensaje final antes de recargar
+                st.markdown("""
+                <div class="loading-container">
+                    <div class="loading-text">✅ ACCESS GRANTED</div>
+                    <div class="sub-text">Deploying OzyTarget Systems Now...</div>
+                    <div class="spinner">🔄</div>
+                </div>
+                """, unsafe_allow_html=True)
+                time.sleep(0.5)  # Breve pausa final para efecto
             st.rerun()
-        # El mensaje de error ya está manejado dentro de authenticate_password
     st.stop()
 ########################################################app
 
