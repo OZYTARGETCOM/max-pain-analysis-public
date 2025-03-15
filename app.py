@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import csv
 import bcrypt
+import sqlite3
 import os
 from sklearn.linear_model import LinearRegression
 from bs4 import BeautifulSoup
@@ -25,27 +26,22 @@ import math
 import krakenex
 import base64
 
-
-
 # Configurar cliente de Kraken con las claves proporcionadas
 API_KEY = "kyFpw+5fbrFIMDuWJmtkbbbr/CgH/MS63wv7dRz3rndamK/XnjNOVkgP"
 PRIVATE_KEY = "7xbaBIp902rSBVdIvtfrUNbRHEHMkfMHPEf4rssz+ZwSwjUZFegjdyyYZzcE5DbBrUbtFdGRRGRjTuTnEblZWA=="
 kraken = krakenex.API(key=API_KEY, secret=PRIVATE_KEY)
 
-# Configuración de logging (ya lo tienes)
+# Configuración de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-# --- Configuración inicial de página (primer comando de Streamlit) ---
+
+# --- Configuración inicial de página ---
 st.set_page_config(
     page_title="𝗢 𝗭 𝗬 |  DATA®",
-    page_icon="favicon.png",  # Ícono en la pestaña del navegador
+    page_icon="favicon.png",
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-
-
-
 
 # --- Configuración de APIs ---
 FMP_API_KEY = "bQ025fPNVrYcBN4KaExd1N3Xczyk44wM"
@@ -57,73 +53,112 @@ HEADERS_FMP = {"Accept": "application/json"}
 HEADERS_TRADIER = {"Authorization": f"Bearer {TRADIER_API_KEY}", "Accept": "application/json"}
 
 # --- Constantes ---
-PASSWORDS_FILE = "passwords.csv"
+PASSWORDS_DB = "auth_data/passwords.db"
 CACHE_TTL = 300
 MAX_RETRIES = 5
 INITIAL_DELAY = 1
 RISK_FREE_RATE = 0.045
 
-# --- Lista de Tickers ---
+# --- Autenticación con SQLite ---
+def initialize_passwords_db():
+    os.makedirs("auth_data", exist_ok=True)
+    conn = sqlite3.connect(PASSWORDS_DB)
+    c = conn.cursor()
+    # Nueva tabla con usage_count, ip1, ip2
+    c.execute('''CREATE TABLE IF NOT EXISTS passwords 
+                 (password TEXT PRIMARY KEY, usage_count INTEGER DEFAULT 0, ip1 TEXT DEFAULT '', ip2 TEXT DEFAULT '')''')
+    initial_passwords = [
+        ("abc123", 0, "", ""),
+        ("def456", 0, "", ""),
+        ("ghi789", 0, "", ""),
+        ("jkl010", 0, "", ""),
+        ("mno345", 0, "", ""),
+        ("pqr678", 0, "", ""),
+        ("stu901", 0, "", ""),
+        ("vwx234", 0, "", ""),
+        ("yz1234", 0, "", ""),
+        ("abcd56", 0, "", ""),
+        ("efgh78", 0, "", ""),
+        ("ijkl90", 0, "", ""),
+        ("mnop12", 0, "", ""),
+        ("qrst34", 0, "", ""),
+        ("uvwx56", 0, "", ""),
+        ("yzab78", 0, "", ""),
+        ("cdef90", 0, "", ""),
+        ("ghij12", 0, "", ""),
+        ("news34", 0, "", ""),
+        ("opqr56", 0, "", ""),
+        ("xyz789", 0, "", ""),
+        ("kml456", 0, "", ""),
+        ("nop123", 0, "", ""),
+        ("qwe987", 0, "", ""),
+        ("asd654", 0, "", ""),
+        ("zxc321", 0, "", ""),
+        ("bnm098", 0, "", ""),
+        ("vfr765", 0, "", ""),
+        ("tgb432", 0, "", ""),
+        ("hju109", 0, "", "")
+    ]
+    hashed_passwords = [(bcrypt.hashpw(pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'), count, ip1, ip2) 
+                        for pwd, count, ip1, ip2 in initial_passwords]
+    c.executemany("INSERT OR IGNORE INTO passwords VALUES (?, ?, ?, ?)", hashed_passwords)
+    conn.commit()
+    conn.close()
+    logger.info("Password database initialized with existing and new passwords.")
 
-# --- Autenticación ---
-def initialize_passwords_file():
-    if not os.path.exists(PASSWORDS_FILE):
-        with open(PASSWORDS_FILE, "w", newline="") as file:
-            writer = csv.writer(file)
-            passwords = [
-                ["abc123", 0, ""], ["def456", 0, ""], ["ghi789", 0, ""], ["jkl010", 0, ""],
-                ["mno345", 0, ""], ["pqr678", 0, ""], ["stu901", 0, ""], ["vwx234", 0, ""],
-                ["yz1234", 0, ""], ["abcd56", 0, ""], ["efgh78", 0, ""], ["ijkl90", 0, ""],
-                ["mnop12", 0, ""], ["qrst34", 0, ""], ["uvwx56", 0, ""], ["yzab78", 0, ""],
-                ["cdef90", 0, ""], ["ghij12", 0, ""], ["news34", 0, ""], ["opqr56", 0, ""],
-            ]
-            writer.writerows(passwords)
+def load_passwords():
+    conn = sqlite3.connect(PASSWORDS_DB)
+    c = conn.cursor()
+    c.execute("SELECT password, usage_count, ip1, ip2 FROM passwords")
+    passwords = {row[0]: {"usage_count": row[1], "ip1": row[2], "ip2": row[3]} for row in c.fetchall()}
+    conn.close()
+    return passwords
+
+def save_passwords(passwords):
+    conn = sqlite3.connect(PASSWORDS_DB)
+    c = conn.cursor()
+    c.execute("DELETE FROM passwords")
+    c.executemany("INSERT INTO passwords VALUES (?, ?, ?, ?)", 
+                  [(pwd, data["usage_count"], data["ip1"], data["ip2"]) for pwd, data in passwords.items()])
+    conn.commit()
+    conn.close()
+    logger.info("Passwords updated in database.")
+
+def authenticate_password(input_password):
+    local_ip = get_local_ip()
+    if not local_ip:
+        st.error("Could not obtain local IP.")
+        logger.error("Failed to obtain local IP during authentication.")
+        return False
+    passwords = load_passwords()
+    for hashed_pwd, data in passwords.items():
+        if bcrypt.checkpw(input_password.encode('utf-8'), hashed_pwd.encode('utf-8')):
+            if data["usage_count"] < 2:  # Permitir hasta 2 usos
+                if data["ip1"] == "":
+                    passwords[hashed_pwd]["ip1"] = local_ip
+                elif data["ip2"] == "" and data["ip1"] != local_ip:
+                    passwords[hashed_pwd]["ip2"] = local_ip
+                passwords[hashed_pwd]["usage_count"] += 1
+                save_passwords(passwords)
+                logger.info(f"Authentication successful for {input_password} from IP: {local_ip}, usage count: {passwords[hashed_pwd]['usage_count']}")
+                return True
+            elif data["usage_count"] == 2 and (data["ip1"] == local_ip or data["ip2"] == local_ip):
+                logger.info(f"Repeat authentication successful for {input_password} from IP: {local_ip}")
+                return True
+            else:
+                st.warning("⚠️ This password has already been used from two different IPs.")
+                logger.warning(f"Authentication attempt for {input_password} from IP {local_ip} rejected; already used from {data['ip1']} and {data['ip2']}")
+                return False
+    logger.warning(f"Authentication failed: Invalid password {input_password}")
+    return False
 
 def get_local_ip():
     try:
         hostname = socket.gethostname()
         return socket.gethostbyname(hostname)
     except Exception:
+        logger.error("Error obtaining local IP.")
         return None
-
-def load_passwords():
-    passwords = {}
-    try:
-        with open(PASSWORDS_FILE, "r") as file:
-            reader = csv.reader(file)
-            for row in reader:
-                if len(row) == 3:
-                    password, status, ip = row
-                    passwords[password] = {"status": int(status), "ip": ip}
-    except Exception:
-        pass
-    return passwords
-
-def save_passwords(passwords):
-    with open(PASSWORDS_FILE, "w", newline="") as file:
-        writer = csv.writer(file)
-        for password, data in passwords.items():
-            writer.writerow([password, data["status"], data["ip"]])
-
-def authenticate_password(input_password):
-    local_ip = get_local_ip()
-    if not local_ip:
-        st.error("No se pudo obtener la IP local.")
-        return False
-    passwords = load_passwords()
-    if input_password in passwords:
-        password_data = passwords[input_password]
-        if password_data["status"] == 0:
-            passwords[input_password]["status"] = 1
-            passwords[input_password]["ip"] = local_ip
-            save_passwords(passwords)
-            return True
-        elif password_data["status"] == 1 and password_data["ip"] == local_ip:
-            return True
-        elif password_data["status"] == 1 and password_data["ip"] != local_ip:
-            st.warning("⚠️This password has already been used from another IP.")
-            return False
-    return False
 
 # Estilos personalizados globales
 st.markdown("""
@@ -135,31 +170,30 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Pantalla de autenticación con logo
-initialize_passwords_file()
+initialize_passwords_db()
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    # Logo centrado en la pantalla de inicio
     logo_path = "assets/favicon.png"  # Intenta en assets primero
     if not os.path.exists(logo_path):
         logo_path = "favicon.png"  # Luego en la raíz
     if os.path.exists(logo_path):
         st.markdown("<div style='display: flex; justify-content: center; align-items: center; margin-bottom: 20px;'>", unsafe_allow_html=True)
-        st.image(logo_path, width=150)  # Logo en pantalla de inicio
+        st.image(logo_path, width=150)
         st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.warning("No se encontró 'Data' para pantalla de inicio. Coloca el archivo en 'Data' o en 'assets/'.")
+        st.warning("No 'favicon.png' found for login screen. Place it in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
     
     st.title("🔒 VIP")
     password = st.text_input("Enter your password", type="password")
     if st.button("LogIn"):
-        if not password:  # Validación de contraseña vacía
+        if not password:
             st.error("❌ Please enter a password.")
         elif authenticate_password(password):
             st.session_state["authenticated"] = True
-            st.success("✅ ¡Access granted! The application will now load..")
-            st.rerun()  # Reejecuta la app para cargar el contenido autenticado
+            st.success("✅ Access granted! The application will now load.")
+            st.rerun()
         else:
             st.error("❌ Incorrect or unauthorized password.")
     st.stop()
@@ -3060,14 +3094,14 @@ def main():
             ("Piensa como el MM / Think Like the MM", 
              "Pregúntate: ¿dónde colocan liquidez para atraer volumen? Usa su lógica (atrapar stops, forzar reversals) para anticipar y alinearte. Reflexiona entre sesiones. / Ask: Where do they place liquidity to draw volume? Use their logic (trap stops, force reversals) to anticipate and align. Reflect between sessions.", 
              "#1E2A3D"),  # Azul oscuro
-            ("Monitorea el Skew y la Volatilidad Implícita / Monitor Skew and Implied Volatility", 
+            ("Monitorea el Gummy Data Bubbles® y la Volatilidad Implícita / Monitor Gummy Data Bubbles® and Implied Volatility", 
              "Analiza el skew de opciones (asimetría en volatilidad implícita) para detectar sesgos del MM hacia alzas o bajas. Un skew pronunciado puede señalar liquidity grabs o stop hunts. Usa esta data para afinar entradas. / Track options skew (implied volatility asymmetry) to spot MM bias toward upside or downside. Sharp skew can signal liquidity grabs or stop hunts. Use it to fine-tune entries.", 
              "#3D2A2A"),  # Marrón oscuro
             ("Aprovecha el Dark Pool Flow / Leverage Dark Pool Flow", 
-             "Si tienes acceso a datos de dark pools (volumen institucional oculto), busca confirmación de order blocks. El MM usa estos flujos para mover mercados sin alertar al retail. Alinea tus trades con este smart money. / If you have dark pool data (hidden institutional volume), confirm order blocks. MM uses these flows to move markets without tipping off retail. Align trades with this smart money.", 
+             "Si tienes acceso Monitores de Ozytarget (volumen institucional oculto), busca confirmación de order blocks. El MM usa estos flujos para mover mercados sin alertar al retail. Alinea tus trades con este smart money. / If you have dark pool data (hidden institutional volume), confirm order blocks. MM uses these flows to move markets without tipping off retail. Align trades with this smart money.", 
              "#2E2A1E"),  # Marrón grisáceo oscuro
             ("Juega el Juego del Spoofing Legal / Play the Legal Spoofing Game", 
-             "Detecta patrones de spoofing (órdenes falsas del MM para engañar) en el DOM o tape. No luches contra ellos; úsalos para entrar cuando el precio revierta tras el flush de liquidez. Requiere velocidad y precisión. / Spot spoofing patterns (MM fake orders to mislead) in the DOM or tape. Don’t fight them; use them to enter when price reverses after the liquidity flush. Demands speed and precision.", 
+             "Detecta patrones de spoofing  en el DOM o tape. No luches contra ellos; úsalos para entrar cuando el precio revierta tras el flush de liquidez. Requiere velocidad y precisión. / Spot spoofing patterns (MM fake orders to mislead) in the DOM or tape. Don’t fight them; use them to enter when price reverses after the liquidity flush. Demands speed and precision.", 
              "#1A2E2A")  # Verde oscuro
         ]
 
