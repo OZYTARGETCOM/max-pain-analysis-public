@@ -121,7 +121,7 @@ def authenticate_password(input_password):
         elif password_data["status"] == 1 and password_data["ip"] == local_ip:
             return True
         elif password_data["status"] == 1 and password_data["ip"] != local_ip:
-            st.warning("⚠️ Esta contraseña ya ha sido usada desde otra IP.")
+            st.warning("⚠️This password has already been used from another IP.")
             return False
     return False
 
@@ -149,13 +149,13 @@ if not st.session_state["authenticated"]:
         st.image(logo_path, width=150)  # Logo en pantalla de inicio
         st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.warning("No se encontró 'favicon.png' para pantalla de inicio. Coloca el archivo en 'C:/Users/urbin/TradingApp/' o en 'assets/'.")
+        st.warning("No se encontró 'Data' para pantalla de inicio. Coloca el archivo en 'Data' o en 'assets/'.")
     
     st.title("🔒 VIP")
     password = st.text_input("Enter your password", type="password")
     if st.button("LogIn"):
         if not password:  # Validación de contraseña vacía
-            st.error("❌ Por favor, ingresa una contraseña.")
+            st.error("❌ Please enter a password.")
         elif authenticate_password(password):
             st.session_state["authenticated"] = True
             st.success("✅ ¡Access granted! The application will now load..")
@@ -902,7 +902,7 @@ def fetch_google_news(keywords):
                 news.append({"title": title, "link": link, "time": time_posted})
         return news
     except Exception as e:
-        st.warning(f"Error fetching Google News: {e}")
+        st.warning(f"Error fetching Data News: {e}")
         return []
 
 def fetch_bing_news(keywords):
@@ -1143,13 +1143,13 @@ def fetch_data(endpoint: str, ticker: str = None, additional_params: dict = None
         if response.status_code == 200:
             data = response.json()
             if isinstance(data, list) and len(data) == 0:
-                st.warning(f"No se encontraron datos para el endpoint: {endpoint}")
+                st.warning(f"No Data: {endpoint}")
                 return None
             return data
         st.error(f"Error al obtener datos: {response.status_code} - {response.text}")
         return None
     except Exception as e:
-        st.error(f"Error en la solicitud HTTP: {str(e)}")
+        st.error(f"Error  HTTP: {str(e)}")
         return None
 
 def get_institutional_holders_list(ticker: str):
@@ -1987,6 +1987,11 @@ def plot_liquidity_pulse(df, current_price, price_target):
         height=400
     )
     return fig
+
+
+
+
+
 # --- Main App --
 def main():
     # Logo y título principal después de autenticación
@@ -2002,7 +2007,7 @@ def main():
         if os.path.exists(logo_path):
             st.image(logo_path, width=45)
         else:
-            st.warning("No se encontró 'favicon.png'. Coloca el archivo en 'C:/Users/urbin/TradingApp/' o en 'assets/'.")
+            st.warning("favicon.png' was not found. Please place the file in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
     
     # Estilos personalizado
     st.markdown("""
@@ -2014,10 +2019,11 @@ def main():
     """, unsafe_allow_html=True)
 
     # Resto de los tabs (agregamos Tab 9)
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
-        "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |", 
-        "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |", "Earnings Calendar |"
-    ])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+    "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |", 
+    "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |", 
+    "Earnings Calendar |", "Psychological Edge |"
+])
 
     with tab1:
         ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
@@ -2103,6 +2109,8 @@ def main():
                 mime="text/csv",
                 key="download_max_pain_tab1"
             )
+            st.markdown("---")
+            st.markdown("*Developed by Ozy | © 2025*")
 
     with tab2:
         st.subheader("Market Scanner")
@@ -2151,6 +2159,8 @@ def main():
                     )
                 else:
                     st.warning("No stocks match the criteria.")
+                    st.markdown("---")
+                    st.markdown("*Developed by Ozy | © 2025*")
 
     with tab3:
         st.subheader("News Scanner")
@@ -2169,6 +2179,8 @@ def main():
                         st.markdown("---")
                 else:
                     st.error("No recent news found.")
+                    st.markdown("---")
+                    st.markdown("*Developed by Ozy | © 2025*")
 
     with tab4:
         st.subheader("Institutional Holders")
@@ -2199,6 +2211,8 @@ def main():
                 )
             else:
                 st.warning("No institutional holders data available.")
+                st.markdown("---")
+                st.markdown("*Developed by Ozy | © 2025*")
 
     with tab5:
         st.subheader("Order Flow")
@@ -2414,6 +2428,8 @@ def main():
                             mime="text/csv",
                             key="download_tab5"
                         )
+                        st.markdown("---")
+                        st.markdown("*Developed by Ozy | © 2025*")
 
     with tab6:
         st.subheader("Rating Flow")
@@ -2499,6 +2515,8 @@ def main():
                     )
                 else:
                     st.error(f"No alerts generated with Open Interest ≥ {selected_volume}, Gamma ≥ {selected_gamma}. Check logs.")
+                    st.markdown("---")
+                    st.markdown("*Developed by Ozy | © 2025*")  
 
     with tab7:
         st.subheader("Elliott Pulse")
@@ -2669,6 +2687,8 @@ def main():
                 mime="text/csv",
                 key="download_tab7"
             )
+            st.markdown("---")
+            st.markdown("*Developed by Ozy | © 2025*")
 
     with tab8:
         st.subheader("Crypto Insights")
@@ -2715,6 +2735,9 @@ def main():
                 except Exception as e:
                     st.error(f"Error processing data for {selected_pair}: {str(e)}")
                     logger.error(f"Error in Tab 8: {str(e)}")
+
+                    st.markdown("---")
+                    st.markdown("*Developed by Ozy | © 2025*")
 
     with tab9:
         #st.subheader("Earnings Calendar")
@@ -2993,6 +3016,33 @@ def main():
         st.markdown("---")
         st.markdown("*Developed by Ozy | © 2025*")
 
+    with tab10:
+        st.header("Ventaja Psicológica del Juego del MM / MM Game Psychological Edge")
+        
+        st.subheader("Puntos clave antes de hacer trading / Key Points Before Trading")
+        st.markdown("""
+        1. **Sigue el juego del Market Maker - Stick to the Market Maker’s game**: Alinea tus trades con los grandes jugadores (MM) observando sus movimientos en zonas de liquidez, no persigas el hype retail; camina un poco antes para despejar la mente. / Align your trades with the big players (MM) by watching their moves in liquidity zones, not chasing retail hype; take a short walk beforehand to clear your mind.  
+        2. **Domina la gestión del dinero - Master money management**: Haz que tu objetivo sea definir cuánto estás dispuesto a perder, arriesgando solo el 1-2% de tu cuenta por operación para mantenerte en el juego; no operes si estás triste o emocionalmente inestable. / Make your goal to define how much you’re willing to lose, risking only 1-2% of your account per trade to stay in the game; don’t trade if you’re sad or emotionally unstable.  
+        3. **Analiza la exposición al gamma - Analyze gamma exposure**: Revisa el gamma de opciones para medir qué tan rápido cambia el delta, evitando trampas del MM cerca del vencimiento; piensa por qué manipulan estos niveles para atrapar traders. / Check options gamma to gauge how fast delta shifts, avoiding MM squeezes near expiration; think about why they manipulate these levels to trap traders.  
+        4. **Coloca un stop-loss firme - Set a hard stop-loss**: Usa niveles de soporte del MM para tu stop, no suposiciones, y corta pérdidas antes de que se descontrolen; opera de pie para mantenerte alerta y enfocado. / Place a stop based on MM support levels, not random guesses, to cut losses before they spiral; trade standing up to stay alert and focused.  
+        5. **Confirma con señales del MM - Confirm with MM signals**: Busca acción del precio en niveles clave (como order blocks) y picos de gamma para entrar con su flujo; si tienes monitores, dile a tu equipo que revisen el monitor de blocks para confirmar y reflexiona para qué manipulan el mercado aquí. / Look for price action at key levels (like order blocks) and gamma spikes to time your entry with their flow; if you have monitors, tell your team to check the blocks monitor to confirm and reflect on what they’re manipulating the market for here.  
+        6. **Controla tus emociones - Keep emotions in check**: Sigue la disciplina del MM—no vendas por pánico ni te sobreapalances solo porque la multitud lo hace; levántate y muévete si llevas mucho tiempo sentado para evitar decisiones impulsivas. / Follow the MM’s disciplined lead—don’t panic-sell or over-leverage just because the crowd does; get up and move if you’ve been sitting too long to avoid impulsive decisions.  
+        7. **Prueba con simulación - Test with paper trading**: Practica trades imitando patrones del MM (como movimientos por gamma) para afinar tu ventaja sin riesgo real; usa este tiempo para entender cómo tu estado mental afecta tus operaciones. / Simulate trades mirroring MM patterns (like gamma-driven moves) to refine your edge without real risk; use this time to understand how your mental state impacts your trading.  
+        8. **Sigue el volumen y el gamma - Track volume and gamma**: Alto volumen con cambios en gamma muestra compromiso del MM—opera con ellos, no contra ellos; camina unos minutos cada hora para mantener la claridad mental. / High volume paired with gamma shifts shows MM commitment—trade with them, not against them; walk for a few minutes every hour to keep mental clarity.  
+        9. **Registra cada paso - Log every move**: Anota tus trades con niveles del MM, datos de gamma y resultados para aprender su estrategia con el tiempo; incluye cómo te sentías para detectar patrones psicológicos. / Record your trades with MM levels, gamma insights, and outcomes to learn their playbook over time; include how you felt to spot psychological patterns.  
+        10. **Sal con precisión - Exit with precision**: Toma ganancias en zonas de resistencia del MM o cuando el gamma indique un reversal, asegurando beneficios antes de que se desvanezcan; piensa en cómo el MM usa estas zonas para engañar a los demás. / Take profits at MM resistance zones or when gamma peaks signal a reversal, locking in gains before they fade; think about how the MM uses these zones to trick others.
+        """)
+
+        st.subheader("Invertir a largo plazo y tener éxito / Best Points for Long-Term Investing Success")
+        st.markdown("""
+        - **Invierte en sectores favoritos del MM - Invest in MM-favored sectors**: Elige acciones con fundamentos sólidos que los Market Makers apoyen, como empresas blue-chip con volumen constante; no decidas si estás emocionalmente agotado y nunca vendas en pérdidas. / Pick stocks with strong fundamentals that Market Makers support, like blue-chip firms with consistent volume; don’t decide if you’re emotionally drained and never sell at a loss.  
+        - **Diversifica con cabeza - Spread your money smart**: Reparte tu capital entre activos que el MM no pueda sacudir fácilmente—acciones, bonos, ETFs—para un crecimiento estable; reflexiona sobre por qué el MM deja ciertos activos estables y compra más en rojo para aprovechar caídas. / Diversify across assets MM can’t easily shake out—stocks, bonds, and ETFs—for steady growth; reflect on why the MM keeps certain assets stable and buy more in the red to capitalize on dips.  
+        - **Mira el panorama completo - Focus on the big picture**: Compra y mantén empresas con ganancias sólidas y bajo ruido de gamma, ignorando los juegos cortoplacistas del MM; camina para pensar a largo plazo sin estrés y nunca vendas en pérdidas. / Buy and hold companies with solid earnings and low gamma noise, ignoring short-term MM games; walk to think long-term without stress and never sell at a loss.  
+        - **Reinvierte como experto - Reinvest like a pro**: Usa los dividendos para comprar más activos respaldados por el MM y aprovechar el interés compuesto; hazlo con calma, no por impulso, y compra más en rojo cuando los precios bajen. / Compound your returns by plowing dividends back into MM-backed assets for exponential gains; do it calmly, not on impulse, and buy more in the red when prices drop.  
+        - **Sé paciente, confía en la tendencia - Stay patient, trust the trend**: Deja que el tiempo juegue a tu favor—mantén tus inversiones frente a manipulaciones del MM y confía en el alza a largo plazo; levántate y analiza por qué el MM no puede detener el crecimiento global, nunca vendas en pérdidas y compra más en rojo. / Let time work for you—hold through MM manipulations and trust the market’s long-term rise; stand up and analyze why the MM can’t stop global growth, never sell at a loss, and buy more in the red.
+        """)
+        st.markdown("---")
+        st.markdown("*Developed by Ozy | © 2025*")
+
 if __name__ == "__main__":
     main()
-            
