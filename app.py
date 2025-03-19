@@ -53,7 +53,6 @@ HEADERS_FMP = {"Accept": "application/json"}
 HEADERS_TRADIER = {"Authorization": f"Bearer {TRADIER_API_KEY}", "Accept": "application/json"}
 
 # --- Constantes ---
-# --- Constantes ---
 PASSWORDS_DB = "auth_data/passwords.db"
 CACHE_TTL = 300
 MAX_RETRIES = 5
@@ -65,6 +64,7 @@ def initialize_passwords_db():
     os.makedirs("auth_data", exist_ok=True)
     conn = sqlite3.connect(PASSWORDS_DB)
     c = conn.cursor()
+    # Nueva tabla con usage_count, ip1, ip2
     c.execute('''CREATE TABLE IF NOT EXISTS passwords 
                  (password TEXT PRIMARY KEY, usage_count INTEGER DEFAULT 0, ip1 TEXT DEFAULT '', ip2 TEXT DEFAULT '')''')
     initial_passwords = [
@@ -146,10 +146,9 @@ def authenticate_password(input_password):
                 logger.info(f"Repeat authentication successful for {input_password} from IP: {local_ip}")
                 return True
             else:
-                st.error("❌ This password has already been used by two IPs. To get your own access to OzyTarget, text 'OzyTarget Access' to 678-978-9414.")
+                st.warning("⚠️ This password has already been used from two different IPs.")
                 logger.warning(f"Authentication attempt for {input_password} from IP {local_ip} rejected; already used from {data['ip1']} and {data['ip2']}")
                 return False
-    st.error("❌ Incorrect password. If you don’t have access, text 'OzyTarget Access' to 678-978-9414 to purchase your subscription.")
     logger.warning(f"Authentication failed: Invalid password {input_password}")
     return False
 
@@ -161,16 +160,24 @@ def get_local_ip():
         logger.error("Error obtaining local IP.")
         return None
 
-# Pantalla de autenticación con logo
+# Estilos personalizados globales
+st.markdown("""
+    <style>
+    .stApp {background-color: #1E1E1E;}
+    .stTextInput, .stSelectbox {background-color: #2D2D2D; color: #FFFFFF;}
+    .stSpinner > div > div {border-color: #32CD32 !important;}
+    </style>
+""", unsafe_allow_html=True)
+
 # Pantalla de autenticación con logo
 initialize_passwords_db()
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    logo_path = "assets/favicon.png"
+    logo_path = "assets/favicon.png"  # Intenta en assets primero
     if not os.path.exists(logo_path):
-        logo_path = "favicon.png"
+        logo_path = "favicon.png"  # Luego en la raíz
     if os.path.exists(logo_path):
         st.markdown("<div style='display: flex; justify-content: center; align-items: center; margin-bottom: 20px;'>", unsafe_allow_html=True)
         st.image(logo_path, width=150)
@@ -178,67 +185,17 @@ if not st.session_state["authenticated"]:
     else:
         st.warning("No 'favicon.png' found for login screen. Place it in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
     
-    st.title("🔒 VIP ACCESS")
-    
-    # Estilo personalizado para el mensaje de carga
-    st.markdown("""
-    <style>
-    .loading-container {
-        text-align: center;
-        padding: 20px;
-        background: linear-gradient(135deg, #1E1E1E, #2A2A2A);
-        border-radius: 10px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-    }
-    .loading-text {
-        font-size: 24px;
-        font-weight: bold;
-        color: #32CD32;
-        text-shadow: 0 0 10px #32CD32;
-    }
-    .sub-text {
-        font-size: 16px;
-        color: #FFD700;
-        margin-top: 10px;
-    }
-    .spinner {
-        font-size: 30px;
-        animation: spin 1.5s linear infinite;
-    }
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
+    st.title("🔒 VIP")
     password = st.text_input("Enter your password", type="password")
     if st.button("LogIn"):
         if not password:
             st.error("❌ Please enter a password.")
         elif authenticate_password(password):
             st.session_state["authenticated"] = True
-            # Temporizador regresivo de 7 segundos
-            with st.empty():
-                for seconds in range(7, 0, -1):
-                    st.markdown(f"""
-                    <div class="loading-container">
-                        <div class="loading-text">✅ ACCESS GRANTED</div>
-                        <div class="sub-text">OzyTarget Scanner initializing in {seconds}...</div>
-                        <div class="spinner">🔄</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    time.sleep(1)  # Espera 1 segundo por cada conteo
-                # Mensaje final antes de recargar
-                st.markdown("""
-                <div class="loading-container">
-                    <div class="loading-text">✅ ACCESS GRANTED</div>
-                    <div class="sub-text">Deploying OzyTarget Systems Now...</div>
-                    <div class="spinner">🔄</div>
-                </div>
-                """, unsafe_allow_html=True)
-                time.sleep(0.5)  # Breve pausa final para efecto
+            st.success("✅ Access granted! The application will now load.")
             st.rerun()
+        else:
+            st.error("❌ Incorrect or unauthorized password.")
     st.stop()
 ########################################################app
 
@@ -2069,7 +2026,13 @@ def plot_liquidity_pulse(df, current_price, price_target):
 
 
 
+
+
+
+
+
 # --- Main App --
+# --- Main App ---
 def main():
     # Logo y título principal después de autenticación
     col1, col2 = st.columns([4, 1])
@@ -2095,12 +2058,12 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-    # Resto de los tabs (agregamos Tab 9)
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
-    "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |", 
-    "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |", 
-    "Earnings Calendar |", "Psychological Edge |"
-])
+    # Resto de los tabs (Tab 11 integrado correctamente)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
+        "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |", 
+        "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |", 
+        "Earnings Calendar |", "Psychological Edge |", "Projection |"
+    ])
 
     with tab1:
         ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
@@ -2144,7 +2107,7 @@ def main():
             touched_strikes = detect_touched_strikes(processed_data.keys(), historical_prices)
             max_pain = calculate_max_pain_optimized(options_data)
             df = analyze_contracts(ticker, expiration_date, current_price)
-            max_pain_strike, max_pain_df = calculate_max_pain(df)  # Ahora debería funcionar
+            max_pain_strike, max_pain_df = calculate_max_pain(df)
             gamma_fig = gamma_exposure_chart(processed_data, current_price, touched_strikes)
             st.plotly_chart(gamma_fig, use_container_width=True)
             gamma_df = pd.DataFrame({
@@ -2724,7 +2687,7 @@ def main():
                                     textposition="top center",
                                     textfont=dict(size=12),
                                     customdata=[(s, g, o, mpd, p) for s, g, o, mpd, p in zip(wave_strikes, wave_gamma, wave_oi, max_pain_divisions, pressure_normalized)],
-                                    hovertemplate="Strike: $%{customdata[0]:.2f}<br>Gamma: %{customdata[1]:.2f}<br>OI: %{customdata[2]:,d}<br>Max Pain / Strike: %{customdata[3]:.2f}<br>MM Pressure: %{customdata[4]:.0f}"))
+                                    hovertemplate="Strike: $%{customdata[0]:.2f}<br>Gamma: %{customdata[1]:.2f}<br>OI: %{customdata[2]:,d}<br>Max Pain / Strike: %{customdata[3]:.2f}<br>MM Pressure: %{customdata[4]:.0f"))
             fig.add_trace(go.Scatter(x=[max_pain], y=[max_pain_gamma], mode="markers+text", name="Max Pain",
                                     marker=dict(size=13, color="white", symbol="star"), text=[f"${max_pain:.2f}" if max_pain else "N/A"], 
                                     textposition="bottom center"))
@@ -2817,8 +2780,6 @@ def main():
                     st.markdown("*Developed by Ozy | © 2025*")
 
     with tab9:
-        #st.subheader("Earnings Calendar")
-
         # Rango automático: próxima semana completa (lunes a domingo)
         today = datetime.now().date()
         days_to_next_monday = (7 - today.weekday()) % 7  # Días hasta el próximo lunes
@@ -3144,7 +3105,7 @@ def main():
              "Si tienes acceso Monitores de Ozytarget (volumen institucional oculto), busca confirmación de order blocks. El MM usa estos flujos para mover mercados sin alertar al retail. Alinea tus trades con este smart money. / If you have dark pool data (hidden institutional volume), confirm order blocks. MM uses these flows to move markets without tipping off retail. Align trades with this smart money.", 
              "#2E2A1E"),  # Marrón grisáceo oscuro
             ("Juega el Juego del Spoofing Legal / Play the Legal Spoofing Game", 
-             "Detecta patrones de spoofing  en el DOM o tape. No luches contra ellos; úsalos para entrar cuando el precio revierta tras el flush de liquidez. Requiere velocidad y precisión. / Spot spoofing patterns (MM fake orders to mislead) in the DOM or tape. Don’t fight them; use them to enter when price reverses after the liquidity flush. Demands speed and precision.", 
+             "Detecta patrones de spoofing en el DOM o tape. No luches contra ellos; úsalos para entrar cuando el precio revierta tras el flush de liquidez. Requiere velocidad y precisión. / Spot spoofing patterns (MM fake orders to mislead) in the DOM or tape. Don’t fight them; use them to enter when price reverses after the liquidity flush. Demands speed and precision.", 
              "#1A2E2A")  # Verde oscuro
         ]
 
@@ -3199,6 +3160,288 @@ def main():
                     {content}
                 </div>
                 """, unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("*Developed by Ozy | © 2025*")
+
+    with tab11:
+        st.subheader("Institutional Dashboard Pro - OIPI Enhanced")
+
+        # Ticker input - Analysis triggers on Enter
+        ticker = st.text_input("Ticker Symbol (e.g., TSLA)", "TSLA", key="institutional_ticker").upper()
+
+        # Automatically run analysis when ticker changes and Enter is pressed
+        with st.spinner(f"Fetching real-time data for {ticker}..."):
+            try:
+                # --- Fetch real-time data ---
+                current_price = get_current_price(ticker)
+                if current_price == 0.0:
+                    st.error(f"Could not retrieve real-time price for {ticker}.")
+                    st.stop()
+
+                # Company profile (FMP)
+                url_profile = f"{FMP_BASE_URL}/profile/{ticker}"
+                params_profile = {"apikey": FMP_API_KEY}
+                profile_data = fetch_api_data(url_profile, params_profile, HEADERS_FMP, "FMP Profile")
+                if not profile_data or not isinstance(profile_data, list) or len(profile_data) == 0:
+                    st.error(f"No fundamental data found for {ticker}.")
+                    st.stop()
+                profile = profile_data[0]
+                market_cap = profile.get("mktCap", 1_000_000_000)
+                pe_ratio = profile.get("pe", 20)
+                pb_ratio = profile.get("pb", 3)
+                debt_to_equity = profile.get("debtToEquity", 1.0)
+                roe = profile.get("roe", 0.1)
+                profit_margin = profile.get("profitMargin", 0.05)
+                beta = profile.get("beta", 1.0)
+                sector = profile.get("sector", "Unknown")
+
+                # Historical data (1 year for volatility and returns)
+                prices, volumes = get_historical_prices_combined(ticker, limit=252)
+                if not prices or len(prices) < 20:
+                    prices = [current_price] * 20
+                    volumes = [1_000_000] * 20
+                returns = np.diff(prices) / prices[:-1]
+                vol_historical = np.std(returns) * np.sqrt(252)  # Annualized volatility
+
+                # Options data
+                expiration_dates = get_expiration_dates(ticker)
+                iv = get_implied_volatility(ticker) or 0.3
+                gamma_exposure = 0
+                skew = 0
+                if expiration_dates:
+                    options_data = get_options_data(ticker, expiration_dates[0])
+                    if options_data:
+                        gamma_total = sum(float(opt.get("greeks", {}).get("gamma", 0)) * int(opt.get("open_interest", 0)) 
+                                        for opt in options_data if "greeks" in opt)
+                        oi_total = sum(int(opt.get("open_interest", 0)) for opt in options_data)
+                        gamma_exposure = gamma_total * current_price / max(1, oi_total) if oi_total > 0 else 0
+                        calls_iv = np.mean([float(opt.get("implied_volatility", 0)) for opt in options_data if opt["option_type"] == "call"])
+                        puts_iv = np.mean([float(opt.get("implied_volatility", 0)) for opt in options_data if opt["option_type"] == "put"])
+                        skew = (calls_iv - puts_iv) / iv if calls_iv and puts_iv else 0
+                        strikes = [float(opt["strike"]) for opt in options_data]
+                        oi_by_strike = {strike: sum(int(opt.get("open_interest", 0)) for opt in options_data if float(opt["strike"]) == strike) 
+                                        for strike in set(strikes)}
+                    else:
+                        gamma_exposure = 0
+                        skew = 0
+                        oi_by_strike = {}
+                else:
+                    gamma_exposure = 0
+                    skew = 0
+                    oi_by_strike = {}
+
+                # --- Advanced OIPI Calculation ---
+                # 1. Momentum (Institutional Activity + GEX)
+                volume_avg = np.mean(volumes[-20:])
+                volume_spike = max(volumes[-5:]) / volume_avg if volume_avg > 0 else 1.0
+                price_change = (current_price - prices[-10]) / prices[-10] if len(prices) >= 10 else 0
+                momentum_score = min(30, 8 * volume_spike + 8 * abs(price_change) * 100 + 14 * (gamma_exposure / max(1, abs(gamma_exposure))))
+                momentum_text = "Strong institutional momentum" if momentum_score > 20 else "Moderate activity" if momentum_score > 10 else "Low momentum"
+
+                # 2. Health (Sharpe Ratio + Fundamentals)
+                sharpe_ratio = (np.mean(returns) * 252 - RISK_FREE_RATE) / vol_historical if vol_historical > 0 else 1.0
+                growth_factor = roe * profit_margin
+                debt_factor = 1 / (1 + debt_to_equity) if debt_to_equity > 0 else 1
+                health_score = min(30, 10 * sharpe_ratio + 10 * growth_factor + 10 * debt_factor)
+                health_text = "Robust fundamentals" if health_score > 20 else "Stable with risks" if health_score > 10 else "Weak fundamentals"
+
+                # 3. Valuation (Advanced Fair Value)
+                sector_pe_avg = {"Technology": 30, "Financial Services": 15, "Healthcare": 25, "Consumer Cyclical": 20}.get(sector, 20)
+                pe_factor = min(1.5, sector_pe_avg / pe_ratio) if pe_ratio > 0 else 1.0
+                pb_factor = min(1.5, 3 / pb_ratio) if pb_ratio > 0 else 1.0
+                cash_flow_est = max(market_cap * profit_margin, 1_000_000) * (1 + roe * 0.5)  # Growth adjustment
+                discount_rate = max(RISK_FREE_RATE + beta * 0.06, 0.01)
+                fair_value = (cash_flow_est / discount_rate) / 1_000_000_000
+                fair_value = max(fair_value, current_price * 0.5)
+                fair_value_text = "Below Fair Value" if current_price < fair_value else "At Fair Value" if abs(current_price - fair_value) < current_price * 0.05 else "Above Fair Value"
+                valuation_score = min(20, 8 * pe_factor + 8 * pb_factor + 4 * (current_price / fair_value if fair_value > 0 else 1))
+                valuation_text = "Undervalued" if valuation_score > 15 else "Fair" if valuation_score > 10 else "Overvalued"
+
+                # 4. Risk (Skew + Volatility)
+                risk_score = min(10, max(0, 10 - (iv * beta + abs(skew) * 5)))
+                risk_text = "Low risk" if risk_score > 7 else "Moderate risk" if risk_score > 3 else "High risk"
+
+                # 5. Movement (GEX + Expected Move)
+                expected_move = iv * current_price * (1 + abs(gamma_exposure / max(1, gamma_exposure))) * 0.15
+                move_score = min(10, expected_move / current_price * 100)
+                upper_target = current_price + expected_move
+                lower_target = current_price - expected_move
+
+                oipi_score = momentum_score + health_score + valuation_score + risk_score + move_score
+                oipi_score = max(0, min(100, oipi_score))
+                recommendation = "Strong Buy" if oipi_score > 80 else "Buy" if oipi_score > 60 else "Hold" if oipi_score > 40 else "Sell"
+
+                # --- Additional Metrics ---
+                short_term_risk = iv * current_price * (1 / 12)**0.5
+                short_term_lower = current_price - short_term_risk
+                short_term_upper = current_price + short_term_risk
+
+                mid_term_risk = iv * current_price * (6 / 12)**0.5
+                mid_term_lower = current_price - mid_term_risk
+                mid_term_upper = current_price + mid_term_risk
+
+                long_term_risk = iv * current_price * beta
+                long_term_lower = current_price - long_term_risk
+                long_term_upper = current_price + long_term_risk
+
+                support = min([s for s in oi_by_strike.keys() if s < current_price], default=current_price - short_term_risk * 1.5) if oi_by_strike else current_price - short_term_risk * 1.5
+                resistance = max([s for s in oi_by_strike.keys() if s > current_price], default=current_price + short_term_risk * 1.5) if oi_by_strike else current_price + short_term_risk * 1.5
+                safe_zone_lower = max(support, fair_value * 0.9)
+                safe_zone_upper = min(resistance, fair_value * 1.1)
+
+                # --- Dynamic Sector Average ---
+                sector_benchmarks = {
+                    "Technology": [0.8, 0.6, 0.7, 0.7, 0.8],
+                    "Financial Services": [0.6, 0.7, 0.6, 0.8, 0.5],
+                    "Healthcare": [0.7, 0.65, 0.75, 0.6, 0.7],
+                    "Consumer Cyclical": [0.65, 0.6, 0.65, 0.7, 0.75]
+                }
+                sector_avg = sector_benchmarks.get(sector, [0.7, 0.6, 0.65, 0.8, 0.75])
+
+                # --- Visualization ---
+                col1, col2 = st.columns([2, 1])
+
+                with col1:
+                    # Enhanced Radar Chart
+                    fig_radar = go.Figure()
+                    categories = ["Momentum", "Health", "Valuation", "Risk", "Movement", "Momentum"]
+                    scores = [momentum_score/30, health_score/30, valuation_score/20, risk_score/10, move_score/10, momentum_score/30]
+                    texts = [momentum_text, health_text, valuation_text, risk_text, "High potential", momentum_text]
+                    absolutes = [f"{momentum_score:.1f}/30", f"{health_score:.1f}/30", f"{valuation_score:.1f}/20", f"{risk_score:.1f}/10", f"{move_score:.1f}/10", f"{momentum_score:.1f}/30"]
+
+                    fig_radar.add_trace(go.Scatterpolar(
+                        r=scores,
+                        theta=categories,
+                        fill="toself",
+                        name=ticker,
+                        line=dict(color="#32CD32", width=2),
+                        hovertemplate="%{theta}<br>Score: %{customdata[0]}<br>Rating: %{customdata[1]}",
+                        customdata=list(zip(absolutes, texts)),
+                        hoverlabel=dict(bgcolor="rgba(200, 200, 200, 0.8)", font_color="black")
+                    ))
+                    fig_radar.add_trace(go.Scatterpolar(
+                        r=sector_avg,
+                        theta=categories,
+                        fill="toself",
+                        name=f"{sector} Avg",
+                        line=dict(color="#FFD700", width=1),
+                        opacity=0.5,
+                        hovertemplate="%{theta}: %{r:.2f}<br>",
+                        hoverlabel=dict(bgcolor="rgba(200, 200, 200, 0.8)", font_color="black")
+                    ))
+                    fig_radar.update_layout(
+                        polar=dict(
+                            radialaxis=dict(visible=True, range=[0, 1], tickfont=dict(color="white")),
+                            angularaxis=dict(tickfont=dict(color="white"))
+                        ),
+                        showlegend=True,
+                        title=f"OIPI Profile: {ticker} ({oipi_score:.1f}/100)",
+                        template="plotly_dark",
+                        height=300,
+                        margin=dict(l=50, r=50, t=50, b=50)
+                    )
+                    st.plotly_chart(fig_radar, use_container_width=True)
+
+                    # Enhanced Heatmap with Liquidity Zones
+                    fig_heatmap = go.Figure()
+                    price_points = [long_term_lower, mid_term_lower, short_term_lower, safe_zone_lower, current_price, safe_zone_upper, short_term_upper, mid_term_upper, long_term_upper]
+                    y_values = [1] * len(price_points)
+                    colors = ["#FF4500", "#FF8C00", "#FFD700", "#32CD32", "#FFFFFF", "#32CD32", "#FFD700", "#FF8C00", "#FF4500"]
+                    fig_heatmap.add_trace(go.Scatter(
+                        x=price_points,
+                        y=y_values,
+                        mode="markers+text",
+                        text=[f"${p:.2f}" for p in price_points],
+                        textposition="top center",
+                        marker=dict(size=12, color=colors),
+                        hoverinfo="x+text"
+                    ))
+                    fig_heatmap.add_shape(type="rect", x0=safe_zone_lower, y0=0.8, x1=safe_zone_upper, y1=1.2, fillcolor="green", opacity=0.3, line_width=0)
+                    for strike, oi in oi_by_strike.items():
+                        if oi > oi_total * 0.05:  # High liquidity zones
+                            fig_heatmap.add_shape(type="line", x0=strike, y0=0.9, x1=strike, y1=1.1, line=dict(color="cyan", width=1, dash="dot"))
+                    fig_heatmap.add_shape(type="line", x0=fair_value, y0=0, x1=fair_value, y1=2, line=dict(color="blue", dash="dash"))
+                    fig_heatmap.add_annotation(x=fair_value, y=1.5, text=f"Fair: ${fair_value:.2f}", showarrow=False, font=dict(color="blue"))
+                    fig_heatmap.add_shape(type="line", x0=current_price, y0=0, x1=current_price, y1=2, line=dict(color="white", width=2))
+                    fig_heatmap.add_annotation(x=current_price, y=1.7, text=f"Now: ${current_price:.2f}", showarrow=False, font=dict(color="white"))
+                    fig_heatmap.update_layout(
+                        title="Price Heatmap with Liquidity",
+                        xaxis_title="Price",
+                        yaxis=dict(showgrid=False, showticklabels=False, range=[0, 2]),
+                        template="plotly_dark",
+                        height=300
+                    )
+                    st.plotly_chart(fig_heatmap, use_container_width=True)
+
+                with col2:
+                    # Scorecard and Alerts
+                    st.markdown("#### Institutional Scorecard")
+                    color = "#32CD32" if oipi_score > 60 else "#FFD700" if oipi_score > 40 else "#FF4500"
+                    st.markdown(f"**OIPI:** <span style='color:{color}'>{oipi_score:.1f}/100</span>", unsafe_allow_html=True)
+                    st.write(f"**Recommendation:** {recommendation}")
+                    insight = (
+                        "Buy Now: Elite opportunity" if oipi_score > 80 else
+                        "Accumulate: Strong potential" if oipi_score > 60 else
+                        "Hold: Evaluate risks" if oipi_score > 40 else
+                        "Sell: Weak outlook"
+                    )
+                    st.write(f"**Insight:** {insight}")
+
+                    st.markdown("#### Key Metrics")
+                    st.write(f"**Current Price:** ${current_price:.2f}")
+                    st.write(f"**Fair Value:** ${fair_value:.2f} - {fair_value_text}")
+                    st.write(f"**Safe Zone:** ${safe_zone_lower:.2f} - ${safe_zone_upper:.2f}")
+                    st.write(f"**1M Range:** ${short_term_lower:.2f} - ${short_term_upper:.2f}")
+                    st.write(f"**6M Range:** ${mid_term_lower:.2f} - ${mid_term_upper:.2f}")
+                    st.write(f"**1Y Range:** ${long_term_lower:.2f} - ${long_term_upper:.2f}")
+                    st.write(f"**Gamma Exposure:** {gamma_exposure:.2f}")
+                    st.write(f"**Options Skew:** {skew:.2f}")
+                    st.write(f"**Sharpe Ratio:** {sharpe_ratio:.2f}")
+
+                # Data Download
+                oipi_data = {
+                    "Ticker": ticker,
+                    "OIPI": oipi_score,
+                    "Recommendation": recommendation,
+                    "Momentum": momentum_text,
+                    "Health": health_text,
+                    "Valuation": valuation_text,
+                    "Risk": risk_text,
+                    "Current Price": current_price,
+                    "Fair Value": fair_value,
+                    "Safe Zone Lower": safe_zone_lower,
+                    "Safe Zone Upper": safe_zone_upper,
+                    "Short-Term Lower": short_term_lower,
+                    "Short-Term Upper": short_term_upper,
+                    "Mid-Term Lower": mid_term_lower,
+                    "Mid-Term Upper": mid_term_upper,
+                    "Long-Term Lower": long_term_lower,
+                    "Long-Term Upper": long_term_upper,
+                    "IV": iv,
+                    "Gamma Exposure": gamma_exposure,
+                    "Options Skew": skew,
+                    "Sharpe Ratio": sharpe_ratio,
+                    "Market Cap": market_cap,
+                    "P/E": pe_ratio,
+                    "P/B": pb_ratio,
+                    "Debt/Equity": debt_to_equity,
+                    "ROE": roe,
+                    "Profit Margin": profit_margin
+                }
+                oipi_df = pd.DataFrame([oipi_data])
+                csv = oipi_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Pro Dashboard Data",
+                    data=csv,
+                    file_name=f"{ticker}_pro_dashboard.csv",
+                    mime="text/csv",
+                    key="download_pro"
+                )
+
+            except Exception as e:
+                st.error(f"Error processing {ticker}: {str(e)}")
+                logger.error(f"Tab 11 Pro Dashboard error: {str(e)}")
+
         st.markdown("---")
         st.markdown("*Developed by Ozy | © 2025*")
 
