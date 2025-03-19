@@ -3164,8 +3164,7 @@ def main():
         st.markdown("*Developed by Ozy | © 2025*")
 
     with tab11:
-        st.subheader("Institutional Dashboard Pro - OIPI Enhanced")
-
+        
         # Ticker input - Analysis triggers on Enter
         ticker = st.text_input("Ticker Symbol (e.g., TSLA)", "TSLA", key="institutional_ticker").upper()
 
@@ -3365,7 +3364,7 @@ def main():
                     fig_heatmap.add_shape(type="line", x0=current_price, y0=0, x1=current_price, y1=2, line=dict(color="white", width=2))
                     fig_heatmap.add_annotation(x=current_price, y=1.7, text=f"Now: ${current_price:.2f}", showarrow=False, font=dict(color="white"))
                     fig_heatmap.update_layout(
-                        title="Price Heatmap with Liquidity",
+                        title="Long Liquidity",
                         xaxis_title="Price",
                         yaxis=dict(showgrid=False, showticklabels=False, range=[0, 2]),
                         template="plotly_dark",
@@ -3375,7 +3374,7 @@ def main():
 
                 with col2:
                     # Scorecard and Alerts
-                    st.markdown("#### Institutional Scorecard")
+                    st.markdown("#### Scorecard")
                     color = "#32CD32" if oipi_score > 60 else "#FFD700" if oipi_score > 40 else "#FF4500"
                     st.markdown(f"**OIPI:** <span style='color:{color}'>{oipi_score:.1f}/100</span>", unsafe_allow_html=True)
                     st.write(f"**Recommendation:** {recommendation}")
@@ -3387,14 +3386,14 @@ def main():
                     )
                     st.write(f"**Insight:** {insight}")
 
-                    st.markdown("#### Key Metrics")
+                    st.markdown("#### Metrics")
                     st.write(f"**Current Price:** ${current_price:.2f}")
                     st.write(f"**Fair Value:** ${fair_value:.2f} - {fair_value_text}")
                     st.write(f"**Safe Zone:** ${safe_zone_lower:.2f} - ${safe_zone_upper:.2f}")
-                    st.write(f"**1M Range:** ${short_term_lower:.2f} - ${short_term_upper:.2f}")
-                    st.write(f"**6M Range:** ${mid_term_lower:.2f} - ${mid_term_upper:.2f}")
-                    st.write(f"**1Y Range:** ${long_term_lower:.2f} - ${long_term_upper:.2f}")
-                    st.write(f"**Gamma Exposure:** {gamma_exposure:.2f}")
+                    st.write(f"**SHORT:** ${short_term_lower:.2f} - ${short_term_upper:.2f}")
+                    st.write(f"**MEDIUM:** ${mid_term_lower:.2f} - ${mid_term_upper:.2f}")
+                    st.write(f"**LONG:** ${long_term_lower:.2f} - ${long_term_upper:.2f}")
+                    st.write(f"**Gamma:** {gamma_exposure:.2f}")
                     st.write(f"**Options Skew:** {skew:.2f}")
                     st.write(f"**Sharpe Ratio:** {sharpe_ratio:.2f}")
 
