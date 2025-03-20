@@ -64,7 +64,6 @@ def initialize_passwords_db():
     os.makedirs("auth_data", exist_ok=True)
     conn = sqlite3.connect(PASSWORDS_DB)
     c = conn.cursor()
-    # Nueva tabla con usage_count, ip1, ip2
     c.execute('''CREATE TABLE IF NOT EXISTS passwords 
                  (password TEXT PRIMARY KEY, usage_count INTEGER DEFAULT 0, ip1 TEXT DEFAULT '', ip2 TEXT DEFAULT '')''')
     initial_passwords = [
@@ -124,6 +123,14 @@ def save_passwords(passwords):
     conn.close()
     logger.info("Passwords updated in database.")
 
+def get_local_ip():
+    try:
+        hostname = socket.gethostname()
+        return socket.gethostbyname(hostname)
+    except Exception:
+        logger.error("Error obtaining local IP.")
+        return None
+
 def authenticate_password(input_password):
     local_ip = get_local_ip()
     if not local_ip:
@@ -133,7 +140,7 @@ def authenticate_password(input_password):
     passwords = load_passwords()
     for hashed_pwd, data in passwords.items():
         if bcrypt.checkpw(input_password.encode('utf-8'), hashed_pwd.encode('utf-8')):
-            if data["usage_count"] < 2:  # Permitir hasta 2 usos
+            if data["usage_count"] < 2:
                 if data["ip1"] == "":
                     passwords[hashed_pwd]["ip1"] = local_ip
                 elif data["ip2"] == "" and data["ip1"] != local_ip:
@@ -146,28 +153,13 @@ def authenticate_password(input_password):
                 logger.info(f"Repeat authentication successful for {input_password} from IP: {local_ip}")
                 return True
             else:
-                st.warning("⚠️ This password has already been used from two different IPs.")
+                st.error("❌ This password has already been used by two IPs. To get your own access to OzyTarget, text 'OzyTarget Access' to 678-978-9414.")
                 logger.warning(f"Authentication attempt for {input_password} from IP {local_ip} rejected; already used from {data['ip1']} and {data['ip2']}")
                 return False
+    logger.info(f"Reached error message for {input_password} from IP: {local_ip}")  # Log extra
+    st.error("❌ Incorrect password. If you don’t have access, text 'OzyTarget Access' to 678-978-9414 to purchase your subscription.")
     logger.warning(f"Authentication failed: Invalid password {input_password}")
     return False
-
-def get_local_ip():
-    try:
-        hostname = socket.gethostname()
-        return socket.gethostbyname(hostname)
-    except Exception:
-        logger.error("Error obtaining local IP.")
-        return None
-
-# Estilos personalizados globales
-st.markdown("""
-    <style>
-    .stApp {background-color: #1E1E1E;}
-    .stTextInput, .stSelectbox {background-color: #2D2D2D; color: #FFFFFF;}
-    .stSpinner > div > div {border-color: #32CD32 !important;}
-    </style>
-""", unsafe_allow_html=True)
 
 # Pantalla de autenticación con logo
 initialize_passwords_db()
@@ -175,9 +167,9 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    logo_path = "assets/favicon.png"  # Intenta en assets primero
+    logo_path = "assets/favicon.png"
     if not os.path.exists(logo_path):
-        logo_path = "favicon.png"  # Luego en la raíz
+        logo_path = "favicon.png"
     if os.path.exists(logo_path):
         st.markdown("<div style='display: flex; justify-content: center; align-items: center; margin-bottom: 20px;'>", unsafe_allow_html=True)
         st.image(logo_path, width=150)
@@ -185,19 +177,69 @@ if not st.session_state["authenticated"]:
     else:
         st.warning("No 'favicon.png' found for login screen. Place it in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
     
-    st.title("🔒 VIP")
+    st.title("🔒 VIP ACCESS")
+    
+    # Estilo personalizado para el mensaje de carga
+    st.markdown("""
+    <style>
+    .loading-container {
+        text-align: center;
+        padding: 25px;
+        background: linear-gradient(145deg, #1A1A1A, #2D2D2D);
+        border-radius: 12px;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7), inset 0 0 10px rgba(50, 205, 50, 0.1);
+        border: 1px solid rgba(50, 205, 50, 0.3);
+    }
+    .loading-text {
+        font-size: 26px;
+        font-weight: 600;
+        color: #32CD32;
+        text-shadow: 0 0 12px rgba(50, 205, 50, 0.8);
+        letter-spacing: 1px;
+    }
+    .spinner-pro {
+        width: 40px;
+        height: 40px;
+        border: 4px solid rgba(255, 255, 255, 0.2);
+        border-top: 4px solid #32CD32;
+        border-radius: 50%;
+        animation: spin-pro 1s ease-in-out infinite;
+        margin: 15px auto 0;
+    }
+    @keyframes spin-pro {
+        0% { transform: rotate(0deg); }
+        50% { transform: rotate(180deg); border-top-color: #FFD700; }
+        100% { transform: rotate(360deg); border-top-color: #32CD32; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     password = st.text_input("Enter your password", type="password")
     if st.button("LogIn"):
         if not password:
             st.error("❌ Please enter a password.")
         elif authenticate_password(password):
             st.session_state["authenticated"] = True
-            st.success("✅ Access granted! The application will now load.")
+            # Mensaje sofisticado con animación profesional
+            with st.empty():
+                st.markdown("""
+                <div class="loading-container">
+                    <div class="loading-text">✅ ACCESS GRANTED</div>
+                    <div class="spinner-pro"></div>
+                </div>
+                """, unsafe_allow_html=True)
+                time.sleep(1)  # Carga rápida de 1 segundo
             st.rerun()
-        else:
-            st.error("❌ Incorrect or unauthorized password.")
     st.stop()
 ########################################################app
+########################################################app
+
+
+
+
+
+
+
 
 
 
@@ -2022,7 +2064,47 @@ def plot_liquidity_pulse(df, current_price, price_target):
     )
     return fig
 
+def get_intraday_data(ticker: str, interval="1min", limit=5) -> Tuple[List[float], List[int]]:
+    """Obtiene datos intradiarios para IFM."""
+    url = f"{TRADIER_BASE_URL}/markets/history"
+    params = {"symbol": ticker, "interval": interval, "start": (datetime.now() - timedelta(minutes=limit)).strftime("%Y-%m-%d %H:%M:%S")}
+    data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier Intraday")
+    if data and "history" in data and "day" in data["history"]:
+        prices = [float(day["close"]) for day in data["history"]["day"]]
+        volumes = [int(day["volume"]) for day in data["history"]["day"]]
+        return prices, volumes
+    return [0.0] * limit, [0] * limit
 
+def get_vix() -> float:
+    """Obtiene el VIX actual."""
+    url = f"{FMP_BASE_URL}/quote/^VIX"
+    params = {"apikey": FMP_API_KEY}
+    data = fetch_api_data(url, params, HEADERS_FMP, "VIX")
+    return float(data[0]["price"]) if data and isinstance(data, list) and "price" in data[0] else 20.0  # Fallback
+
+def get_news_sentiment(ticker: str) -> float:
+    """Calcula el sentimiento de noticias recientes."""
+    keywords = [ticker]
+    news = fetch_google_news(keywords)
+    if not news:
+        return 0.5  # Neutral
+    sentiment = sum(1 if "up" in article["title"].lower() else -1 if "down" in article["title"].lower() else 0 for article in news)
+    return max(0, min(1, 0.5 + sentiment / (len(news) * 2)))  # Escala 0-1
+
+def calculate_probability_cone(current_price: float, iv: float, days: List[int]) -> Dict:
+    """Calcula conos de probabilidad para 68% y 95%."""
+    cone = {}
+    for day in days:
+        sigma = iv * current_price * (day / 365) ** 0.5
+        cone[day] = {
+            "68_lower": current_price - sigma,
+            "68_upper": current_price + sigma,
+            "95_lower": current_price - 2 * sigma,
+            "95_upper": current_price + 2 * sigma
+        }
+    return cone
+
+# --- Main App (solo Tab 11 actualizado) ---
 
 
 
@@ -2780,13 +2862,14 @@ def main():
                     st.markdown("*Developed by Ozy | © 2025*")
 
     with tab9:
-        # Rango automático: próxima semana completa (lunes a domingo)
+        # Rango dinámico: desde hoy hasta el final de la próxima semana
         today = datetime.now().date()
-        days_to_next_monday = (7 - today.weekday()) % 7  # Días hasta el próximo lunes
-        if days_to_next_monday == 0:  # Si hoy es lunes, saltar a la próxima semana
-            days_to_next_monday = 7
-        start_date = today + timedelta(days=days_to_next_monday)  # Próximo lunes
-        end_date = start_date + timedelta(days=6)  # Próximo domingo
+        days_to_next_sunday = (6 - today.weekday() + 7) % 7  # Días hasta el próximo domingo (fin de esta semana)
+        if days_to_next_sunday == 0:  # Si hoy es domingo, no sumamos días
+            days_to_next_sunday = 0
+        end_of_next_week = today + timedelta(days=days_to_next_sunday + 7)  # Fin de la próxima semana (domingo)
+        start_date = today  # Comienza hoy
+        end_date = end_of_next_week  # Termina el domingo de la próxima semana
 
         # Selector de ordenamiento
         sort_by = st.selectbox("Sort By", ["Date", "Symbol", "Possible Movement", "EPS", "Revenue", "Time"], index=0)
@@ -2993,7 +3076,7 @@ def main():
             """
 
             if not grouped_events:
-                earnings_html += "<p style='color: #FFFFFF; text-align: center;'>No events to display for next week.</p>"
+                earnings_html += "<p style='color: #FFFFFF; text-align: center;'>No events to display for the selected period.</p>"
             else:
                 for day, events in grouped_events.items():
                     earnings_html += f"""
@@ -3050,7 +3133,7 @@ def main():
         else:
             st.info(f"No earnings events found from {start_date} to {end_date}. Check logs for details.")
             logger.warning("No earnings events retrieved or processed")
-
+        
         st.markdown("---")
         st.markdown("*Developed by Ozy | © 2025*")
 
@@ -3164,285 +3247,355 @@ def main():
         st.markdown("*Developed by Ozy | © 2025*")
 
     with tab11:
-        
-        # Ticker input - Analysis triggers on Enter
-        ticker = st.text_input("Ticker Symbol (e.g., TSLA)", "TSLA", key="institutional_ticker").upper()
+    # Ticker input
+     ticker = st.text_input("Ticker Symbol (e.g., TSLA, NVDA)", "NVDA", key="institutional_ticker").upper()
 
-        # Automatically run analysis when ticker changes and Enter is pressed
-        with st.spinner(f"Fetching real-time data for {ticker}..."):
-            try:
-                # --- Fetch real-time data ---
-                current_price = get_current_price(ticker)
-                if current_price == 0.0:
-                    st.error(f"Could not retrieve real-time price for {ticker}.")
-                    st.stop()
+    # Fetch real-time data with reduced cache for intraday
+    with st.spinner(f"Fetching real-time data for {ticker}..."):
+        try:
+            # --- Funciones optimizadas ---
+            @st.cache_data(ttl=60)
+            def get_intraday_data(ticker: str, interval="1min", limit=5) -> Tuple[List[float], List[int]]:
+                """Obtiene datos intradiarios para IFM."""
+                url = f"{TRADIER_BASE_URL}/markets/history"
+                start_time = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                end_time = datetime.now().strftime("%Y-%m-%d")
+                params = {"symbol": ticker, "interval": interval, "start": start_time, "end": end_time}
+                data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier Intraday")
+                if data and "history" in data and "day" in data["history"]:
+                    prices = [float(day["close"]) for day in data["history"]["day"][-limit:]]
+                    volumes = [int(day["volume"]) for day in data["history"]["day"][-limit:]]
+                    return prices, volumes
+                return [get_current_price(ticker)] * limit, [0] * limit
 
-                # Company profile (FMP)
-                url_profile = f"{FMP_BASE_URL}/profile/{ticker}"
-                params_profile = {"apikey": FMP_API_KEY}
-                profile_data = fetch_api_data(url_profile, params_profile, HEADERS_FMP, "FMP Profile")
-                if not profile_data or not isinstance(profile_data, list) or len(profile_data) == 0:
-                    st.error(f"No fundamental data found for {ticker}.")
-                    st.stop()
-                profile = profile_data[0]
-                market_cap = profile.get("mktCap", 1_000_000_000)
-                pe_ratio = profile.get("pe", 20)
-                pb_ratio = profile.get("pb", 3)
-                debt_to_equity = profile.get("debtToEquity", 1.0)
-                roe = profile.get("roe", 0.1)
-                profit_margin = profile.get("profitMargin", 0.05)
-                beta = profile.get("beta", 1.0)
-                sector = profile.get("sector", "Unknown")
+            @st.cache_data(ttl=60)
+            def get_vix() -> float:
+                """Obtiene el VIX actual."""
+                url = f"{FMP_BASE_URL}/quote/^VIX"
+                params = {"apikey": FMP_API_KEY}
+                data = fetch_api_data(url, params, HEADERS_FMP, "VIX")
+                return float(data[0]["price"]) if data and isinstance(data, list) and "price" in data[0] else 20.0
 
-                # Historical data (1 year for volatility and returns)
-                prices, volumes = get_historical_prices_combined(ticker, limit=252)
-                if not prices or len(prices) < 20:
-                    prices = [current_price] * 20
-                    volumes = [1_000_000] * 20
-                returns = np.diff(prices) / prices[:-1]
-                vol_historical = np.std(returns) * np.sqrt(252)  # Annualized volatility
+            @st.cache_data(ttl=300)
+            def get_news_sentiment(ticker: str) -> float:
+                """Calcula el sentimiento de noticias recientes."""
+                keywords = [ticker]
+                news = fetch_google_news(keywords)
+                if not news:
+                    return 0.5  # Neutral
+                sentiment = sum(1 if "up" in article["title"].lower() else -1 if "down" in article["title"].lower() else 0 for article in news)
+                return max(0, min(1, 0.5 + sentiment / (len(news) * 2)))  # Escala 0-1
 
-                # Options data
-                expiration_dates = get_expiration_dates(ticker)
-                iv = get_implied_volatility(ticker) or 0.3
-                gamma_exposure = 0
-                skew = 0
-                if expiration_dates:
-                    options_data = get_options_data(ticker, expiration_dates[0])
-                    if options_data:
-                        gamma_total = sum(float(opt.get("greeks", {}).get("gamma", 0)) * int(opt.get("open_interest", 0)) 
-                                        for opt in options_data if "greeks" in opt)
-                        oi_total = sum(int(opt.get("open_interest", 0)) for opt in options_data)
-                        gamma_exposure = gamma_total * current_price / max(1, oi_total) if oi_total > 0 else 0
-                        calls_iv = np.mean([float(opt.get("implied_volatility", 0)) for opt in options_data if opt["option_type"] == "call"])
-                        puts_iv = np.mean([float(opt.get("implied_volatility", 0)) for opt in options_data if opt["option_type"] == "put"])
-                        skew = (calls_iv - puts_iv) / iv if calls_iv and puts_iv else 0
-                        strikes = [float(opt["strike"]) for opt in options_data]
-                        oi_by_strike = {strike: sum(int(opt.get("open_interest", 0)) for opt in options_data if float(opt["strike"]) == strike) 
-                                        for strike in set(strikes)}
-                    else:
-                        gamma_exposure = 0
-                        skew = 0
-                        oi_by_strike = {}
+            def calculate_probability_cone(current_price: float, iv: float, days: List[int]) -> Dict:
+                """Calcula conos de probabilidad para 68% y 95%."""
+                cone = {}
+                for day in days:
+                    sigma = iv * current_price * (day / 365) ** 0.5
+                    cone[day] = {
+                        "68_lower": current_price - sigma,
+                        "68_upper": current_price + sigma,
+                        "95_lower": current_price - 2 * sigma,
+                        "95_upper": current_price + 2 * sigma
+                    }
+                return cone
+
+            # --- Fetch real-time data ---
+            current_price = get_current_price(ticker)
+            if current_price == 0.0:
+                st.error(f"Could not retrieve real-time price for {ticker}.")
+                st.stop()
+
+            prices_1m, volumes_1m = get_intraday_data(ticker)
+
+            # Company profile (FMP)
+            url_profile = f"{FMP_BASE_URL}/profile/{ticker}"
+            params_profile = {"apikey": FMP_API_KEY}
+            profile_data = fetch_api_data(url_profile, params_profile, HEADERS_FMP, "FMP Profile")
+            if not profile_data or not isinstance(profile_data, list) or len(profile_data) == 0:
+                st.error(f"No fundamental data found for {ticker}.")
+                st.stop()
+            profile = profile_data[0]
+            market_cap = profile.get("mktCap", 1_000_000_000)
+            pe_ratio = profile.get("pe", 20)
+            pb_ratio = profile.get("pb", 3)
+            debt_to_equity = profile.get("debtToEquity", 1.0)
+            roe = profile.get("roe", 0.1)
+            profit_margin = profile.get("profitMargin", 0.05)
+            beta = profile.get("beta", 1.0)
+            sector = profile.get("sector", "Unknown")
+
+            # Historical data (1 year for volatility and returns)
+            prices, volumes = get_historical_prices_combined(ticker, limit=252)
+            if not prices or len(prices) < 20:
+                prices = [current_price] * 20
+                volumes = [1_000_000] * 20
+            returns = np.diff(prices) / prices[:-1]
+            vol_historical = np.std(returns) * np.sqrt(252)
+
+            # Options data - Optimizado para usar smv_vol
+            expiration_dates = get_expiration_dates(ticker)
+            iv = get_implied_volatility(ticker) or 0.3  # Fallback inicial
+            gamma_exposure = 0
+            skew = 0
+            vmi = 0  # Nueva métrica: Volatility Momentum Index
+            oi_by_strike = {}
+            oi_total = 0
+            gamma_wall = 0
+            if expiration_dates:
+                options_data = get_options_data(ticker, expiration_dates[0])
+                if options_data and isinstance(options_data, list):
+                    gamma_total = sum(float(opt.get("greeks", {}).get("gamma", 0)) * int(opt.get("open_interest", 0)) 
+                                      for opt in options_data if "greeks" in opt)
+                    oi_total = sum(int(opt.get("open_interest", 0)) for opt in options_data)
+                    gamma_exposure = gamma_total * current_price / max(1, oi_total) if oi_total > 0 else 0
+                    
+                    # Cálculo corregido de Options Skew y VMI
+                    calls_iv_list = [float(opt["greeks"]["smv_vol"]) for opt in options_data 
+                                     if opt.get("option_type", "").lower() == "call" and "greeks" in opt and opt["greeks"].get("smv_vol", 0) > 0]
+                    puts_iv_list = [float(opt["greeks"]["smv_vol"]) for opt in options_data 
+                                    if opt.get("option_type", "").lower() == "put" and "greeks" in opt and opt["greeks"].get("smv_vol", 0) > 0]
+                    calls_iv = np.mean(calls_iv_list) if calls_iv_list else iv
+                    puts_iv = np.mean(puts_iv_list) if puts_iv_list else iv
+                    iv = np.mean(calls_iv_list + puts_iv_list) if calls_iv_list or puts_iv_list else iv
+                    skew = (calls_iv - puts_iv) / iv if calls_iv_list and puts_iv_list and iv != 0 else 0
+                    vmi = (skew * oi_total / max(1, vol_historical * 100)) if oi_total > 0 else 0  # Volatility Momentum Index
+                    
+                    gamma_by_strike = {strike: sum(float(opt.get("greeks", {}).get("gamma", 0)) * int(opt.get("open_interest", 0)) 
+                                                  for opt in options_data if float(opt["strike"]) == strike and "greeks" in opt) 
+                                      for strike in set(float(opt["strike"]) for opt in options_data)}
+                    gamma_wall = max(gamma_by_strike.items(), key=lambda x: abs(x[1]), default=(current_price, 0))[0] if gamma_by_strike else current_price
+                    
+                    strikes = [float(opt["strike"]) for opt in options_data]
+                    oi_by_strike = {strike: sum(int(opt.get("open_interest", 0)) for opt in options_data if float(opt["strike"]) == strike) 
+                                    for strike in set(strikes)}
                 else:
-                    gamma_exposure = 0
-                    skew = 0
-                    oi_by_strike = {}
+                    st.warning("No valid options data returned from Tradier.")
+            else:
+                st.warning("No expiration dates available for options data.")
 
-                # --- Advanced OIPI Calculation ---
-                # 1. Momentum (Institutional Activity + GEX)
-                volume_avg = np.mean(volumes[-20:])
-                volume_spike = max(volumes[-5:]) / volume_avg if volume_avg > 0 else 1.0
-                price_change = (current_price - prices[-10]) / prices[-10] if len(prices) >= 10 else 0
-                momentum_score = min(30, 8 * volume_spike + 8 * abs(price_change) * 100 + 14 * (gamma_exposure / max(1, abs(gamma_exposure))))
-                momentum_text = "Strong institutional momentum" if momentum_score > 20 else "Moderate activity" if momentum_score > 10 else "Low momentum"
+            # --- Advanced Institutional Calculations ---
+            volume_delta = sum([v if p > prices_1m[i-1] else -v for i, (p, v) in enumerate(zip(prices_1m[1:], volumes_1m[1:]))])
+            oi_delta = oi_total
+            gamma_weighted = gamma_exposure * sum(1/abs(s - current_price) for s in oi_by_strike.keys() if oi_by_strike[s] > 0) if oi_by_strike else 0
+            vix = get_vix()
+            ifm = min(100, max(0, (volume_delta * oi_delta * gamma_weighted) / (vix + iv * 100))) if (vix + iv * 100) != 0 else 0
 
-                # 2. Health (Sharpe Ratio + Fundamentals)
-                sharpe_ratio = (np.mean(returns) * 252 - RISK_FREE_RATE) / vol_historical if vol_historical > 0 else 1.0
-                growth_factor = roe * profit_margin
-                debt_factor = 1 / (1 + debt_to_equity) if debt_to_equity > 0 else 1
-                health_score = min(30, 10 * sharpe_ratio + 10 * growth_factor + 10 * debt_factor)
-                health_text = "Robust fundamentals" if health_score > 20 else "Stable with risks" if health_score > 10 else "Weak fundamentals"
+            oi_below = sum(oi for s, oi in oi_by_strike.items() if s < current_price)
+            oi_above = sum(oi for s, oi in oi_by_strike.items() if s > current_price)
+            vwap_daily = sum(p * v for p, v in zip(prices[-20:], volumes[-20:])) / sum(volumes[-20:]) if sum(volumes[-20:]) > 0 else current_price
+            lti = (oi_below / oi_above if oi_above > 0 else 1.0) * (current_price - vwap_daily) / (iv * beta) if (iv * beta) != 0 else 0
 
-                # 3. Valuation (Advanced Fair Value)
-                sector_pe_avg = {"Technology": 30, "Financial Services": 15, "Healthcare": 25, "Consumer Cyclical": 20}.get(sector, 20)
-                pe_factor = min(1.5, sector_pe_avg / pe_ratio) if pe_ratio > 0 else 1.0
-                pb_factor = min(1.5, 3 / pb_ratio) if pb_ratio > 0 else 1.0
-                cash_flow_est = max(market_cap * profit_margin, 1_000_000) * (1 + roe * 0.5)  # Growth adjustment
-                discount_rate = max(RISK_FREE_RATE + beta * 0.06, 0.01)
-                fair_value = (cash_flow_est / discount_rate) / 1_000_000_000
-                fair_value = max(fair_value, current_price * 0.5)
-                fair_value_text = "Below Fair Value" if current_price < fair_value else "At Fair Value" if abs(current_price - fair_value) < current_price * 0.05 else "Above Fair Value"
-                valuation_score = min(20, 8 * pe_factor + 8 * pb_factor + 4 * (current_price / fair_value if fair_value > 0 else 1))
-                valuation_text = "Undervalued" if valuation_score > 15 else "Fair" if valuation_score > 10 else "Overvalued"
+            event_factor = 1.5 if fetch_api_data(f"{FMP_BASE_URL}/economic-calendar", {"apikey": FMP_API_KEY, "from": datetime.now().strftime("%Y-%m-%d"), "to": (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")}, HEADERS_FMP, "Events") else 1.0
+            earnings_data = get_earnings_calendar(datetime.now().date(), datetime.now().date() + timedelta(days=5))
+            earnings_factor = 1.8 if any(e.get("date") and datetime.strptime(e["date"], "%Y-%m-%d").date() <= (datetime.now().date() + timedelta(days=5)) for e in earnings_data) else 1.0
+            skew_impact = skew + 0.1
+            eaem = iv * current_price * (1 + abs(gamma_exposure)) * event_factor * skew_impact * earnings_factor * 0.15
+            eaem_upper = current_price + eaem
+            eaem_lower = max(0, current_price - eaem)
 
-                # 4. Risk (Skew + Volatility)
-                risk_score = min(10, max(0, 10 - (iv * beta + abs(skew) * 5)))
-                risk_text = "Low risk" if risk_score > 7 else "Moderate risk" if risk_score > 3 else "High risk"
+            eaem_ratio = (current_price - eaem_lower) / (eaem_upper - eaem_lower) if (eaem_upper - eaem_lower) != 0 else 0.5
+            sentiment_score = get_news_sentiment(ticker)
+            rtes = (ifm * 0.4 + lti * 0.3 + eaem_ratio * 20 + sentiment_score * 10)
 
-                # 5. Movement (GEX + Expected Move)
-                expected_move = iv * current_price * (1 + abs(gamma_exposure / max(1, gamma_exposure))) * 0.15
-                move_score = min(10, expected_move / current_price * 100)
-                upper_target = current_price + expected_move
-                lower_target = current_price - expected_move
+            # --- Original OIPI Calculation ---
+            volume_avg = np.mean(volumes[-20:])
+            volume_spike = max(volumes[-5:]) / volume_avg if volume_avg > 0 else 1.0
+            price_change = (current_price - prices[-10]) / prices[-10] if len(prices) >= 10 else 0
+            momentum_score = min(30, 8 * volume_spike + 8 * abs(price_change) * 100 + 14 * (gamma_exposure / max(1, abs(gamma_exposure))))
+            momentum_text = "Strong institutional momentum" if momentum_score > 20 else "Moderate activity" if momentum_score > 10 else "Low momentum"
 
-                oipi_score = momentum_score + health_score + valuation_score + risk_score + move_score
-                oipi_score = max(0, min(100, oipi_score))
-                recommendation = "Strong Buy" if oipi_score > 80 else "Buy" if oipi_score > 60 else "Hold" if oipi_score > 40 else "Sell"
+            sharpe_ratio = (np.mean(returns) * 252 - RISK_FREE_RATE) / vol_historical if vol_historical > 0 else 1.0
+            growth_factor = roe * profit_margin
+            debt_factor = 1 / (1 + debt_to_equity) if debt_to_equity > 0 else 1
+            health_score = min(30, 10 * sharpe_ratio + 10 * growth_factor + 10 * debt_factor)
+            health_text = "Robust fundamentals" if health_score > 20 else "Stable with risks" if health_score > 10 else "Weak fundamentals"
 
-                # --- Additional Metrics ---
-                short_term_risk = iv * current_price * (1 / 12)**0.5
-                short_term_lower = current_price - short_term_risk
-                short_term_upper = current_price + short_term_risk
+            sector_pe_avg = {"Technology": 30, "Financial Services": 15, "Healthcare": 25, "Consumer Cyclical": 20}.get(sector, 20)
+            pe_factor = min(1.5, sector_pe_avg / pe_ratio) if pe_ratio > 0 else 1.0
+            pb_factor = min(1.5, 3 / pb_ratio) if pb_ratio > 0 else 1.0
+            cash_flow_est = max(market_cap * profit_margin, 1_000_000) * (1 + roe * 0.5)
+            discount_rate = max(RISK_FREE_RATE + beta * 0.06, 0.01)
+            fair_value = (cash_flow_est / discount_rate) / 1_000_000_000
+            fair_value = max(fair_value, current_price * 0.5)
+            fair_value_text = "Below Fair Value" if current_price < fair_value else "At Fair Value" if abs(current_price - fair_value) < current_price * 0.05 else "Above Fair Value"
+            valuation_score = min(20, 8 * pe_factor + 8 * pb_factor + 4 * (current_price / fair_value if fair_value > 0 else 1))
+            valuation_text = "Undervalued" if valuation_score > 15 else "Fair" if valuation_score > 10 else "Overvalued"
 
-                mid_term_risk = iv * current_price * (6 / 12)**0.5
-                mid_term_lower = current_price - mid_term_risk
-                mid_term_upper = current_price + mid_term_risk
+            risk_score = min(10, max(0, 10 - (iv * beta + abs(skew) * 5)))
+            risk_text = "Low risk" if risk_score > 7 else "Moderate risk" if risk_score > 3 else "High risk"
 
-                long_term_risk = iv * current_price * beta
-                long_term_lower = current_price - long_term_risk
-                long_term_upper = current_price + long_term_risk
+            expected_move = iv * current_price * (1 + abs(gamma_exposure / max(1, gamma_exposure))) * 0.15
+            move_score = min(10, expected_move / current_price * 100)
+            upper_target = current_price + expected_move
+            lower_target = current_price - expected_move
 
-                support = min([s for s in oi_by_strike.keys() if s < current_price], default=current_price - short_term_risk * 1.5) if oi_by_strike else current_price - short_term_risk * 1.5
-                resistance = max([s for s in oi_by_strike.keys() if s > current_price], default=current_price + short_term_risk * 1.5) if oi_by_strike else current_price + short_term_risk * 1.5
-                safe_zone_lower = max(support, fair_value * 0.9)
-                safe_zone_upper = min(resistance, fair_value * 1.1)
+            oipi_score = momentum_score + health_score + valuation_score + risk_score + move_score
+            oipi_score = max(0, min(100, oipi_score))
+            oipi_recommendation = "Strong Buy" if oipi_score > 80 else "Buy" if oipi_score > 60 else "Hold" if oipi_score > 40 else "Sell"
 
-                # --- Dynamic Sector Average ---
-                sector_benchmarks = {
-                    "Technology": [0.8, 0.6, 0.7, 0.7, 0.8],
-                    "Financial Services": [0.6, 0.7, 0.6, 0.8, 0.5],
-                    "Healthcare": [0.7, 0.65, 0.75, 0.6, 0.7],
-                    "Consumer Cyclical": [0.65, 0.6, 0.65, 0.7, 0.75]
-                }
-                sector_avg = sector_benchmarks.get(sector, [0.7, 0.6, 0.65, 0.8, 0.75])
+            # --- Additional Metrics (Short, Medium, Long Term) ---
+            short_term_risk = iv * current_price * (1 / 12)**0.5
+            short_term_lower = current_price - short_term_risk
+            short_term_upper = current_price + short_term_risk
 
-                # --- Visualization ---
-                col1, col2 = st.columns([2, 1])
+            mid_term_risk = iv * current_price * (6 / 12)**0.5
+            mid_term_lower = current_price - mid_term_risk
+            mid_term_upper = current_price + mid_term_risk
 
-                with col1:
-                    # Enhanced Radar Chart
-                    fig_radar = go.Figure()
-                    categories = ["Momentum", "Health", "Valuation", "Risk", "Movement", "Momentum"]
-                    scores = [momentum_score/30, health_score/30, valuation_score/20, risk_score/10, move_score/10, momentum_score/30]
-                    texts = [momentum_text, health_text, valuation_text, risk_text, "High potential", momentum_text]
-                    absolutes = [f"{momentum_score:.1f}/30", f"{health_score:.1f}/30", f"{valuation_score:.1f}/20", f"{risk_score:.1f}/10", f"{move_score:.1f}/10", f"{momentum_score:.1f}/30"]
+            long_term_risk = iv * current_price * beta
+            long_term_lower = current_price - long_term_risk
+            long_term_upper = current_price + long_term_risk
 
-                    fig_radar.add_trace(go.Scatterpolar(
-                        r=scores,
-                        theta=categories,
-                        fill="toself",
-                        name=ticker,
-                        line=dict(color="#32CD32", width=2),
-                        hovertemplate="%{theta}<br>Score: %{customdata[0]}<br>Rating: %{customdata[1]}",
-                        customdata=list(zip(absolutes, texts)),
-                        hoverlabel=dict(bgcolor="rgba(200, 200, 200, 0.8)", font_color="black")
-                    ))
-                    fig_radar.add_trace(go.Scatterpolar(
-                        r=sector_avg,
-                        theta=categories,
-                        fill="toself",
-                        name=f"{sector} Avg",
-                        line=dict(color="#FFD700", width=1),
-                        opacity=0.5,
-                        hovertemplate="%{theta}: %{r:.2f}<br>",
-                        hoverlabel=dict(bgcolor="rgba(200, 200, 200, 0.8)", font_color="black")
-                    ))
-                    fig_radar.update_layout(
-                        polar=dict(
-                            radialaxis=dict(visible=True, range=[0, 1], tickfont=dict(color="white")),
-                            angularaxis=dict(tickfont=dict(color="white"))
-                        ),
-                        showlegend=True,
-                        title=f"OIPI Profile: {ticker} ({oipi_score:.1f}/100)",
-                        template="plotly_dark",
-                        height=300,
-                        margin=dict(l=50, r=50, t=50, b=50)
-                    )
-                    st.plotly_chart(fig_radar, use_container_width=True)
+            support = min([s for s in oi_by_strike.keys() if s < current_price], default=current_price - short_term_risk * 1.5) if oi_by_strike else current_price - short_term_risk * 1.5
+            resistance = max([s for s in oi_by_strike.keys() if s > current_price], default=current_price + short_term_risk * 1.5) if oi_by_strike else current_price + short_term_risk * 1.5
+            safe_zone_lower = max(support, fair_value * 0.9)
+            safe_zone_upper = min(resistance, fair_value * 1.1)
 
-                    # Enhanced Heatmap with Liquidity Zones
-                    fig_heatmap = go.Figure()
-                    price_points = [long_term_lower, mid_term_lower, short_term_lower, safe_zone_lower, current_price, safe_zone_upper, short_term_upper, mid_term_upper, long_term_upper]
-                    y_values = [1] * len(price_points)
-                    colors = ["#FF4500", "#FF8C00", "#FFD700", "#32CD32", "#FFFFFF", "#32CD32", "#FFD700", "#FF8C00", "#FF4500"]
-                    fig_heatmap.add_trace(go.Scatter(
-                        x=price_points,
-                        y=y_values,
-                        mode="markers+text",
-                        text=[f"${p:.2f}" for p in price_points],
-                        textposition="top center",
-                        marker=dict(size=12, color=colors),
-                        hoverinfo="x+text"
-                    ))
-                    fig_heatmap.add_shape(type="rect", x0=safe_zone_lower, y0=0.8, x1=safe_zone_upper, y1=1.2, fillcolor="green", opacity=0.3, line_width=0)
-                    for strike, oi in oi_by_strike.items():
-                        if oi > oi_total * 0.05:  # High liquidity zones
-                            fig_heatmap.add_shape(type="line", x0=strike, y0=0.9, x1=strike, y1=1.1, line=dict(color="cyan", width=1, dash="dot"))
-                    fig_heatmap.add_shape(type="line", x0=fair_value, y0=0, x1=fair_value, y1=2, line=dict(color="blue", dash="dash"))
-                    fig_heatmap.add_annotation(x=fair_value, y=1.5, text=f"Fair: ${fair_value:.2f}", showarrow=False, font=dict(color="blue"))
-                    fig_heatmap.add_shape(type="line", x0=current_price, y0=0, x1=current_price, y1=2, line=dict(color="white", width=2))
-                    fig_heatmap.add_annotation(x=current_price, y=1.7, text=f"Now: ${current_price:.2f}", showarrow=False, font=dict(color="white"))
-                    fig_heatmap.update_layout(
-                        title="Long Liquidity",
-                        xaxis_title="Price",
-                        yaxis=dict(showgrid=False, showticklabels=False, range=[0, 2]),
-                        template="plotly_dark",
-                        height=300
-                    )
-                    st.plotly_chart(fig_heatmap, use_container_width=True)
+            # --- Dynamic Sector Average ---
+            sector_benchmarks = {
+                "Technology": [0.8, 0.6, 0.7, 0.7, 0.8],
+                "Financial Services": [0.6, 0.7, 0.6, 0.8, 0.5],
+                "Healthcare": [0.7, 0.65, 0.75, 0.6, 0.7],
+                "Consumer Cyclical": [0.65, 0.6, 0.65, 0.7, 0.75]
+            }
+            sector_avg = sector_benchmarks.get(sector, [0.7, 0.6, 0.65, 0.8, 0.75])
 
-                with col2:
-                    # Scorecard and Alerts
-                    st.markdown("#### Scorecard")
-                    color = "#32CD32" if oipi_score > 60 else "#FFD700" if oipi_score > 40 else "#FF4500"
-                    st.markdown(f"**OIPI:** <span style='color:{color}'>{oipi_score:.1f}/100</span>", unsafe_allow_html=True)
-                    st.write(f"**Recommendation:** {recommendation}")
-                    insight = (
-                        "Buy Now: Elite opportunity" if oipi_score > 80 else
-                        "Accumulate: Strong potential" if oipi_score > 60 else
-                        "Hold: Evaluate risks" if oipi_score > 40 else
-                        "Sell: Weak outlook"
-                    )
-                    st.write(f"**Insight:** {insight}")
+            # --- Visualization ---
+            col1, col2 = st.columns([2, 1])
 
-                    st.markdown("#### Metrics")
-                    st.write(f"**Current Price:** ${current_price:.2f}")
-                    st.write(f"**Fair Value:** ${fair_value:.2f} - {fair_value_text}")
-                    st.write(f"**Safe Zone:** ${safe_zone_lower:.2f} - ${safe_zone_upper:.2f}")
-                    st.write(f"**SHORT:** ${short_term_lower:.2f} - ${short_term_upper:.2f}")
-                    st.write(f"**MEDIUM:** ${mid_term_lower:.2f} - ${mid_term_upper:.2f}")
-                    st.write(f"**LONG:** ${long_term_lower:.2f} - ${long_term_upper:.2f}")
-                    st.write(f"**Gamma:** {gamma_exposure:.2f}")
-                    st.write(f"**Options Skew:** {skew:.2f}")
-                    st.write(f"**Sharpe Ratio:** {sharpe_ratio:.2f}")
+            with col1:
+                # Heatmap avanzado con Skew y Gamma Wall
+                fig_heatmap = go.Figure()
+                price_points = [long_term_lower, mid_term_lower, short_term_lower, safe_zone_lower, current_price, safe_zone_upper, short_term_upper, mid_term_upper, long_term_upper]
+                y_values = [1] * len(price_points)
+                colors = ["#FF4500", "#FF8C00", "#FFD700", "#32CD32", "#FFFFFF", "#32CD32", "#FFD700", "#FF8C00", "#FF4500"]
+                fig_heatmap.add_trace(go.Scatter(x=price_points, y=y_values, mode="markers+text", text=[f"${p:.2f}" for p in price_points], textposition="top center", marker=dict(size=12, color=colors), hoverinfo="x+text"))
+                fig_heatmap.add_shape(type="rect", x0=safe_zone_lower, y0=0.8, x1=safe_zone_upper, y1=1.2, fillcolor="green", opacity=0.3, line_width=0)
+                for strike, oi in oi_by_strike.items():
+                    if oi > oi_total * 0.05:
+                        pressure = 1 if strike > current_price else -1
+                        fig_heatmap.add_shape(type="line", x0=strike, y0=0.9, x1=strike, y1=1.1, line=dict(color="green" if pressure > 0 else "red", width=oi/oi_total*10, dash="dot"))
+                fig_heatmap.add_shape(type="line", x0=fair_value, y0=0, x1=fair_value, y1=2, line=dict(color="blue", dash="dash"))
+                fig_heatmap.add_annotation(x=fair_value, y=1.5, text=f"Fair: ${fair_value:.2f}", showarrow=False, font=dict(color="blue"))
+                fig_heatmap.add_shape(type="line", x0=current_price, y0=0, x1=current_price, y1=2, line=dict(color="white", width=2))
+                fig_heatmap.add_annotation(x=current_price, y=1.7, text=f"Now: ${current_price:.2f}", showarrow=False, font=dict(color="white"))
+                fig_heatmap.add_shape(type="line", x0=gamma_wall, y0=0, x1=gamma_wall, y1=2, line=dict(color="purple", width=1, dash="dot"))
+                fig_heatmap.add_annotation(x=gamma_wall, y=1.9, text=f"Gamma Wall: ${gamma_wall:.2f}", showarrow=False, font=dict(color="purple"))
+                fig_heatmap.update_layout(title="Order Flow & Liquidity", xaxis_title="Price", yaxis=dict(showgrid=False, showticklabels=False, range=[0, 2]), template="plotly_dark", height=300)
+                st.plotly_chart(fig_heatmap, use_container_width=True)
+
+                # Probability Cone
+                cone = calculate_probability_cone(current_price, iv, [1, 5, 30])
+                fig_cone = go.Figure()
+                for day in [1, 5, 30]:
+                    fig_cone.add_trace(go.Scatter(x=[cone[day]["68_lower"], cone[day]["68_upper"]], y=[day, day], mode="lines", line=dict(color="#FFD700", width=1), name=f"{day}-Day 68%"))
+                    fig_cone.add_trace(go.Scatter(x=[cone[day]["95_lower"], cone[day]["95_upper"]], y=[day, day], mode="lines", line=dict(color="#FF4500", width=1, dash="dash"), name=f"{day}-Day 95%"))
+                fig_cone.add_trace(go.Scatter(x=[current_price], y=[0], mode="markers", marker=dict(size=10, color="white"), name="Current Price"))
+                fig_cone.update_layout(title="Probability Cone", xaxis_title="Price Range", yaxis_title="Days Ahead", template="plotly_dark", height=300)
+                st.plotly_chart(fig_cone, use_container_width=True)
+
+                # Radar Chart con VMI
+                fig_radar = go.Figure()
+                categories = ["Momentum", "Health", "Valuation", "Risk", "VMI", "Momentum"]
+                scores = [momentum_score/30, health_score/30, valuation_score/20, risk_score/10, abs(vmi)*10, momentum_score/30]
+                texts = [momentum_text, health_text, valuation_text, risk_text, f"Vol Momentum: {vmi:.2f}", momentum_text]
+                absolutes = [f"{momentum_score:.1f}/30", f"{health_score:.1f}/30", f"{valuation_score:.1f}/20", f"{risk_score:.1f}/10", f"{abs(vmi):.2f}", f"{momentum_score:.1f}/30"]
+                fig_radar.add_trace(go.Scatterpolar(
+                    r=scores,
+                    theta=categories,
+                    fill="toself",
+                    name=ticker,
+                    line=dict(color="#32CD32", width=2),
+                    hovertemplate="%{theta}<br>Score: %{customdata[0]}<br>Rating: %{customdata[1]}",
+                    customdata=list(zip(absolutes, texts)),
+                    hoverlabel=dict(bgcolor="rgba(200, 200, 200, 0.8)", font_color="black")
+                ))
+                fig_radar.add_trace(go.Scatterpolar(
+                    r=sector_avg,
+                    theta=categories,
+                    fill="toself",
+                    name=f"{sector} Avg",
+                    line=dict(color="#FFD700", width=1),
+                    opacity=0.5,
+                    hovertemplate="%{theta}: %{r:.2f}<br>",
+                    hoverlabel=dict(bgcolor="rgba(200, 200, 200, 0.8)", font_color="black")
+                ))
+                fig_radar.update_layout(
+                    polar=dict(
+                        radialaxis=dict(visible=True, range=[0, 1], tickfont=dict(color="white")),
+                        angularaxis=dict(tickfont=dict(color="white"))
+                    ),
+                    showlegend=True,
+                    title=f"|: {ticker} ({oipi_score:.1f}/100)",
+                    template="plotly_dark",
+                    height=300,
+                    margin=dict(l=50, r=50, t=50, b=50)
+                )
+                st.plotly_chart(fig_radar, use_container_width=True)
+
+            with col2:
+                # Dashboard - Mejorado con tooltips
+                st.markdown("#### Dashboard")
+                color_rtes = "#32CD32" if rtes > 60 else "#FFD700" if rtes > 40 else "#FF4500"
+                st.markdown(f"**Real-Time Edge Score:** <span style='color:{color_rtes}'>{rtes:.1f}/100</span> <span title='Overall trading edge based on momentum, liquidity, and sentiment'>ℹ️</span>", unsafe_allow_html=True)
+                rtes_recommendation = "Strong Buy" if rtes > 80 else "Buy" if rtes > 60 else "Hold" if rtes > 40 else "Sell"
+                st.write(f"**Recommendation:** {rtes_recommendation}")
+                st.write(f"**IFM (Momentum):** {ifm:.2f} <span title='Institutional Flow Momentum: Measures smart money activity'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**LTI (Trap Index):** {lti:.2f} <span title='Liquidity Trap Index: Detects potential MM traps'>ℹ️</span>", unsafe_allow_html=True)
+                st.markdown(f"**EAEM Range:** ${eaem_lower:.2f} - ${eaem_upper:.2f} <span title='Event-Adjusted Expected Move: Price range considering events'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**Gamma Wall:** ${gamma_wall:.2f} <span title='Strike with highest gamma pressure, key support/resistance'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**VMI:** {vmi:.2f} <span title='Volatility Momentum Index: Combines skew and OI for trend strength'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**Sentiment:** {sentiment_score:.2f} <span title='News sentiment (0 bearish, 1 bullish)'>ℹ️</span>", unsafe_allow_html=True)
+
+                # Original Scorecard with Short, Medium, Long Term
+                st.markdown("#### ")
+                color_oipi = "#32CD32" if oipi_score > 60 else "#FFD700" if oipi_score > 40 else "#FF4500"
+                st.markdown(f"**OIPI:** <span style='color:{color_oipi}'>{oipi_score:.1f}/100</span> <span title='Overall Potential Index: Long-term value score'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**Recommendation:** {oipi_recommendation}")
+                insight = (
+                    "Buy Now: Elite opportunity" if oipi_score > 80 else
+                    "Accumulate: Strong potential" if oipi_score > 60 else
+                    "Hold: Evaluate risks" if oipi_score > 40 else
+                    "Sell: Weak outlook"
+                )
+                st.write(f"**Insight:** {insight}")
+
+                st.markdown("#### Metrics")
+                st.write(f"**Current Price:** ${current_price:.2f}")
+                st.write(f"**Fair Value:** ${fair_value:.2f} - {fair_value_text} <span title='DCF-based intrinsic value'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**Safe Zone:** ${safe_zone_lower:.2f} - ${safe_zone_upper:.2f} <span title='Range between support and resistance'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**SHORT:** ${short_term_lower:.2f} - ${short_term_upper:.2f} <span title='1-month expected range'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**MEDIUM:** ${mid_term_lower:.2f} - ${mid_term_upper:.2f} <span title='6-month expected range'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**LONG:** ${long_term_lower:.2f} - ${long_term_upper:.2f} <span title='Long-term range adjusted by beta'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**Gamma:** {gamma_exposure:.2f} <span title='Gamma exposure: Sensitivity to price changes'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**Options Skew:** {skew:.2f} <span title='Call vs Put IV difference: Market bias'>ℹ️</span>", unsafe_allow_html=True)
+                st.write(f"**Sharpe Ratio:** {sharpe_ratio:.2f} <span title='Risk-adjusted return'>ℹ️</span>", unsafe_allow_html=True)
 
                 # Data Download
-                oipi_data = {
-                    "Ticker": ticker,
-                    "OIPI": oipi_score,
-                    "Recommendation": recommendation,
-                    "Momentum": momentum_text,
-                    "Health": health_text,
-                    "Valuation": valuation_text,
-                    "Risk": risk_text,
-                    "Current Price": current_price,
-                    "Fair Value": fair_value,
-                    "Safe Zone Lower": safe_zone_lower,
-                    "Safe Zone Upper": safe_zone_upper,
-                    "Short-Term Lower": short_term_lower,
-                    "Short-Term Upper": short_term_upper,
-                    "Mid-Term Lower": mid_term_lower,
-                    "Mid-Term Upper": mid_term_upper,
-                    "Long-Term Lower": long_term_lower,
-                    "Long-Term Upper": long_term_upper,
-                    "IV": iv,
-                    "Gamma Exposure": gamma_exposure,
-                    "Options Skew": skew,
-                    "Sharpe Ratio": sharpe_ratio,
-                    "Market Cap": market_cap,
-                    "P/E": pe_ratio,
-                    "P/B": pb_ratio,
-                    "Debt/Equity": debt_to_equity,
-                    "ROE": roe,
-                    "Profit Margin": profit_margin
+                data = {
+                    "Ticker": ticker, "RTES": rtes, "IFM": ifm, "LTI": lti, "EAEM_Lower": eaem_lower, "EAEM_Upper": eaem_upper,
+                    "Gamma_Wall": gamma_wall, "VMI": vmi, "OIPI": oipi_score, "OIPI_Recommendation": oipi_recommendation,
+                    "Momentum": momentum_text, "Health": health_text, "Valuation": valuation_text, "Risk": risk_text,
+                    "Current_Price": current_price, "Fair_Value": fair_value, "Safe_Zone_Lower": safe_zone_lower,
+                    "Safe_Zone_Upper": safe_zone_upper, "Short_Term_Lower": short_term_lower, "Short_Term_Upper": short_term_upper,
+                    "Mid_Term_Lower": mid_term_lower, "Mid_Term_Upper": mid_term_upper, "Long_Term_Lower": long_term_lower,
+                    "Long_Term_Upper": long_term_upper, "IV": iv, "Gamma_Exposure": gamma_exposure, "Options_Skew": skew,
+                    "Sharpe_Ratio": sharpe_ratio, "Market_Cap": market_cap, "P/E": pe_ratio, "P/B": pb_ratio,
+                    "Debt/Equity": debt_to_equity, "ROE": roe, "Profit_Margin": profit_margin
                 }
-                oipi_df = pd.DataFrame([oipi_data])
-                csv = oipi_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Pro Dashboard Data",
-                    data=csv,
-                    file_name=f"{ticker}_pro_dashboard.csv",
-                    mime="text/csv",
-                    key="download_pro"
-                )
+                df = pd.DataFrame([data])
+                csv = df.to_csv(index=False)
+                st.download_button(label="📥 Download EdgeMaster Data", data=csv, file_name=f"{ticker}_edgemaster.csv", mime="text/csv", key="download_edge")
 
-            except Exception as e:
-                st.error(f"Error processing {ticker}: {str(e)}")
-                logger.error(f"Tab 11 Pro Dashboard error: {str(e)}")
+            st.markdown("---")
+            st.markdown("*Developed by Ozy | Powered by xAI | © 2025*")
 
-        st.markdown("---")
-        st.markdown("*Developed by Ozy | © 2025*")
+        except Exception as e:
+            st.error(f"Error processing {ticker}: {str(e)}")
+            import traceback
+            logger.error(f"Tab 11 Pro Dashboard error: {traceback.format_exc()}")
+            st.markdown("---")
+            st.markdown("*Developed by Ozy | Powered by xAI | © 2025*")
 
 if __name__ == "__main__":
     main()
