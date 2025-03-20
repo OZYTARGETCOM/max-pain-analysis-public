@@ -3587,8 +3587,8 @@ def main():
                 csv = df.to_csv(index=False)
                 st.download_button(label="📥 Download EdgeMaster Data", data=csv, file_name=f"{ticker}_edgemaster.csv", mime="text/csv", key="download_edge")
 
-            st.markdown("---")
-            st.markdown("*Developed by Ozy | Powered by xAI | © 2025*")
+            
+            
 
         except Exception as e:
             st.error(f"Error processing {ticker}: {str(e)}")
