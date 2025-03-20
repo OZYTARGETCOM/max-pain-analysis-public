@@ -2843,7 +2843,7 @@ def main():
                                 fig, order_metrics = plot_order_book_bubbles_with_max_pain(bids, asks, current_price, ticker, market_data['volatility'])
                                 st.plotly_chart(fig, use_container_width=True, key=f"plotly_chart_tab8_{ticker}_{int(time.time())}")
                                 
-                                st.subheader("Key Metrics")
+                               
                                 pressure_color = "#32CD32" if order_metrics['net_pressure'] > 0 else "#FF4500" if order_metrics['net_pressure'] < 0 else "#FFFFFF"
                                 st.write(f"**Net Pressure**: <span style='color:{pressure_color}'>{order_metrics['net_pressure']:,.0f}</span> ({order_metrics['trend']})", unsafe_allow_html=True)
                                 st.write(f"**Volatility (Annualized)**: {order_metrics['volatility']:.2f}%")
@@ -3247,11 +3247,70 @@ def main():
         st.markdown("*Developed by Ozy | © 2025*")
 
     with tab11:
+    # Estilo CSS profesional
+     st.markdown("""
+    <style>
+    .main-title { 
+        font-size: 28px; 
+        font-weight: 600; 
+        color: #FFFFFF; 
+        text-align: center; 
+        margin-bottom: 20px; 
+        text-shadow: 0 0 5px rgba(50, 205, 50, 0.5); 
+    }
+    .section-header { 
+        font-size: 20px; 
+        font-weight: 500; 
+        color: #32CD32; 
+        margin-top: 20px; 
+        border-bottom: 1px solid #32CD32; 
+        padding-bottom: 5px; 
+    }
+    .metric-label { 
+        font-size: 16px; 
+        color: #FFFFFF; 
+        font-family: 'Arial', sans-serif; 
+    }
+    .metric-value { 
+        font-size: 18px; 
+        font-weight: 600; 
+        color: #FFD700; 
+    }
+    .tooltip { 
+        position: relative; 
+        display: inline-block; 
+        cursor: help; 
+        color: #32CD32; 
+        margin-left: 5px; 
+    }
+    .tooltip .tooltiptext { 
+        visibility: hidden; 
+        width: 200px; 
+        background-color: #2D2D2D; 
+        color: #FFFFFF; 
+        text-align: center; 
+        border-radius: 5px; 
+        padding: 5px; 
+        position: absolute; 
+        z-index: 1; 
+        bottom: 125%; 
+        left: 50%; 
+        margin-left: -100px; 
+        font-size: 12px; 
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5); 
+    }
+    .tooltip:hover .tooltiptext { 
+        visibility: visible; 
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    
     # Ticker input
      ticker = st.text_input("Ticker Symbol (e.g., TSLA, NVDA)", "NVDA", key="institutional_ticker").upper()
 
     # Fetch real-time data with reduced cache for intraday
-    with st.spinner(f"Fetching real-time data for {ticker}..."):
+     with st.spinner(f"Fetching real-time data for {ticker}..."):
         try:
             # --- Funciones optimizadas ---
             @st.cache_data(ttl=60)
@@ -3332,12 +3391,12 @@ def main():
             returns = np.diff(prices) / prices[:-1]
             vol_historical = np.std(returns) * np.sqrt(252)
 
-            # Options data - Optimizado para usar smv_vol
+            # Options data - Optimizado para smv_vol
             expiration_dates = get_expiration_dates(ticker)
             iv = get_implied_volatility(ticker) or 0.3  # Fallback inicial
             gamma_exposure = 0
             skew = 0
-            vmi = 0  # Nueva métrica: Volatility Momentum Index
+            vmi = 0
             oi_by_strike = {}
             oi_total = 0
             gamma_wall = 0
@@ -3349,7 +3408,6 @@ def main():
                     oi_total = sum(int(opt.get("open_interest", 0)) for opt in options_data)
                     gamma_exposure = gamma_total * current_price / max(1, oi_total) if oi_total > 0 else 0
                     
-                    # Cálculo corregido de Options Skew y VMI
                     calls_iv_list = [float(opt["greeks"]["smv_vol"]) for opt in options_data 
                                      if opt.get("option_type", "").lower() == "call" and "greeks" in opt and opt["greeks"].get("smv_vol", 0) > 0]
                     puts_iv_list = [float(opt["greeks"]["smv_vol"]) for opt in options_data 
@@ -3358,7 +3416,7 @@ def main():
                     puts_iv = np.mean(puts_iv_list) if puts_iv_list else iv
                     iv = np.mean(calls_iv_list + puts_iv_list) if calls_iv_list or puts_iv_list else iv
                     skew = (calls_iv - puts_iv) / iv if calls_iv_list and puts_iv_list and iv != 0 else 0
-                    vmi = (skew * oi_total / max(1, vol_historical * 100)) if oi_total > 0 else 0  # Volatility Momentum Index
+                    vmi = (skew * oi_total / max(1, vol_historical * 100)) if oi_total > 0 else 0
                     
                     gamma_by_strike = {strike: sum(float(opt.get("greeks", {}).get("gamma", 0)) * int(opt.get("open_interest", 0)) 
                                                   for opt in options_data if float(opt["strike"]) == strike and "greeks" in opt) 
@@ -3464,7 +3522,7 @@ def main():
             col1, col2 = st.columns([2, 1])
 
             with col1:
-                # Heatmap avanzado con Skew y Gamma Wall
+                st.markdown('<div class="section-header">Market </div>', unsafe_allow_html=True)
                 fig_heatmap = go.Figure()
                 price_points = [long_term_lower, mid_term_lower, short_term_lower, safe_zone_lower, current_price, safe_zone_upper, short_term_upper, mid_term_upper, long_term_upper]
                 y_values = [1] * len(price_points)
@@ -3481,20 +3539,20 @@ def main():
                 fig_heatmap.add_annotation(x=current_price, y=1.7, text=f"Now: ${current_price:.2f}", showarrow=False, font=dict(color="white"))
                 fig_heatmap.add_shape(type="line", x0=gamma_wall, y0=0, x1=gamma_wall, y1=2, line=dict(color="purple", width=1, dash="dot"))
                 fig_heatmap.add_annotation(x=gamma_wall, y=1.9, text=f"Gamma Wall: ${gamma_wall:.2f}", showarrow=False, font=dict(color="purple"))
-                fig_heatmap.update_layout(title="EPS Flow", xaxis_title="Price", yaxis=dict(showgrid=False, showticklabels=False, range=[0, 2]), template="plotly_dark", height=300)
+                fig_heatmap.update_layout(title="Order Flow & Liquidity", xaxis_title="Price", yaxis=dict(showgrid=False, showticklabels=False, range=[0, 2]), template="plotly_dark", height=300)
                 st.plotly_chart(fig_heatmap, use_container_width=True)
 
-                # Probability Cone
+                st.markdown('<div class="section-header">Probability Outlook</div>', unsafe_allow_html=True)
                 cone = calculate_probability_cone(current_price, iv, [1, 5, 30])
                 fig_cone = go.Figure()
                 for day in [1, 5, 30]:
                     fig_cone.add_trace(go.Scatter(x=[cone[day]["68_lower"], cone[day]["68_upper"]], y=[day, day], mode="lines", line=dict(color="#FFD700", width=1), name=f"{day}-Day 68%"))
                     fig_cone.add_trace(go.Scatter(x=[cone[day]["95_lower"], cone[day]["95_upper"]], y=[day, day], mode="lines", line=dict(color="#FF4500", width=1, dash="dash"), name=f"{day}-Day 95%"))
                 fig_cone.add_trace(go.Scatter(x=[current_price], y=[0], mode="markers", marker=dict(size=10, color="white"), name="Current Price"))
-                fig_cone.update_layout(title="Probability", xaxis_title="Price Range", yaxis_title="Days Ahead", template="plotly_dark", height=300)
+                fig_cone.update_layout(title="Probability Cone", xaxis_title="Price Range", yaxis_title="Days Ahead", template="plotly_dark", height=300)
                 st.plotly_chart(fig_cone, use_container_width=True)
 
-                # Radar Chart con VMI
+                st.markdown('<div class="section-header">Performance </div>', unsafe_allow_html=True)
                 fig_radar = go.Figure()
                 categories = ["Momentum", "Health", "Valuation", "Risk", "VMI", "Momentum"]
                 scores = [momentum_score/30, health_score/30, valuation_score/20, risk_score/10, abs(vmi)*10, momentum_score/30]
@@ -3526,7 +3584,7 @@ def main():
                         angularaxis=dict(tickfont=dict(color="white"))
                     ),
                     showlegend=True,
-                    title=f"|: {ticker} ({oipi_score:.1f}/100)",
+                    title=f"Performance Radar | {ticker} ({oipi_score:.1f}/100)",
                     template="plotly_dark",
                     height=300,
                     margin=dict(l=50, r=50, t=50, b=50)
@@ -3534,42 +3592,40 @@ def main():
                 st.plotly_chart(fig_radar, use_container_width=True)
 
             with col2:
-                # Dashboard - Mejorado con tooltips
-                st.markdown("#### Dashboard")
+                
                 color_rtes = "#32CD32" if rtes > 60 else "#FFD700" if rtes > 40 else "#FF4500"
-                st.markdown(f"**Real-Time Edge Score:** <span style='color:{color_rtes}'>{rtes:.1f}/100</span> <span title='Overall trading edge based on momentum, liquidity, and sentiment'>ℹ️</span>", unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">Real-Time Edge Score:</span> <span class="metric-value" style="color:{color_rtes}">{rtes:.1f}/100</span> <span class="tooltip">ℹ️<span class="tooltiptext">Overall trading edge based on momentum, liquidity, and sentiment</span></span>', unsafe_allow_html=True)
                 rtes_recommendation = "Strong Buy" if rtes > 80 else "Buy" if rtes > 60 else "Hold" if rtes > 40 else "Sell"
-                st.write(f"**Recommendation:** {rtes_recommendation}")
-                st.write(f"**IFM (Momentum):** {ifm:.2f} <span title='Institutional Flow Momentum: Measures smart money activity'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**LTI (Trap Index):** {lti:.2f} <span title='Liquidity Trap Index: Detects potential MM traps'>ℹ️</span>", unsafe_allow_html=True)
-                st.markdown(f"**EAEM Range:** ${eaem_lower:.2f} - ${eaem_upper:.2f} <span title='Event-Adjusted Expected Move: Price range considering events'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**Gamma Wall:** ${gamma_wall:.2f} <span title='Strike with highest gamma pressure, key support/resistance'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**VMI:** {vmi:.2f} <span title='Volatility Momentum Index: Combines skew and OI for trend strength'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**Sentiment:** {sentiment_score:.2f} <span title='News sentiment (0 bearish, 1 bullish)'>ℹ️</span>", unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">Recommendation:</span> <span class="metric-value">{rtes_recommendation}</span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">IFM (Momentum):</span> <span class="metric-value">{ifm:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Institutional Flow Momentum: Measures smart money activity</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">LTI (Trap Index):</span> <span class="metric-value">{lti:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Liquidity Trap Index: Detects potential MM traps</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">EAEM Range:</span> <span class="metric-value">${eaem_lower:.2f} - ${eaem_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Event-Adjusted Expected Move: Price range considering events</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">Gamma Wall:</span> <span class="metric-value">${gamma_wall:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Strike with highest gamma pressure, key support/resistance</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">VMI:</span> <span class="metric-value">{vmi:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Volatility Momentum Index: Combines skew and OI for trend strength</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">Sentiment:</span> <span class="metric-value">{sentiment_score:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">News sentiment (0 bearish, 1 bullish)</span></span>', unsafe_allow_html=True)
 
-                # Original Scorecard with Short, Medium, Long Term
-                st.markdown("#### ")
+                
                 color_oipi = "#32CD32" if oipi_score > 60 else "#FFD700" if oipi_score > 40 else "#FF4500"
-                st.markdown(f"**OIPI:** <span style='color:{color_oipi}'>{oipi_score:.1f}/100</span> <span title='Overall Potential Index: Long-term value score'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**Recommendation:** {oipi_recommendation}")
+                st.markdown(f'<span class="metric-label">OIPI:</span> <span class="metric-value" style="color:{color_oipi}">{oipi_score:.1f}/100</span> <span class="tooltip">ℹ️<span class="tooltiptext">Overall Potential Index: Long-term value score</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">Recommendation:</span> <span class="metric-value">{oipi_recommendation}</span>', unsafe_allow_html=True)
                 insight = (
                     "Buy Now: Elite opportunity" if oipi_score > 80 else
                     "Accumulate: Strong potential" if oipi_score > 60 else
                     "Hold: Evaluate risks" if oipi_score > 40 else
                     "Sell: Weak outlook"
                 )
-                st.write(f"**Insight:** {insight}")
+                st.markdown(f'<span class="metric-label">Insight:</span> <span class="metric-value">{insight}</span>', unsafe_allow_html=True)
 
-                st.markdown("#### Metrics")
-                st.write(f"**Current Price:** ${current_price:.2f}")
-                st.write(f"**Fair Value:** ${fair_value:.2f} - {fair_value_text} <span title='DCF-based intrinsic value'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**Safe Zone:** ${safe_zone_lower:.2f} - ${safe_zone_upper:.2f} <span title='Range between support and resistance'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**SHORT:** ${short_term_lower:.2f} - ${short_term_upper:.2f} <span title='1-month expected range'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**MEDIUM:** ${mid_term_lower:.2f} - ${mid_term_upper:.2f} <span title='6-month expected range'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**LONG:** ${long_term_lower:.2f} - ${long_term_upper:.2f} <span title='Long-term range adjusted by beta'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**Gamma:** {gamma_exposure:.2f} <span title='Gamma exposure: Sensitivity to price changes'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**Options Skew:** {skew:.2f} <span title='Call vs Put IV difference: Market bias'>ℹ️</span>", unsafe_allow_html=True)
-                st.write(f"**Sharpe Ratio:** {sharpe_ratio:.2f} <span title='Risk-adjusted return'>ℹ️</span>", unsafe_allow_html=True)
+                st.markdown('<div class="section-header"> </div>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">Current Price:</span> <span class="metric-value">${current_price:.2f}</span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">Fair Value:</span> <span class="metric-value">${fair_value:.2f} - {fair_value_text}</span> <span class="tooltip">ℹ️<span class="tooltiptext">DCF-based intrinsic value</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">Safe Zone:</span> <span class="metric-value">${safe_zone_lower:.2f} - ${safe_zone_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Range between support and resistance</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">SHORT:</span> <span class="metric-value">${short_term_lower:.2f} - ${short_term_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">1-month expected range</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">MEDIUM:</span> <span class="metric-value">${mid_term_lower:.2f} - ${mid_term_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">6-month expected range</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">LONG:</span> <span class="metric-value">${long_term_lower:.2f} - ${long_term_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Long-term range adjusted by beta</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">Gamma:</span> <span class="metric-value">{gamma_exposure:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Gamma exposure: Sensitivity to price changes</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">Options Skew:</span> <span class="metric-value">{skew:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Call vs Put IV difference: Market bias</span></span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="metric-label">Sharpe Ratio:</span> <span class="metric-value">{sharpe_ratio:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Risk-adjusted return</span></span>', unsafe_allow_html=True)
 
                 # Data Download
                 data = {
@@ -3587,14 +3643,15 @@ def main():
                 csv = df.to_csv(index=False)
                 st.download_button(label="📥 Download EdgeMaster Data", data=csv, file_name=f"{ticker}_edgemaster.csv", mime="text/csv", key="download_edge")
 
-            
+            st.markdown("---")
+            st.markdown("*Developed by Ozy | Powered by xAI | © 2025*", unsafe_allow_html=True)
 
         except Exception as e:
             st.error(f"Error processing {ticker}: {str(e)}")
             import traceback
             logger.error(f"Tab 11 Pro Dashboard error: {traceback.format_exc()}")
             st.markdown("---")
-            st.markdown("*Developed by Ozy  | © 2025*")
+            st.markdown("*Developed by Ozy | Powered by xAI | © 2025*", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
