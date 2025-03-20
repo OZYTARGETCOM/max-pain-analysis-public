@@ -3595,7 +3595,7 @@ def main():
             import traceback
             logger.error(f"Tab 11 Pro Dashboard error: {traceback.format_exc()}")
             st.markdown("---")
-            st.markdown("*Developed by Ozy | Powered by xAI | © 2025*")
+            st.markdown("*Developed by Ozy | © 2025*")
 
 if __name__ == "__main__":
     main()
