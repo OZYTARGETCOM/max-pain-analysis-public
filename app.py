@@ -3481,7 +3481,7 @@ def main():
                 fig_heatmap.add_annotation(x=current_price, y=1.7, text=f"Now: ${current_price:.2f}", showarrow=False, font=dict(color="white"))
                 fig_heatmap.add_shape(type="line", x0=gamma_wall, y0=0, x1=gamma_wall, y1=2, line=dict(color="purple", width=1, dash="dot"))
                 fig_heatmap.add_annotation(x=gamma_wall, y=1.9, text=f"Gamma Wall: ${gamma_wall:.2f}", showarrow=False, font=dict(color="purple"))
-                fig_heatmap.update_layout(title="Order Flow & Liquidity", xaxis_title="Price", yaxis=dict(showgrid=False, showticklabels=False, range=[0, 2]), template="plotly_dark", height=300)
+                fig_heatmap.update_layout(title="EPS Flow", xaxis_title="Price", yaxis=dict(showgrid=False, showticklabels=False, range=[0, 2]), template="plotly_dark", height=300)
                 st.plotly_chart(fig_heatmap, use_container_width=True)
 
                 # Probability Cone
@@ -3491,7 +3491,7 @@ def main():
                     fig_cone.add_trace(go.Scatter(x=[cone[day]["68_lower"], cone[day]["68_upper"]], y=[day, day], mode="lines", line=dict(color="#FFD700", width=1), name=f"{day}-Day 68%"))
                     fig_cone.add_trace(go.Scatter(x=[cone[day]["95_lower"], cone[day]["95_upper"]], y=[day, day], mode="lines", line=dict(color="#FF4500", width=1, dash="dash"), name=f"{day}-Day 95%"))
                 fig_cone.add_trace(go.Scatter(x=[current_price], y=[0], mode="markers", marker=dict(size=10, color="white"), name="Current Price"))
-                fig_cone.update_layout(title="Probability Cone", xaxis_title="Price Range", yaxis_title="Days Ahead", template="plotly_dark", height=300)
+                fig_cone.update_layout(title="Probability", xaxis_title="Price Range", yaxis_title="Days Ahead", template="plotly_dark", height=300)
                 st.plotly_chart(fig_cone, use_container_width=True)
 
                 # Radar Chart con VMI
@@ -3588,14 +3588,13 @@ def main():
                 st.download_button(label="📥 Download EdgeMaster Data", data=csv, file_name=f"{ticker}_edgemaster.csv", mime="text/csv", key="download_edge")
 
             
-            
 
         except Exception as e:
             st.error(f"Error processing {ticker}: {str(e)}")
             import traceback
             logger.error(f"Tab 11 Pro Dashboard error: {traceback.format_exc()}")
             st.markdown("---")
-            st.markdown("*Developed by Ozy | © 2025*")
+            st.markdown("*Developed by Ozy  | © 2025*")
 
 if __name__ == "__main__":
     main()
