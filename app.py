@@ -2115,12 +2115,13 @@ def calculate_probability_cone(current_price: float, iv: float, days: List[int])
 
 # --- Main App --
 # --- Main App ---
+# --- Main App ---
 def main():
     # Logo y título principal después de autenticación
     col1, col2 = st.columns([4, 1])
     with col1:
         st.markdown("""
-          ℙℝ𝕆 𝔼𝕊ℂ𝔸ℕℕ𝔼ℝ|®
+            ℙℝ𝕆 𝔼𝕊ℂ𝔸ℕℕ𝔼ℝ|®
         """, unsafe_allow_html=True)
     with col2:
         logo_path = "assets/favicon.png"  # Intenta en assets primero
@@ -2130,8 +2131,8 @@ def main():
             st.image(logo_path, width=45)
         else:
             st.warning("favicon.png' was not found. Please place the file in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
-    
-    # Estilos personalizado
+
+    # Estilos personalizados
     st.markdown("""
         <style>
         .stApp {background-color: #1E1E1E;}
@@ -2142,8 +2143,8 @@ def main():
 
     # Resto de los tabs (Tab 11 integrado correctamente)
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
-        "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |", 
-        "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |", 
+        "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |",
+        "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |",
         "Earnings Calendar |", "Psychological Edge |", "Projection |"
     ])
 
@@ -2235,54 +2236,257 @@ def main():
             st.markdown("*Developed by Ozy | © 2025*")
 
     with tab2:
-        st.subheader("Market Scanner")
-        scan_type = st.selectbox("Select Scan Type", ["Bullish (Upward Momentum)", "Bearish (Downward Momentum)", "Breakouts", "Unusual Volume"])
-        max_results = st.slider("Max Stocks to Display", 1, 200, 30)
-        
-        if st.button("🚀 Start Batch Scan"):
-            with st.spinner("Scanning market..."):
-                stock_list = get_stock_list_combined()
-                if not stock_list:
-                    st.error("No se pudo obtener la lista de acciones.")
-                    return
+        st.subheader("")
 
-                num_workers = min(50, max(10, len(stock_list) // 5))
-                results = []
-                
-                with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                    futures = [executor.submit(scan_stock, symbol, scan_type) for symbol in stock_list]
-                    for future in futures:
-                        result = future.result()
-                        if result:
-                            results.append(result)
-                
-                if results:
-                    df_results = pd.DataFrame(results[:max_results])
-                    styled_df = df_results.style.background_gradient(cmap="Blues").set_properties(**{"text-align": "center"})
+        # Mensaje inicial
+        st.write("")
+
+        # Botón de refresco
+        if st.button("🔄 Run Scan", key="run_scan_tab2"):
+            with st.spinner("Scanning Market..."):
+                # Función auxiliar para obtener datos de API
+                def fetch_api_data(url, params, headers, source):
+                    try:
+                        response = requests.get(url, params=params, headers=headers, timeout=5)
+                        response.raise_for_status()
+                        return response.json()
+                    except Exception as e:
+                        logger.error(f"Error fetching {source} data: {e}")
+                        return []
+
+                # Obtener acciones del "metaverso financiero"
+                @st.cache_data(ttl=3600)
+                def get_metaverse_stocks():
+                    url = "https://financialmodelingprep.com/api/v3/stock_market/actives"
+                    params = {"apikey": FMP_API_KEY}
+                    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Actives")
+                    if data and isinstance(data, list):
+                        st.write(f"Retrieved {len(data)} stocks from FMP API.")  # Depuración
+                        return [stock["symbol"] for stock in data[:50]]
+                    st.warning("Failed to retrieve stocks from FMP API. Using fallback list.")
+                    return ["NVDA", "TSLA", "AAPL", "AMD", "PLTR", "META", "RBLX", "U", "COIN", "HOOD"]
+
+                # Calcular Momentum Adaptativo
+                def calculate_momentum(prices, vol_historical):
+                    if len(prices) < 10:
+                        return 0
+                    short_ema = pd.Series(prices).ewm(span=max(3, int(5 / (vol_historical + 0.1))), adjust=False).mean().iloc[-1]
+                    long_ema = pd.Series(prices).ewm(span=max(8, int(12 / (vol_historical + 0.1))), adjust=False).mean().iloc[-1]
+                    return (short_ema - long_ema) / long_ema if long_ema > 0 else 0
+
+                # Calcular RSI
+                def calculate_rsi(prices, period=14):
+                    if len(prices) < period + 1:
+                        return 50.0
+                    deltas = np.diff(prices)
+                    gain = np.where(deltas > 0, deltas, 0)
+                    loss = np.where(deltas < 0, -deltas, 0)
+                    avg_gain = np.mean(gain[-period:]) if len(gain) >= period else 0
+                    avg_loss = np.mean(loss[-period:]) if len(loss) >= period else 0
+                    rs = avg_gain / avg_loss if avg_loss > 0 else float('inf')
+                    return 100 - (100 / (1 + rs))
+
+                # Escaneo manual
+                stocks_to_scan = get_metaverse_stocks()
+                st.write(f"Scanning {len(stocks_to_scan)} stocks: {stocks_to_scan[:25]}...")  # Depuración
+                motion_data = []
+                alerts = []
+                failed_stocks = []
+
+                for stock in stocks_to_scan:
+                    try:
+                        # Precio actual
+                        current_price = get_current_price(stock)
+                        if not current_price or current_price <= 0:
+                            st.write(f"{stock}: No valid current price, using fallback $1.0")  # Depuración
+                            current_price = 1.0
+
+                        # Datos históricos
+                        prices, volumes = get_historical_prices_combined(stock, limit=30)
+                        if not prices or len(prices) < 5:
+                            st.write(f"{stock}: Insufficient historical data, using fallback.")  # Depuración
+                            prices = [current_price] * 10
+                            volumes = [1000000] * 10
+
+                        # Volatilidad histórica
+                        returns = np.diff(prices) / prices[:-1]
+                        vol_historical = np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.1
+
+                        # Opciones: Gamma Weighted Exposure y Dynamic IV Skew
+                        exp_dates = get_expiration_dates(stock)
+                        iv, gwe, skew_dynamic = vol_historical, 0, 0
+                        strikes_near_price = []
+                        support_level, resistance_level = current_price * 0.95, current_price * 1.05
+                        if exp_dates:
+                            options_data = get_options_data(stock, exp_dates[0])
+                            if options_data:
+                                iv_calls = np.mean([float(opt["greeks"].get("smv_vol", 0)) for opt in options_data if opt.get("option_type", "").lower() == "call" and "greeks" in opt]) or vol_historical
+                                iv_puts = np.mean([float(opt["greeks"].get("smv_vol", 0)) for opt in options_data if opt.get("option_type", "").lower() == "put" and "greeks" in opt]) or vol_historical
+                                iv = np.mean([iv_calls, iv_puts])
+                                oi_calls = sum(int(opt.get("open_interest", 0)) for opt in options_data if opt.get("option_type", "").lower() == "call")
+                                oi_puts = sum(int(opt.get("open_interest", 0)) for opt in options_data if opt.get("option_type", "").lower() == "put")
+                                skew_dynamic = (iv_calls - iv_puts) * (oi_calls / (oi_puts + 1)) / iv if iv > 0 else 0
+                                strikes = [float(opt["strike"]) for opt in options_data]
+                                strikes_near_price = [s for s in strikes if abs(s - current_price) < current_price * 0.1]
+                                gwe = sum(float(opt["greeks"].get("gamma", 0)) * int(opt.get("open_interest", 0)) / (abs(float(opt["strike"]) - current_price) + 0.01) 
+                                         for opt in options_data if "greeks" in opt and float(opt["strike"]) in strikes_near_price)
+                                gwe *= current_price / 1000 if gwe != 0 else 0
+                                support_level = min(strikes, default=current_price * 0.95)
+                                resistance_level = max(strikes, default=current_price * 1.05)
+                            else:
+                                st.write(f"{stock}: No options data available, using defaults.")  # Depuración
+                        else:
+                            st.write(f"{stock}: No expiration dates found, skipping options data.")  # Depuración
+
+                        # Liquidity Momentum Index (LMI)
+                        volume_avg = np.mean(volumes[:-5]) if len(volumes) > 5 else 1
+                        volume_spike = max(volumes[-5:]) / volume_avg if volume_avg > 0 else 1.0
+                        oi_total = sum(int(opt.get("open_interest", 0)) for opt in options_data) if exp_dates and options_data else 0
+                        lmi = volume_spike * (1 + oi_total / (1000000 * vol_historical + 1)) * (1 / (vol_historical + 0.1))
+
+                        # Momentum técnico
+                        momentum = calculate_momentum(prices, vol_historical)
+                        rsi = calculate_rsi(prices)
+
+                        # Catalizadores críticos
+                        catalyst_score = 0
+                        try:
+                            url = f"https://financialmodelingprep.com/api/v3/earning_calendar"
+                            params = {"apikey": FMP_API_KEY, "from": datetime.now().strftime('%Y-%m-%d'), "to": (datetime.now() + timedelta(days=5)).strftime('%Y-%m-%d')}
+                            earnings_data = fetch_api_data(url, params, HEADERS_FMP, "FMP Earnings")
+                            if earnings_data and any(e.get("symbol") == stock for e in earnings_data):
+                                catalyst_score += 40 if iv > vol_historical * 1.5 else 25
+                            url_macro = f"https://financialmodelingprep.com/api/v3/economic-calendar"
+                            macro_data = fetch_api_data(url_macro, {"apikey": FMP_API_KEY, "from": datetime.now().strftime('%Y-%m-%d'), "to": (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')}, HEADERS_FMP, "FMP Macro")
+                            if macro_data and len(macro_data) > 0:
+                                catalyst_score += 30 if any(e.get("impact", "Low") in ["High", "Medium"] for e in macro_data) else 15
+                        except:
+                            st.write(f"{stock}: Failed to fetch catalyst data, using default.")  # Depuración
+
+                        # Definir iv_hv_ratio antes de usarlo
+                        iv_hv_ratio = iv / vol_historical if vol_historical > 0 else 1.0
+
+                        # Modelo predictivo simulado: Ajuste dinámico de pesos
+                        iv_weight = 40 + (iv_hv_ratio - 1) * 10 if iv_hv_ratio > 1 else 40
+                        gwe_weight = 35 + abs(gwe) * 5 if abs(gwe) > 0.5 else 35
+                        lmi_weight = 25 + (lmi - 1) * 5 if lmi > 1 else 25
+                        skew_weight = 20 + abs(skew_dynamic) * 10 if abs(skew_dynamic) > 0.2 else 20
+                        momentum_weight = 15 + abs(momentum) * 5 if abs(momentum) > 0.1 else 15
+
+                        # Future Motion Score (FMS)
+                        fms = (
+                            iv_hv_ratio * iv_weight +
+                            abs(gwe) * gwe_weight +
+                            lmi * lmi_weight +
+                            abs(skew_dynamic) * skew_weight +
+                            abs(momentum) * momentum_weight +
+                            catalyst_score
+                        )
+
+                        # Dirección predictiva
+                        direction_score = (gwe * 0.5) + (skew_dynamic * 0.3) + (momentum * 0.2)
+                        if direction_score > 0.7 and (rsi < 35 or lmi > 2.5):
+                            direction = "Up"
+                        elif direction_score < -0.7 and (rsi > 65 or lmi > 2.5):
+                            direction = "Down"
+                        else:
+                            direction = "Neutral"
+
+                        # Confidence Factor (GCF)
+                        signal_strength = min(1.0, abs(direction_score) / 2.0) * 50
+                        catalyst_boost = catalyst_score * 1.5
+                        agreement = 30 if (gwe * skew_dynamic > 0 and gwe * momentum > 0) else 15
+                        liquidity_boost = 20 if lmi > 2.0 and abs(rsi - 50) < 20 else 0
+                        gcf = min(100, signal_strength + catalyst_boost + agreement + liquidity_boost)
+
+                        # Alerta específica
+                        if gcf > 95 and fms > 150:
+                            alerts.append(f"⚠️ HIGH CONFIDENCE ALERT: {stock} | FMS: {fms:.1f} | Direction: {direction} | GCF: {gcf:.1f}%")
+
+                        motion_data.append({
+                            "Ticker": stock,
+                            "Price": current_price,
+                            "IV/HV": iv_hv_ratio,
+                            "GWE": gwe,
+                            "Skew": skew_dynamic,
+                            "LMI": lmi,
+                            "Momentum": momentum,
+                            "RSI": rsi,
+                            "FMS": fms,
+                            "Direction": direction,
+                            "GCF": gcf,
+                            "Catalyst": catalyst_score > 0,
+                            "Support": support_level,
+                            "Resistance": resistance_level
+                        })
+                    except Exception as e:
+                        logger.error(f"Error scanning {stock}: {str(e)}")
+                        failed_stocks.append((stock, str(e)))
+                        continue
+
+                if motion_data:
+                    df_motion = pd.DataFrame(motion_data).sort_values("FMS", ascending=False)[:20]
+                    styled_df = df_motion.style.format({
+                        "Price": "${:.2f}",
+                        "IV/HV": "{:.2f}",
+                        "GWE": "{:.2f}",
+                        "Skew": "{:.2f}",
+                        "LMI": "{:.2f}",
+                        "Momentum": "{:.2f}",
+                        "RSI": "{:.1f}",
+                        "FMS": "{:.1f}",
+                        "GCF": "{:.1f}",
+                        "Support": "${:.2f}",
+                        "Resistance": "${:.2f}"
+                    }).background_gradient(cmap="Purples", subset=["FMS"]).background_gradient(cmap="Greens", subset=["GCF"])
                     st.dataframe(styled_df, use_container_width=True)
-                    
-                    if "Volume" in df_results.columns:
-                        fig = go.Figure()
-                        for _, row in df_results.iterrows():
-                            color = "green" if row.get("Breakout Type") == "Up" else "red" if row.get("Breakout Type") == "Down" else "blue"
-                            fig.add_trace(go.Bar(x=[row["Symbol"]], y=[row["Volume"]], marker_color=color,
-                                                hovertext=f"Symbol: {row['Symbol']}<br>Volume: {row['Volume']:,}<br>Breakout: {row.get('Breakout Type', 'N/A')}<br>Change: {row.get('Possible Change (%)', 'N/A')}%"))
-                        fig.update_layout(title="📊 Volume Distribution", xaxis_title="Stock Symbol", yaxis_title="Volume", template="plotly_dark")
-                        st.plotly_chart(fig, use_container_width=True)
-                    
+
+                    # Alertas
+                    if alerts:
+                        st.warning("\n".join(alerts))
+
+                    top_pick = df_motion.iloc[0]
+                    st.success(f"Top: {top_pick['Ticker']} | FMS: {top_pick['FMS']:.1f} | Direction: {top_pick['Direction']} | GCF: {top_pick['GCF']:.1f}%")
+
+                    # Gráfico con niveles clave
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(x=df_motion["Ticker"], y=df_motion["FMS"], name="Future Motion Score", marker_color="purple"))
+                    fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["GCF"], name="Confidence", mode="lines+markers", yaxis="y2", line=dict(color="lime")))
+                    fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["Support"], name="Support", mode="lines", line=dict(color="cyan", dash="dash")))
+                    fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["Resistance"], name="Resistance", mode="lines", line=dict(color="red", dash="dash")))
+                    fig.update_layout(
+                        
+                        xaxis_title="Ticker",
+                        yaxis_title="Future Motion Score (FMS)",
+                        yaxis2=dict(title="Confidence Factor (GCF %)", overlaying="y", side="right", range=[0, 100]),
+                        template="plotly_dark",
+                        plot_bgcolor="#1E1E1E",
+                        paper_bgcolor="#1E1E1E",
+                        font=dict(color="#FFFFFF", size=14),
+                        legend=dict(yanchor="top", y=1.1, xanchor="right", x=1),
+                        height=600
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
                     # Descarga CSV
-                    csv = pd.DataFrame(results).to_csv(index=False)
+                    csv_motion = df_motion.to_csv(index=False)
                     st.download_button(
-                        label="📥 Download Market Scan Data",
-                        data=csv,
-                        file_name=f"market_scan_{scan_type.replace(' ', '_').lower()}.csv",
+                        label="📥 Download Predictions",
+                        data=csv_motion,
+                        file_name="precision_predictor_pro.csv",
                         mime="text/csv",
-                        key="download_tab2"
+                        key="download_scan_tab2"
                     )
                 else:
-                    st.warning("No stocks match the criteria.")
-                    st.markdown("---")
-                    st.markdown("*Developed by Ozy | © 2025*")
+                    st.error("No stocks with sufficient data found.")
+                    if failed_stocks:
+                        st.write("Failed stocks and reasons:")
+                        for stock, reason in failed_stocks[:11]:  # Mostrar hasta 5 para no saturar
+                            st.write(f"- {stock}: {reason}")
+                    st.write("Stocks attempted:", stocks_to_scan[:25])
+                    st.write("Check API connectivity (FMP, Tradier, etc.), API keys, or try again later.")
+
+                st.markdown(f"*Last Scan: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Powered by Ozy*")
 
     with tab3:
         st.subheader("News Scanner")
@@ -2441,10 +2645,10 @@ def main():
                         total_call_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "call" and row["strike"] > current_price)
                         total_put_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "put" and row["strike"] < current_price)
                         total_oi = total_call_oi + total_put_oi
-                        gamma_calls = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0 
-                                        for row in option_data_list if row["option_type"] == "call" and "greeks" in row)
-                        gamma_puts = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0 
-                                        for row in option_data_list if row["option_type"] == "put" and "greeks" in row)
+                        gamma_calls = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0
+                                          for row in option_data_list if row["option_type"] == "call" and "greeks" in row)
+                        gamma_puts = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0
+                                         for row in option_data_list if row["option_type"] == "put" and "greeks" in row)
                         net_gamma = gamma_calls - gamma_puts
                         max_pain_factor = -2 if current_price > max_pain else 2 if current_price < max_pain else 0
                         oi_pressure = (total_call_oi - total_put_oi) / max(total_oi, 1)
