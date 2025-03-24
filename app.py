@@ -2116,6 +2116,7 @@ def calculate_probability_cone(current_price: float, iv: float, days: List[int])
 # --- Main App --
 # --- Main App ---
 # --- Main App ---
+# --- Main App ---
 def main():
     # Logo y título principal después de autenticación
     col1, col2 = st.columns([4, 1])
@@ -2132,22 +2133,51 @@ def main():
         else:
             st.warning("favicon.png' was not found. Please place the file in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
 
-    # Estilos personalizados
+    # Estilos personalizados con tabs ultra compactos en dos líneas (11 arriba, 1 abajo)
     st.markdown("""
         <style>
         .stApp {background-color: #1E1E1E;}
         .stTextInput, .stSelectbox {background-color: #2D2D2D; color: #FFFFFF;}
         .stSpinner > div > div {border-color: #32CD32 !important;}
+        /* Estilo para los tabs */
+        .stTabs [data-baseweb="tab-list"] {
+            display: flex;
+            flex-wrap: wrap;  /* Permitir dos líneas */
+            background-color: #1E1E1E;
+            padding: 2px 0;  /* Padding mínimo */
+            gap: 1px;  /* Espacio ultra mínimo entre tabs */
+            max-width: 100%;  /* Asegurar que use el ancho disponible */
+        }
+        .stTabs [data-baseweb="tab"] {
+            padding: 3px 6px;  /* Padding ultra compacto */
+            margin: 1px 1px;  /* Margen ultra mínimo */
+            color: #FFFFFF;
+            background-color: #2D2D2D;
+            border-radius: 3px 3px 0 0;  /* Bordes más pequeños */
+            font-size: 9px;  /* Fuente ultra pequeña */
+            text-align: center;
+            /* Sin min-width, tamaño natural ultra compacto */
+        }
+        .stTabs [data-baseweb="tab"]:hover {
+            background-color: #32CD32;
+            color: #1E1E1E;
+        }
+        .stTabs [data-baseweb="tab"][aria-selected="true"] {
+            background-color: #32CD32;
+            color: #1E1E1E;
+            font-weight: bold;
+        }
         </style>
     """, unsafe_allow_html=True)
 
-    # Resto de los tabs (Tab 11 integrado correctamente)
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
+    # Definición de los tabs (Tab 12 integrado correctamente)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
         "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |",
         "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |",
-        "Earnings Calendar |", "Psychological Edge |", "Projection |"
+        "Earnings Calendar |", "Psychological Edge |", "Projection |", "Performance Map |"
     ])
 
+    # Tab 1: Gummy Data Bubbles®
     with tab1:
         ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
         expiration_dates = get_expiration_dates(ticker)
@@ -2235,16 +2265,12 @@ def main():
             st.markdown("---")
             st.markdown("*Developed by Ozy | © 2025*")
 
+    # Tab 2: Market Scanner
     with tab2:
         st.subheader("")
-
-        # Mensaje inicial
         st.write("")
-
-        # Botón de refresco
         if st.button("🔄 Run Scan", key="run_scan_tab2"):
             with st.spinner("Scanning Market..."):
-                # Función auxiliar para obtener datos de API
                 def fetch_api_data(url, params, headers, source):
                     try:
                         response = requests.get(url, params=params, headers=headers, timeout=5)
@@ -2254,19 +2280,17 @@ def main():
                         logger.error(f"Error fetching {source} data: {e}")
                         return []
 
-                # Obtener acciones del "metaverso financiero"
                 @st.cache_data(ttl=3600)
                 def get_metaverse_stocks():
                     url = "https://financialmodelingprep.com/api/v3/stock_market/actives"
                     params = {"apikey": FMP_API_KEY}
                     data = fetch_api_data(url, params, HEADERS_FMP, "FMP Actives")
                     if data and isinstance(data, list):
-                        st.write(f"Retrieved {len(data)} stocks from FMP API.")  # Depuración
+                        st.write(f"Retrieved {len(data)} stocks from FMP API.")
                         return [stock["symbol"] for stock in data[:50]]
                     st.warning("Failed to retrieve stocks from FMP API. Using fallback list.")
                     return ["NVDA", "TSLA", "AAPL", "AMD", "PLTR", "META", "RBLX", "U", "COIN", "HOOD"]
 
-                # Calcular Momentum Adaptativo
                 def calculate_momentum(prices, vol_historical):
                     if len(prices) < 10:
                         return 0
@@ -2274,7 +2298,6 @@ def main():
                     long_ema = pd.Series(prices).ewm(span=max(8, int(12 / (vol_historical + 0.1))), adjust=False).mean().iloc[-1]
                     return (short_ema - long_ema) / long_ema if long_ema > 0 else 0
 
-                # Calcular RSI
                 def calculate_rsi(prices, period=14):
                     if len(prices) < period + 1:
                         return 50.0
@@ -2286,33 +2309,28 @@ def main():
                     rs = avg_gain / avg_loss if avg_loss > 0 else float('inf')
                     return 100 - (100 / (1 + rs))
 
-                # Escaneo manual
                 stocks_to_scan = get_metaverse_stocks()
-                st.write(f"Scanning {len(stocks_to_scan)} stocks: {stocks_to_scan[:25]}...")  # Depuración
+                st.write(f"Scanning {len(stocks_to_scan)} stocks: {stocks_to_scan[:25]}...")
                 motion_data = []
                 alerts = []
                 failed_stocks = []
 
                 for stock in stocks_to_scan:
                     try:
-                        # Precio actual
                         current_price = get_current_price(stock)
                         if not current_price or current_price <= 0:
-                            st.write(f"{stock}: No valid current price, using fallback $1.0")  # Depuración
+                            st.write(f"{stock}: No valid current price, using fallback $1.0")
                             current_price = 1.0
 
-                        # Datos históricos
                         prices, volumes = get_historical_prices_combined(stock, limit=30)
                         if not prices or len(prices) < 5:
-                            st.write(f"{stock}: Insufficient historical data, using fallback.")  # Depuración
+                            st.write(f"{stock}: Insufficient historical data, using fallback.")
                             prices = [current_price] * 10
                             volumes = [1000000] * 10
 
-                        # Volatilidad histórica
                         returns = np.diff(prices) / prices[:-1]
                         vol_historical = np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.1
 
-                        # Opciones: Gamma Weighted Exposure y Dynamic IV Skew
                         exp_dates = get_expiration_dates(stock)
                         iv, gwe, skew_dynamic = vol_historical, 0, 0
                         strikes_near_price = []
@@ -2334,21 +2352,18 @@ def main():
                                 support_level = min(strikes, default=current_price * 0.95)
                                 resistance_level = max(strikes, default=current_price * 1.05)
                             else:
-                                st.write(f"{stock}: No options data available, using defaults.")  # Depuración
+                                st.write(f"{stock}: No options data available, using defaults.")
                         else:
-                            st.write(f"{stock}: No expiration dates found, skipping options data.")  # Depuración
+                            st.write(f"{stock}: No expiration dates found, skipping options data.")
 
-                        # Liquidity Momentum Index (LMI)
                         volume_avg = np.mean(volumes[:-5]) if len(volumes) > 5 else 1
                         volume_spike = max(volumes[-5:]) / volume_avg if volume_avg > 0 else 1.0
                         oi_total = sum(int(opt.get("open_interest", 0)) for opt in options_data) if exp_dates and options_data else 0
                         lmi = volume_spike * (1 + oi_total / (1000000 * vol_historical + 1)) * (1 / (vol_historical + 0.1))
 
-                        # Momentum técnico
                         momentum = calculate_momentum(prices, vol_historical)
                         rsi = calculate_rsi(prices)
 
-                        # Catalizadores críticos
                         catalyst_score = 0
                         try:
                             url = f"https://financialmodelingprep.com/api/v3/earning_calendar"
@@ -2361,19 +2376,15 @@ def main():
                             if macro_data and len(macro_data) > 0:
                                 catalyst_score += 30 if any(e.get("impact", "Low") in ["High", "Medium"] for e in macro_data) else 15
                         except:
-                            st.write(f"{stock}: Failed to fetch catalyst data, using default.")  # Depuración
+                            st.write(f"{stock}: Failed to fetch catalyst data, using default.")
 
-                        # Definir iv_hv_ratio antes de usarlo
                         iv_hv_ratio = iv / vol_historical if vol_historical > 0 else 1.0
-
-                        # Modelo predictivo simulado: Ajuste dinámico de pesos
                         iv_weight = 40 + (iv_hv_ratio - 1) * 10 if iv_hv_ratio > 1 else 40
                         gwe_weight = 35 + abs(gwe) * 5 if abs(gwe) > 0.5 else 35
                         lmi_weight = 25 + (lmi - 1) * 5 if lmi > 1 else 25
                         skew_weight = 20 + abs(skew_dynamic) * 10 if abs(skew_dynamic) > 0.2 else 20
                         momentum_weight = 15 + abs(momentum) * 5 if abs(momentum) > 0.1 else 15
 
-                        # Future Motion Score (FMS)
                         fms = (
                             iv_hv_ratio * iv_weight +
                             abs(gwe) * gwe_weight +
@@ -2383,7 +2394,6 @@ def main():
                             catalyst_score
                         )
 
-                        # Dirección predictiva
                         direction_score = (gwe * 0.5) + (skew_dynamic * 0.3) + (momentum * 0.2)
                         if direction_score > 0.7 and (rsi < 35 or lmi > 2.5):
                             direction = "Up"
@@ -2392,14 +2402,12 @@ def main():
                         else:
                             direction = "Neutral"
 
-                        # Confidence Factor (GCF)
                         signal_strength = min(1.0, abs(direction_score) / 2.0) * 50
                         catalyst_boost = catalyst_score * 1.5
                         agreement = 30 if (gwe * skew_dynamic > 0 and gwe * momentum > 0) else 15
                         liquidity_boost = 20 if lmi > 2.0 and abs(rsi - 50) < 20 else 0
                         gcf = min(100, signal_strength + catalyst_boost + agreement + liquidity_boost)
 
-                        # Alerta específica
                         if gcf > 95 and fms > 150:
                             alerts.append(f"⚠️ HIGH CONFIDENCE ALERT: {stock} | FMS: {fms:.1f} | Direction: {direction} | GCF: {gcf:.1f}%")
 
@@ -2441,21 +2449,18 @@ def main():
                     }).background_gradient(cmap="Purples", subset=["FMS"]).background_gradient(cmap="Greens", subset=["GCF"])
                     st.dataframe(styled_df, use_container_width=True)
 
-                    # Alertas
                     if alerts:
                         st.warning("\n".join(alerts))
 
                     top_pick = df_motion.iloc[0]
                     st.success(f"Top: {top_pick['Ticker']} | FMS: {top_pick['FMS']:.1f} | Direction: {top_pick['Direction']} | GCF: {top_pick['GCF']:.1f}%")
 
-                    # Gráfico con niveles clave
                     fig = go.Figure()
                     fig.add_trace(go.Bar(x=df_motion["Ticker"], y=df_motion["FMS"], name="Future Motion Score", marker_color="purple"))
                     fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["GCF"], name="Confidence", mode="lines+markers", yaxis="y2", line=dict(color="lime")))
                     fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["Support"], name="Support", mode="lines", line=dict(color="cyan", dash="dash")))
                     fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["Resistance"], name="Resistance", mode="lines", line=dict(color="red", dash="dash")))
                     fig.update_layout(
-                        
                         xaxis_title="Ticker",
                         yaxis_title="Future Motion Score (FMS)",
                         yaxis2=dict(title="Confidence Factor (GCF %)", overlaying="y", side="right", range=[0, 100]),
@@ -2468,7 +2473,6 @@ def main():
                     )
                     st.plotly_chart(fig, use_container_width=True)
 
-                    # Descarga CSV
                     csv_motion = df_motion.to_csv(index=False)
                     st.download_button(
                         label="📥 Download Predictions",
@@ -2481,13 +2485,14 @@ def main():
                     st.error("No stocks with sufficient data found.")
                     if failed_stocks:
                         st.write("Failed stocks and reasons:")
-                        for stock, reason in failed_stocks[:11]:  # Mostrar hasta 5 para no saturar
+                        for stock, reason in failed_stocks[:11]:
                             st.write(f"- {stock}: {reason}")
                     st.write("Stocks attempted:", stocks_to_scan[:25])
                     st.write("Check API connectivity (FMP, Tradier, etc.), API keys, or try again later.")
 
                 st.markdown(f"*Last Scan: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Powered by Ozy*")
 
+    # Tab 3: News
     with tab3:
         st.subheader("News Scanner")
         keywords = st.text_input("Enter keywords (comma-separated):", "Trump").split(",")
@@ -2508,6 +2513,7 @@ def main():
                     st.markdown("---")
                     st.markdown("*Developed by Ozy | © 2025*")
 
+    # Tab 4: Institutional Holders
     with tab4:
         st.subheader("Institutional Holders")
         ticker = st.text_input("Ticker for Holders (e.g., AAPL):", "AAPL", key="holders_ticker").upper()
@@ -2526,7 +2532,6 @@ def main():
                     'Value': '${:,.0f}' if 'Value' in holders.columns else None
                 })
                 st.dataframe(styled_holders, use_container_width=True)
-                # Descarga CSV
                 holders_csv = holders.to_csv(index=False)
                 st.download_button(
                     label="📥 Download Holders Data",
@@ -2540,6 +2545,7 @@ def main():
                 st.markdown("---")
                 st.markdown("*Developed by Ozy | © 2025*")
 
+    # Tab 5: Options Order Flow
     with tab5:
         st.subheader("Order Flow")
         stock = st.text_input("Enter Stock Ticker (e.g., AAPL, MSFT):", value="SPY", key="stock_analysis").upper()
@@ -2733,7 +2739,6 @@ def main():
                         )
 
                         st.plotly_chart(fig, use_container_width=True, height=600)
-                        # Descarga CSV
                         order_flow_df = pd.DataFrame({
                             "Strike": all_strikes,
                             "Buy_Call_OI": buy_calls_data["open_interest"],
@@ -2757,6 +2762,7 @@ def main():
                         st.markdown("---")
                         st.markdown("*Developed by Ozy | © 2025*")
 
+    # Tab 6: Analyst Rating Flow
     with tab6:
         st.subheader("Rating Flow")
         col1, col2 = st.columns([1, 3])
@@ -2830,7 +2836,6 @@ def main():
                         'Open Int.': '{:,.0f}'
                     })
                     st.dataframe(styled_df, height=400)
-                    # Descarga CSV
                     csv = df.to_csv(index=False)
                     st.download_button(
                         label="📥 Download Rating Flow Data",
@@ -2842,8 +2847,9 @@ def main():
                 else:
                     st.error(f"No alerts generated with Open Interest ≥ {selected_volume}, Gamma ≥ {selected_gamma}. Check logs.")
                     st.markdown("---")
-                    st.markdown("*Developed by Ozy | © 2025*")  
+                    st.markdown("*Developed by Ozy | © 2025*")
 
+    # Tab 7: Elliott Pulse
     with tab7:
         st.subheader("Elliott Pulse")
         ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="elliott_ticker").upper()
@@ -2994,7 +3000,6 @@ def main():
                 yaxis=dict(gridcolor="rgba(255,255,255,0.1)")
             )
             st.plotly_chart(fig, config={'staticPlot': False, 'displayModeBar': True}, use_container_width=True)
-            # Descarga CSV
             elliott_df = pd.DataFrame({
                 "Strike": strikes,
                 "CALL_Gamma": call_gamma,
@@ -3016,16 +3021,13 @@ def main():
             st.markdown("---")
             st.markdown("*Developed by Ozy | © 2025*")
 
+    # Tab 8: Crypto Insights
     with tab8:
         st.subheader("Crypto Insights")
-        
         ticker = st.text_input("Enter Crypto Ticker (e.g., BTC, ETH, XRP):", value="BTC", key="crypto_ticker_tab8").upper()
         selected_pair = f"{ticker}/USD"
-        
         refresh_button = st.button("Refresh Orders", key="refresh_tab8")
-        
         placeholder = st.empty()
-        
         if refresh_button or "tab8_initialized" not in st.session_state:
             with st.spinner(f"Fetching data for {selected_pair}..."):
                 try:
@@ -3043,11 +3045,8 @@ def main():
                                 st.write(f"**Change (24h)**: {market_data['change_value']:,.2f} ({market_data['change_percent']:.2f}%)")
                                 st.write(f"**Volume (24h)**: {market_data['volume']:,.0f}")
                                 st.write(f"**Market Cap**: ${market_data['market_cap']:,.0f}")
-                                
                                 fig, order_metrics = plot_order_book_bubbles_with_max_pain(bids, asks, current_price, ticker, market_data['volatility'])
                                 st.plotly_chart(fig, use_container_width=True, key=f"plotly_chart_tab8_{ticker}_{int(time.time())}")
-                                
-                               
                                 pressure_color = "#32CD32" if order_metrics['net_pressure'] > 0 else "#FF4500" if order_metrics['net_pressure'] < 0 else "#FFFFFF"
                                 st.write(f"**Net Pressure**: <span style='color:{pressure_color}'>{order_metrics['net_pressure']:,.0f}</span> ({order_metrics['trend']})", unsafe_allow_html=True)
                                 st.write(f"**Volatility (Annualized)**: {order_metrics['volatility']:.2f}%")
@@ -3056,26 +3055,23 @@ def main():
                                 st.write("**Whale Accumulation Zones**: " + ", ".join([f"${zone:.2f}" for zone in order_metrics['whale_zones']]))
                                 edge_color = "#32CD32" if order_metrics['edge_score'] > 50 else "#FF4500" if order_metrics['edge_score'] < 30 else "#FFD700"
                                 st.write(f"**Trader's Edge Score**: <span style='color:{edge_color}'>{order_metrics['edge_score']:.1f}</span> (0-100)", unsafe_allow_html=True)
-                            
                             st.session_state["tab8_initialized"] = True
                 except Exception as e:
                     st.error(f"Error processing data for {selected_pair}: {str(e)}")
                     logger.error(f"Error in Tab 8: {str(e)}")
-
                     st.markdown("---")
                     st.markdown("*Developed by Ozy | © 2025*")
 
+    # Tab 9: Earnings Calendar
     with tab9:
-        # Rango dinámico: desde hoy hasta el final de la próxima semana
         today = datetime.now().date()
-        days_to_next_sunday = (6 - today.weekday() + 7) % 7  # Días hasta el próximo domingo (fin de esta semana)
-        if days_to_next_sunday == 0:  # Si hoy es domingo, no sumamos días
+        days_to_next_sunday = (6 - today.weekday() + 7) % 7
+        if days_to_next_sunday == 0:
             days_to_next_sunday = 0
-        end_of_next_week = today + timedelta(days=days_to_next_sunday + 7)  # Fin de la próxima semana (domingo)
-        start_date = today  # Comienza hoy
-        end_date = end_of_next_week  # Termina el domingo de la próxima semana
+        end_of_next_week = today + timedelta(days=days_to_next_sunday + 7)
+        start_date = today
+        end_date = end_of_next_week
 
-        # Selector de ordenamiento
         sort_by = st.selectbox("Sort By", ["Date", "Symbol", "Possible Movement", "EPS", "Revenue", "Time"], index=0)
 
         @st.cache_data
@@ -3111,10 +3107,9 @@ def main():
                     if not (start_date <= event_date_obj <= end_date):
                         continue
                 except ValueError:
-                    logger.warning(f"Invalid date format in earnings: {event_date}")
                     continue
                 eps_est = item.get("epsEstimated")
-                revenue_est = item.get("revenueEstimated", 0)
+                revenue_est = item.get("revenueEstimated")
                 time = item.get("time", "N/A").lower()
                 try:
                     revenue_est = float(revenue_est) if revenue_est is not None else 0
@@ -3161,7 +3156,6 @@ def main():
             if not earnings:
                 logger.warning("No earnings events after filtering")
             
-            # Ordenar según criterio
             if sort_by == "Possible Movement":
                 earnings.sort(key=lambda x: x["Possible Movement (%)"], reverse=True)
             elif sort_by == "EPS":
@@ -3172,7 +3166,7 @@ def main():
                 earnings.sort(key=lambda x: x["Symbol"])
             elif sort_by == "Time":
                 earnings.sort(key=lambda x: (x["TimeSortValue"], x["Date"]))
-            else:  # Date
+            else:
                 earnings.sort(key=lambda x: x["Date"])
             return earnings
 
@@ -3181,10 +3175,7 @@ def main():
             logger.info(f"Finished fetching: {len(earnings_events)} events retrieved")
 
         if earnings_events:
-            # Agrupar por día de la semana (sin paginación)
             grouped_events = group_by_day_of_week(earnings_events, start_date, end_date)
-
-            # Diseño de tarjetas con calendario
             earnings_html = """
             <style>
                 .earnings-container {
@@ -3322,10 +3313,8 @@ def main():
             </div>
             """
 
-            # Mostrar tarjetas con desplazamiento
             components.html(earnings_html, height=600, scrolling=True)
 
-            # Descarga CSV
             earnings_csv = pd.DataFrame(earnings_events).drop(columns=["Logo", "EPS", "Revenue", "TimeSortValue", "IsTopStock"], errors="ignore").to_csv(index=False)
             st.download_button(
                 label="📥 Download Earnings Calendar",
@@ -3341,59 +3330,61 @@ def main():
         st.markdown("---")
         st.markdown("*Developed by Ozy | © 2025*")
 
+    # Tab 10: Psychological Edge
+        # Tab 10: Psychological Edge
     with tab10:
         trading_points = [
             ("Sigue los Order Blocks del MM / Spot order blocks of the MM", 
              "Identifica zonas de order blocks (acumulación o distribución del MM) en niveles de liquidez clave. Opera con su flujo, no contra él. Camina antes de la sesión para alinear tu mente con su juego. / Spot order blocks (MM accumulation or distribution) at key liquidity zones. Trade with their flow, not against it. Walk before the session to sync your mind with their game.", 
-             "#2A2A3D"),  # Gris azulado oscuro
+             "#2A2A3D"),
             ("Domina el Riesgo Institucional / Master Institutional Risk", 
              "Limita el riesgo al 1-2% por posición, ajustado por VaR (Value at Risk) si operas portafolios grandes. No entres si tu estado emocional compromete el análisis de datos duros. / Cap risk at 1-2% per position, adjusted by VaR for large portfolios. Don’t trade if your emotional state clouds hard data analysis.", 
-             "#1A2E2A"),  # Verde oscuro
+             "#1A2E2A"),
             ("Analiza la Exposición al Gamma / Analyze Gamma Exposure", 
              "Monitorea el gamma de opciones para prever cambios bruscos en el delta. Anticipa trampas del MM cerca de vencimientos (gamma squeezes) y reflexiona: ¿dónde están cazando stops? / Track options gamma to predict sharp delta shifts. Anticipate MM traps near expirations (gamma squeezes) and ask: Where are they hunting stops?", 
-             "#3D2A2A"),  # Marrón oscuro
+             "#3D2A2A"),
             ("Stop-Loss Basado en Liquidez / Liquidity-Based Stop-Loss", 
              "Coloca stops en niveles de liquidez del MM (debajo de soportes o encima de resistencias), no en zonas aleatorias. Corta rápido: en trading institucional, preservar capital es prioridad. Opera de pie para máxima alerta. / Set stops at MM liquidity levels (below support or above resistance), not random zones. Cut fast: in institutional trading, capital preservation is king. Trade standing for peak alertness.", 
-             "#2A2A3D"),  # Gris azulado oscuro
+             "#2A2A3D"),
             ("Confirma con Flujo Institucional / Confirm with Institutional Flow", 
              "Busca order flow en order blocks con picos de volumen y gamma. Usa herramientas como footprint charts o monitores de bloques si tienes acceso. Pregúntate: ¿qué están acumulando o descargando? / Look for order flow in order blocks with volume and gamma spikes. Use footprint charts or block monitors if available. Ask: What are they accumulating or unloading?", 
-             "#1E2A3D"),  # Azul oscuro
+             "#1E2A3D"),
             ("Controla la Psicología bajo Presión / Control Psychology Under Pressure", 
              "Evita reaccionar a volatilidad intradía o ruido de mercado. La disciplina del MM es tu modelo: no te sobreapalances ni cedas a la euforia. Muévete cada hora para no quemarte. / Don’t react to intraday volatility or market noise. MM discipline is your model: no over-leverage or euphoria. Move hourly to avoid burnout.", 
-             "#2E2A1E"),  # Marrón grisáceo oscuro
+             "#2E2A1E"),
             ("Simula con Datos Reales / Simulate with Real Data", 
              "Usa simulación con datos históricos de order flow y gamma para replicar movimientos del MM. Analiza cómo tu toma de decisiones resiste bajo presión institucional. / Simulate with historical order flow and gamma data to mirror MM moves. Test how your decision-making holds under institutional pressure.", 
-             "#1A2E2A"),  # Verde oscuro
+             "#1A2E2A"),
             ("Sigue el Volumen Institucional / Track Institutional Volume", 
              "Alto volumen en niveles clave con cambios en gamma confirma compromiso del MM. Opera con ellos cuando el smart money entra; usa volume profile para precisión. Camina para mantener claridad. / High volume at key levels with gamma shifts confirms MM commitment. Trade with them when smart money steps in; use volume profile for precision. Walk to stay clear-headed.", 
-             "#2A2A3D"),  # Gris azulado oscuro
+             "#2A2A3D"),
             ("Registra Cada Movimiento / Log Every Move", 
              "Documenta trades con niveles de order blocks, gamma, volumen y resultados. Incluye tu estado mental para ajustar sesgos. Los institucionales viven de datos, no de intuición. / Log trades with order blocks, gamma, volume, and outcomes. Add your mental state to tweak biases. Institutionals live on data, not gut feel.", 
-             "#1E2A3D"),  # Azul oscuro
+             "#1E2A3D"),
             ("Sal en Zonas de Liquidez / Exit at Liquidity Zones", 
              "Toma ganancias en resistencias del MM o cuando el gamma indique un reversal. Usa liquidity grabs a tu favor: el MM a menudo empuja precios para atrapar a los débiles. / Take profits at MM resistance or when gamma signals a reversal. Leverage liquidity grabs: MM often pushes prices to trap the weak.", 
-             "#3D2A2A"),  # Marrón oscuro
+             "#3D2A2A"),
             ("Filtra el Ruido del Retail / Filter Retail Noise", 
              "Ignora hype de redes sociales o noticias sin respaldo en order flow. Los institucionales confían en el DOM (Depth of Market) y el precio, no en titulares. / Ignore retail hype on social media or news without order flow backing. Institutionals trust DOM (Depth of Market) and price, not headlines.", 
-             "#2E2A1E"),  # Marrón grisáceo oscuro
+             "#2E2A1E"),
             ("Ajusta por Volatilidad / Adjust for Volatility", 
              "En días de alta volatilidad (vencimientos, eventos macro), reduce tamaño de posición. En días tranquilos, busca order blocks profundos para entradas sólidas. Adapta como el MM. / On high-volatility days (expirations, macro events), shrink position size. On quiet days, target deep order blocks for strong entries. Adapt like the MM.", 
-             "#1A2E2A"),  # Verde oscuro
+             "#1A2E2A"),
             ("Explota las Ineficiencias / Exploit Inefficiencies", 
              "Busca desbalances entre order flow y gamma (ej. short squeezes o stop runs). Los institucionales ganan donde el retail pierde: opera con ventaja, no con esperanza. / Hunt imbalances between order flow and gamma (e.g., short squeezes or stop runs). Institutionals win where retail loses: trade with edge, not hope.", 
-             "#2A2A3D"),  # Gris azulado oscuro
+             "#2A2A3D"),
             ("Piensa como el MM / Think Like the MM", 
              "Pregúntate: ¿dónde colocan liquidez para atraer volumen? Usa su lógica (atrapar stops, forzar reversals) para anticipar y alinearte. Reflexiona entre sesiones. / Ask: Where do they place liquidity to draw volume? Use their logic (trap stops, force reversals) to anticipate and align. Reflect between sessions.", 
-             "#1E2A3D"),  # Azul oscuro
+             "#1E2A3D"),
             ("Monitorea el Gummy Data Bubbles® y la Volatilidad Implícita / Monitor Gummy Data Bubbles® and Implied Volatility", 
              "Analiza el skew de opciones (asimetría en volatilidad implícita) para detectar sesgos del MM hacia alzas o bajas. Un skew pronunciado puede señalar liquidity grabs o stop hunts. Usa esta data para afinar entradas. / Track options skew (implied volatility asymmetry) to spot MM bias toward upside or downside. Sharp skew can signal liquidity grabs or stop hunts. Use it to fine-tune entries.", 
-             "#3D2A2A"),  # Marrón oscuro
+             "#3D2A2A"),
             ("Aprovecha el Dark Pool Flow / Leverage Dark Pool Flow", 
              "Si tienes acceso Monitores de Ozytarget (volumen institucional oculto), busca confirmación de order blocks. El MM usa estos flujos para mover mercados sin alertar al retail. Alinea tus trades con este smart money. / If you have dark pool data (hidden institutional volume), confirm order blocks. MM uses these flows to move markets without tipping off retail. Align trades with this smart money.", 
-             "#2E2A1E"),  # Marrón grisáceo oscuro
+             "#2E2A1E"),
             ("Juega el Juego del Spoofing Legal / Play the Legal Spoofing Game", 
              "Detecta patrones de spoofing en el DOM o tape. No luches contra ellos; úsalos para entrar cuando el precio revierta tras el flush de liquidez. Requiere velocidad y precisión. / Spot spoofing patterns (MM fake orders to mislead) in the DOM or tape. Don’t fight them; use them to enter when price reverses after the liquidity flush. Demands speed and precision.", 
-             "#1A2E2A")  # Verde oscuro
+             "#1A2E2A")
         ]
 
         for i, (title, content, color) in enumerate(trading_points, 1):
@@ -3404,40 +3395,39 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
 
-        # Sección de Inversión a Largo Plazo
         st.subheader("Inversión a largo plazo para institucionales / Long-Term Investing for Institutionals")
         
         investing_points = [
             ("Horizontes por Edad y Objetivo / Horizons by Age and Goal", 
              "Invierte según el ciclo: 5-10 años para capital activo, 15-20 para crecimiento sostenido, 30+ para legado o fondos soberanos. Elige activos con fundamentales sólidos, no especulación. / Invest by cycle: 5-10 years for active capital, 15-20 for sustained growth, 30+ for legacy or sovereign funds. Pick assets with solid fundamentals, not speculation.", 
-             "#2A2A3D"),  # Gris azulado oscuro
+             "#2A2A3D"),
             ("Diversifica con Precisión / Diversify with Precision", 
              "Reparte entre clases de activos (acciones, bonos, materias primas) según correlaciones y riesgo ajustado (Sharpe ratio). Compra más en caídas si el order flow institucional lo respalda. / Spread across asset classes (stocks, bonds, commodities) by correlations and risk-adjusted return (Sharpe ratio). Buy more on dips if institutional order flow supports it.", 
-             "#1A2E2A"),  # Verde oscuro
+             "#1A2E2A"),
             ("Foco en Valor Fundamental / Focus on Fundamental Value", 
              "Selecciona empresas con flujo de caja robusto, baja deuda y ventaja estructural. Ignora ruido de corto plazo: los institucionales miran décadas, no días. / Choose firms with strong cash flow, low debt, and structural edge. Ignore short-term noise: institutionals eye decades, not days.", 
-             "#3D2A2A"),  # Marrón oscuro
+             "#3D2A2A"),
             ("Reinversión Estratégica / Strategic Reinvestment", 
              "Usa ganancias para aumentar exposición en activos con smart money detrás. Aprovecha caídas para acumular: el MM exagera el miedo para comprar barato. / Reinvest profits to boost exposure to smart money-backed assets. Capitalize on dips: MM overplays fear to buy low.", 
-             "#1E2A3D"),  # Azul oscuro
+             "#1E2A3D"),
             ("Paciencia Institucional / Institutional Patience", 
              "Mantén posiciones a través de ciclos económicos: el crecimiento global supera las crisis (dato histórico). Compra más en rojo con análisis de order flow, no pánico. / Hold through economic cycles: global growth outlasts crises (historical fact). Buy more in the red with order flow analysis, not panic.", 
-             "#2E2A1E"),  # Marrón grisáceo oscuro
+             "#2E2A1E"),
             ("Visión Macro Avanzada / Advanced Macro Vision", 
              "Invierte en sectores con respaldo institucional (tecnología, infraestructura, energía limpia) según datos macro (PIB, tasas, demografía). Ajusta con calma, no por modas. / Invest in institutionally backed sectors (tech, infrastructure, clean energy) based on macro data (GDP, rates, demographics). Adjust calmly, not on trends.", 
-             "#2A2A3D"),  # Gris azulado oscuro
+             "#2A2A3D"),
             ("Contrario con Datos / Contrarian with Data", 
              "Aumenta posiciones en caídas si el volume profile y fundamentales lo justifican. El MM usa el pánico retail para acumular; tú haz lo mismo con ventaja. / Build positions on dips if volume profile and fundamentals hold. MM uses retail panic to accumulate; you do the same with an edge.", 
-             "#1A2E2A"),  # Verde oscuro
+             "#1A2E2A"),
             ("Gestión Activa Pasiva / Active-Passive Management", 
              "Combina tenencia pasiva (ETFs, índices) con compras activas en order blocks de largo plazo. Rebalancea según smart money, no emociones. / Blend passive holding (ETFs, indexes) with active buys at long-term order blocks. Rebalance by smart money, not emotion.", 
-             "#3D2A2A"),  # Marrón oscuro
+             "#3D2A2A"),
             ("Incorpora Derivados para Cobertura / Use Derivatives for Hedging", 
              "Usa futuros o opciones para cubrir portafolios contra caídas sin vender activos clave. Los institucionales protegen ganancias sin sacrificar exposición a largo plazo. Ajusta según gamma y volatility index (VIX). / Use futures or options to hedge portfolios against dips without selling core assets. Institutionals shield gains without losing long-term exposure. Adjust by gamma and volatility index (VIX).", 
-             "#1E2A3D"),  # Azul oscuro
+             "#1E2A3D"),
             ("Explota Ciclos de Rebalancing / Exploit Rebalancing Cycles", 
              "Aprovecha ventanas de rebalancing institucional (fin de mes, trimestre) cuando el MM ajusta posiciones. Compra en caídas inducidas por estos flujos; el volume profile te dirá dónde entran. / Exploit institutional rebalancing windows (month-end, quarter-end) when MM adjusts positions. Buy dips driven by these flows; volume profile shows where they step in.", 
-             "#2E2A1E")  # Marrón grisáceo oscuro
+             "#2E2A1E")
         ]
 
         for i, (title, content, color) in enumerate(investing_points, 1):
@@ -3450,412 +3440,644 @@ def main():
         st.markdown("---")
         st.markdown("*Developed by Ozy | © 2025*")
 
+    # Tab 11: Projection
     with tab11:
-    # Estilo CSS profesional
-     st.markdown("""
-    <style>
-    .main-title { 
-        font-size: 28px; 
-        font-weight: 600; 
-        color: #FFFFFF; 
-        text-align: center; 
-        margin-bottom: 20px; 
-        text-shadow: 0 0 5px rgba(50, 205, 50, 0.5); 
-    }
-    .section-header { 
-        font-size: 20px; 
-        font-weight: 500; 
-        color: #32CD32; 
-        margin-top: 20px; 
-        border-bottom: 1px solid #32CD32; 
-        padding-bottom: 5px; 
-    }
-    .metric-label { 
-        font-size: 16px; 
-        color: #FFFFFF; 
-        font-family: 'Arial', sans-serif; 
-    }
-    .metric-value { 
-        font-size: 18px; 
-        font-weight: 600; 
-        color: #FFD700; 
-    }
-    .tooltip { 
-        position: relative; 
-        display: inline-block; 
-        cursor: help; 
-        color: #32CD32; 
-        margin-left: 5px; 
-    }
-    .tooltip .tooltiptext { 
-        visibility: hidden; 
-        width: 200px; 
-        background-color: #2D2D2D; 
-        color: #FFFFFF; 
-        text-align: center; 
-        border-radius: 5px; 
-        padding: 5px; 
-        position: absolute; 
-        z-index: 1; 
-        bottom: 125%; 
-        left: 50%; 
-        margin-left: -100px; 
-        font-size: 12px; 
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5); 
-    }
-    .tooltip:hover .tooltiptext { 
-        visibility: visible; 
-    }
-    </style>
-    """, unsafe_allow_html=True)
+        # Estilo CSS profesional
+        st.markdown("""
+        <style>
+        .main-title { 
+            font-size: 28px; 
+            font-weight: 600; 
+            color: #FFFFFF; 
+            text-align: center; 
+            margin-bottom: 20px; 
+            text-shadow: 0 0 5px rgba(50, 205, 50, 0.5); 
+        }
+        .section-header { 
+            font-size: 20px; 
+            font-weight: 500; 
+            color: #32CD32; 
+            margin-top: 20px; 
+            border-bottom: 1px solid #32CD32; 
+            padding-bottom: 5px; 
+        }
+        .metric-label { 
+            font-size: 16px; 
+            color: #FFFFFF; 
+            font-family: 'Arial', sans-serif; 
+        }
+        .metric-value { 
+            font-size: 18px; 
+            font-weight: 600; 
+            color: #FFD700; 
+        }
+        .tooltip { 
+            position: relative; 
+            display: inline-block; 
+            cursor: help; 
+            color: #32CD32; 
+            margin-left: 5px; 
+        }
+        .tooltip .tooltiptext { 
+            visibility: hidden; 
+            width: 200px; 
+            background-color: #2D2D2D; 
+            color: #FFFFFF; 
+            text-align: center; 
+            border-radius: 5px; 
+            padding: 5px; 
+            position: absolute; 
+            z-index: 1; 
+            bottom: 125%; 
+            left: 50%; 
+            margin-left: -100px; 
+            font-size: 12px; 
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5); 
+        }
+        .tooltip:hover .tooltiptext { 
+            visibility: visible; 
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
-    
-    # Ticker input
-     ticker = st.text_input("Ticker Symbol (e.g., TSLA, NVDA)", "NVDA", key="institutional_ticker").upper()
+        # Ticker input
+        ticker = st.text_input("Ticker Symbol (e.g., TSLA, NVDA)", "NVDA", key="institutional_ticker").upper()
 
-    # Fetch real-time data with reduced cache for intraday
-     with st.spinner(f"Fetching real-time data for {ticker}..."):
-        try:
-            # --- Funciones optimizadas ---
-            @st.cache_data(ttl=60)
-            def get_intraday_data(ticker: str, interval="1min", limit=5) -> Tuple[List[float], List[int]]:
-                """Obtiene datos intradiarios para IFM."""
-                url = f"{TRADIER_BASE_URL}/markets/history"
-                start_time = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-                end_time = datetime.now().strftime("%Y-%m-%d")
-                params = {"symbol": ticker, "interval": interval, "start": start_time, "end": end_time}
-                data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier Intraday")
-                if data and "history" in data and "day" in data["history"]:
-                    prices = [float(day["close"]) for day in data["history"]["day"][-limit:]]
-                    volumes = [int(day["volume"]) for day in data["history"]["day"][-limit:]]
-                    return prices, volumes
-                return [get_current_price(ticker)] * limit, [0] * limit
+        # Fetch real-time data with reduced cache for intraday
+        with st.spinner(f"Fetching real-time data for {ticker}..."):
+            try:
+                # --- Funciones optimizadas ---
+                @st.cache_data(ttl=60)
+                def get_intraday_data(ticker: str, interval="1min", limit=5) -> Tuple[List[float], List[int]]:
+                    """Obtiene datos intradiarios para IFM."""
+                    url = f"{TRADIER_BASE_URL}/markets/history"
+                    start_time = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                    end_time = datetime.now().strftime("%Y-%m-%d")
+                    params = {"symbol": ticker, "interval": interval, "start": start_time, "end": end_time}
+                    data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier Intraday")
+                    if data and "history" in data and "day" in data["history"]:
+                        prices = [float(day["close"]) for day in data["history"]["day"][-limit:]]
+                        volumes = [int(day["volume"]) for day in data["history"]["day"][-limit:]]
+                        return prices, volumes
+                    return [get_current_price(ticker)] * limit, [0] * limit
 
-            @st.cache_data(ttl=60)
-            def get_vix() -> float:
-                """Obtiene el VIX actual."""
-                url = f"{FMP_BASE_URL}/quote/^VIX"
-                params = {"apikey": FMP_API_KEY}
-                data = fetch_api_data(url, params, HEADERS_FMP, "VIX")
-                return float(data[0]["price"]) if data and isinstance(data, list) and "price" in data[0] else 20.0
+                @st.cache_data(ttl=60)
+                def get_vix() -> float:
+                    """Obtiene el VIX actual."""
+                    url = f"{FMP_BASE_URL}/quote/^VIX"
+                    params = {"apikey": FMP_API_KEY}
+                    data = fetch_api_data(url, params, HEADERS_FMP, "VIX")
+                    return float(data[0]["price"]) if data and isinstance(data, list) and "price" in data[0] else 20.0
 
-            @st.cache_data(ttl=300)
-            def get_news_sentiment(ticker: str) -> float:
-                """Calcula el sentimiento de noticias recientes."""
-                keywords = [ticker]
-                news = fetch_google_news(keywords)
-                if not news:
-                    return 0.5  # Neutral
-                sentiment = sum(1 if "up" in article["title"].lower() else -1 if "down" in article["title"].lower() else 0 for article in news)
-                return max(0, min(1, 0.5 + sentiment / (len(news) * 2)))  # Escala 0-1
+                @st.cache_data(ttl=300)
+                def get_news_sentiment(ticker: str) -> float:
+                    """Calcula el sentimiento de noticias recientes."""
+                    keywords = [ticker]
+                    news = fetch_google_news(keywords)
+                    if not news:
+                        return 0.5  # Neutral
+                    sentiment = sum(1 if "up" in article["title"].lower() else -1 if "down" in article["title"].lower() else 0 for article in news)
+                    return max(0, min(1, 0.5 + sentiment / (len(news) * 2)))  # Escala 0-1
 
-            def calculate_probability_cone(current_price: float, iv: float, days: List[int]) -> Dict:
-                """Calcula conos de probabilidad para 68% y 95%."""
-                cone = {}
-                for day in days:
-                    sigma = iv * current_price * (day / 365) ** 0.5
-                    cone[day] = {
-                        "68_lower": current_price - sigma,
-                        "68_upper": current_price + sigma,
-                        "95_lower": current_price - 2 * sigma,
-                        "95_upper": current_price + 2 * sigma
-                    }
-                return cone
+                def calculate_probability_cone(current_price: float, iv: float, days: List[int]) -> Dict:
+                    """Calcula conos de probabilidad para 68% y 95%."""
+                    cone = {}
+                    for day in days:
+                        sigma = iv * current_price * (day / 365) ** 0.5
+                        cone[day] = {
+                            "68_lower": current_price - sigma,
+                            "68_upper": current_price + sigma,
+                            "95_lower": current_price - 2 * sigma,
+                            "95_upper": current_price + 2 * sigma
+                        }
+                    return cone
 
-            # --- Fetch real-time data ---
-            current_price = get_current_price(ticker)
-            if current_price == 0.0:
-                st.error(f"Could not retrieve real-time price for {ticker}.")
-                st.stop()
+                # --- Fetch real-time data ---
+                current_price = get_current_price(ticker)
+                if current_price == 0.0:
+                    st.error(f"Could not retrieve real-time price for {ticker}.")
+                    st.stop()
 
-            prices_1m, volumes_1m = get_intraday_data(ticker)
+                prices_1m, volumes_1m = get_intraday_data(ticker)
 
-            # Company profile (FMP)
-            url_profile = f"{FMP_BASE_URL}/profile/{ticker}"
-            params_profile = {"apikey": FMP_API_KEY}
-            profile_data = fetch_api_data(url_profile, params_profile, HEADERS_FMP, "FMP Profile")
-            if not profile_data or not isinstance(profile_data, list) or len(profile_data) == 0:
-                st.error(f"No fundamental data found for {ticker}.")
-                st.stop()
-            profile = profile_data[0]
-            market_cap = profile.get("mktCap", 1_000_000_000)
-            pe_ratio = profile.get("pe", 20)
-            pb_ratio = profile.get("pb", 3)
-            debt_to_equity = profile.get("debtToEquity", 1.0)
-            roe = profile.get("roe", 0.1)
-            profit_margin = profile.get("profitMargin", 0.05)
-            beta = profile.get("beta", 1.0)
-            sector = profile.get("sector", "Unknown")
+                # Company profile (FMP)
+                url_profile = f"{FMP_BASE_URL}/profile/{ticker}"
+                params_profile = {"apikey": FMP_API_KEY}
+                profile_data = fetch_api_data(url_profile, params_profile, HEADERS_FMP, "FMP Profile")
+                if not profile_data or not isinstance(profile_data, list) or len(profile_data) == 0:
+                    st.error(f"No fundamental data found for {ticker}.")
+                    st.stop()
+                profile = profile_data[0]
+                market_cap = profile.get("mktCap", 1_000_000_000)
+                pe_ratio = profile.get("pe", 20)
+                pb_ratio = profile.get("pb", 3)
+                debt_to_equity = profile.get("debtToEquity", 1.0)
+                roe = profile.get("roe", 0.1)
+                profit_margin = profile.get("profitMargin", 0.05)
+                beta = profile.get("beta", 1.0)
+                sector = profile.get("sector", "Unknown")
 
-            # Historical data (1 year for volatility and returns)
-            prices, volumes = get_historical_prices_combined(ticker, limit=252)
-            if not prices or len(prices) < 20:
-                prices = [current_price] * 20
-                volumes = [1_000_000] * 20
-            returns = np.diff(prices) / prices[:-1]
-            vol_historical = np.std(returns) * np.sqrt(252)
+                # Historical data (1 year for volatility and returns)
+                prices, volumes = get_historical_prices_combined(ticker, limit=252)
+                if not prices or len(prices) < 20:
+                    prices = [current_price] * 20
+                    volumes = [1_000_000] * 20
+                returns = np.diff(prices) / prices[:-1]
+                vol_historical = np.std(returns) * np.sqrt(252)
 
-            # Options data - Optimizado para smv_vol
-            expiration_dates = get_expiration_dates(ticker)
-            iv = get_implied_volatility(ticker) or 0.3  # Fallback inicial
-            gamma_exposure = 0
-            skew = 0
-            vmi = 0
-            oi_by_strike = {}
-            oi_total = 0
-            gamma_wall = 0
-            if expiration_dates:
-                options_data = get_options_data(ticker, expiration_dates[0])
-                if options_data and isinstance(options_data, list):
-                    gamma_total = sum(float(opt.get("greeks", {}).get("gamma", 0)) * int(opt.get("open_interest", 0)) 
-                                      for opt in options_data if "greeks" in opt)
-                    oi_total = sum(int(opt.get("open_interest", 0)) for opt in options_data)
-                    gamma_exposure = gamma_total * current_price / max(1, oi_total) if oi_total > 0 else 0
-                    
-                    calls_iv_list = [float(opt["greeks"]["smv_vol"]) for opt in options_data 
-                                     if opt.get("option_type", "").lower() == "call" and "greeks" in opt and opt["greeks"].get("smv_vol", 0) > 0]
-                    puts_iv_list = [float(opt["greeks"]["smv_vol"]) for opt in options_data 
-                                    if opt.get("option_type", "").lower() == "put" and "greeks" in opt and opt["greeks"].get("smv_vol", 0) > 0]
-                    calls_iv = np.mean(calls_iv_list) if calls_iv_list else iv
-                    puts_iv = np.mean(puts_iv_list) if puts_iv_list else iv
-                    iv = np.mean(calls_iv_list + puts_iv_list) if calls_iv_list or puts_iv_list else iv
-                    skew = (calls_iv - puts_iv) / iv if calls_iv_list and puts_iv_list and iv != 0 else 0
-                    vmi = (skew * oi_total / max(1, vol_historical * 100)) if oi_total > 0 else 0
-                    
-                    gamma_by_strike = {strike: sum(float(opt.get("greeks", {}).get("gamma", 0)) * int(opt.get("open_interest", 0)) 
-                                                  for opt in options_data if float(opt["strike"]) == strike and "greeks" in opt) 
-                                      for strike in set(float(opt["strike"]) for opt in options_data)}
-                    gamma_wall = max(gamma_by_strike.items(), key=lambda x: abs(x[1]), default=(current_price, 0))[0] if gamma_by_strike else current_price
-                    
-                    strikes = [float(opt["strike"]) for opt in options_data]
-                    oi_by_strike = {strike: sum(int(opt.get("open_interest", 0)) for opt in options_data if float(opt["strike"]) == strike) 
-                                    for strike in set(strikes)}
+                # Options data - Optimizado para smv_vol
+                expiration_dates = get_expiration_dates(ticker)
+                iv = get_implied_volatility(ticker) or 0.3  # Fallback inicial
+                gamma_exposure = 0
+                skew = 0
+                vmi = 0
+                oi_by_strike = {}
+                oi_total = 0
+                gamma_wall = 0
+                if expiration_dates:
+                    options_data = get_options_data(ticker, expiration_dates[0])
+                    if options_data and isinstance(options_data, list):
+                        gamma_total = sum(float(opt.get("greeks", {}).get("gamma", 0)) * int(opt.get("open_interest", 0)) 
+                                          for opt in options_data if "greeks" in opt)
+                        oi_total = sum(int(opt.get("open_interest", 0)) for opt in options_data)
+                        gamma_exposure = gamma_total * current_price / max(1, oi_total) if oi_total > 0 else 0
+                        
+                        calls_iv_list = [float(opt["greeks"]["smv_vol"]) for opt in options_data 
+                                         if opt.get("option_type", "").lower() == "call" and "greeks" in opt and opt["greeks"].get("smv_vol", 0) > 0]
+                        puts_iv_list = [float(opt["greeks"]["smv_vol"]) for opt in options_data 
+                                        if opt.get("option_type", "").lower() == "put" and "greeks" in opt and opt["greeks"].get("smv_vol", 0) > 0]
+                        calls_iv = np.mean(calls_iv_list) if calls_iv_list else iv
+                        puts_iv = np.mean(puts_iv_list) if puts_iv_list else iv
+                        iv = np.mean(calls_iv_list + puts_iv_list) if calls_iv_list or puts_iv_list else iv
+                        skew = (calls_iv - puts_iv) / iv if calls_iv_list and puts_iv_list and iv != 0 else 0
+                        vmi = (skew * oi_total / max(1, vol_historical * 100)) if oi_total > 0 else 0
+                        
+                        gamma_by_strike = {strike: sum(float(opt.get("greeks", {}).get("gamma", 0)) * int(opt.get("open_interest", 0)) 
+                                                      for opt in options_data if float(opt["strike"]) == strike and "greeks" in opt) 
+                                          for strike in set(float(opt["strike"]) for opt in options_data)}
+                        gamma_wall = max(gamma_by_strike.items(), key=lambda x: abs(x[1]), default=(current_price, 0))[0] if gamma_by_strike else current_price
+                        
+                        strikes = [float(opt["strike"]) for opt in options_data]
+                        oi_by_strike = {strike: sum(int(opt.get("open_interest", 0)) for opt in options_data if float(opt["strike"]) == strike) 
+                                        for strike in set(strikes)}
+                    else:
+                        st.warning("No valid options data returned from Tradier.")
                 else:
-                    st.warning("No valid options data returned from Tradier.")
-            else:
-                st.warning("No expiration dates available for options data.")
+                    st.warning("No expiration dates available for options data.")
 
-            # --- Advanced Institutional Calculations ---
-            volume_delta = sum([v if p > prices_1m[i-1] else -v for i, (p, v) in enumerate(zip(prices_1m[1:], volumes_1m[1:]))])
-            oi_delta = oi_total
-            gamma_weighted = gamma_exposure * sum(1/abs(s - current_price) for s in oi_by_strike.keys() if oi_by_strike[s] > 0) if oi_by_strike else 0
-            vix = get_vix()
-            ifm = min(100, max(0, (volume_delta * oi_delta * gamma_weighted) / (vix + iv * 100))) if (vix + iv * 100) != 0 else 0
+                # --- Advanced Institutional Calculations ---
+                volume_delta = sum([v if p > prices_1m[i-1] else -v for i, (p, v) in enumerate(zip(prices_1m[1:], volumes_1m[1:]))])
+                oi_delta = oi_total
+                gamma_weighted = gamma_exposure * sum(1/abs(s - current_price) for s in oi_by_strike.keys() if oi_by_strike[s] > 0) if oi_by_strike else 0
+                vix = get_vix()
+                ifm = min(100, max(0, (volume_delta * oi_delta * gamma_weighted) / (vix + iv * 100))) if (vix + iv * 100) != 0 else 0
 
-            oi_below = sum(oi for s, oi in oi_by_strike.items() if s < current_price)
-            oi_above = sum(oi for s, oi in oi_by_strike.items() if s > current_price)
-            vwap_daily = sum(p * v for p, v in zip(prices[-20:], volumes[-20:])) / sum(volumes[-20:]) if sum(volumes[-20:]) > 0 else current_price
-            lti = (oi_below / oi_above if oi_above > 0 else 1.0) * (current_price - vwap_daily) / (iv * beta) if (iv * beta) != 0 else 0
+                oi_below = sum(oi for s, oi in oi_by_strike.items() if s < current_price)
+                oi_above = sum(oi for s, oi in oi_by_strike.items() if s > current_price)
+                vwap_daily = sum(p * v for p, v in zip(prices[-20:], volumes[-20:])) / sum(volumes[-20:]) if sum(volumes[-20:]) > 0 else current_price
+                lti = (oi_below / oi_above if oi_above > 0 else 1.0) * (current_price - vwap_daily) / (iv * beta) if (iv * beta) != 0 else 0
 
-            event_factor = 1.5 if fetch_api_data(f"{FMP_BASE_URL}/economic-calendar", {"apikey": FMP_API_KEY, "from": datetime.now().strftime("%Y-%m-%d"), "to": (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")}, HEADERS_FMP, "Events") else 1.0
-            earnings_data = get_earnings_calendar(datetime.now().date(), datetime.now().date() + timedelta(days=5))
-            earnings_factor = 1.8 if any(e.get("date") and datetime.strptime(e["date"], "%Y-%m-%d").date() <= (datetime.now().date() + timedelta(days=5)) for e in earnings_data) else 1.0
-            skew_impact = skew + 0.1
-            eaem = iv * current_price * (1 + abs(gamma_exposure)) * event_factor * skew_impact * earnings_factor * 0.15
-            eaem_upper = current_price + eaem
-            eaem_lower = max(0, current_price - eaem)
+                event_factor = 1.5 if fetch_api_data(f"{FMP_BASE_URL}/economic-calendar", {"apikey": FMP_API_KEY, "from": datetime.now().strftime("%Y-%m-%d"), "to": (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")}, HEADERS_FMP, "Events") else 1.0
+                earnings_data = get_earnings_calendar(datetime.now().date(), datetime.now().date() + timedelta(days=5))
+                earnings_factor = 1.8 if any(e.get("date") and datetime.strptime(e["date"], "%Y-%m-%d").date() <= (datetime.now().date() + timedelta(days=5)) for e in earnings_data) else 1.0
+                skew_impact = skew + 0.1
+                eaem = iv * current_price * (1 + abs(gamma_exposure)) * event_factor * skew_impact * earnings_factor * 0.15
+                eaem_upper = current_price + eaem
+                eaem_lower = max(0, current_price - eaem)
 
-            eaem_ratio = (current_price - eaem_lower) / (eaem_upper - eaem_lower) if (eaem_upper - eaem_lower) != 0 else 0.5
-            sentiment_score = get_news_sentiment(ticker)
-            rtes = (ifm * 0.4 + lti * 0.3 + eaem_ratio * 20 + sentiment_score * 10)
+                eaem_ratio = (current_price - eaem_lower) / (eaem_upper - eaem_lower) if (eaem_upper - eaem_lower) != 0 else 0.5
+                sentiment_score = get_news_sentiment(ticker)
+                rtes = (ifm * 0.4 + lti * 0.3 + eaem_ratio * 20 + sentiment_score * 10)
 
-            # --- Original OIPI Calculation ---
-            volume_avg = np.mean(volumes[-20:])
-            volume_spike = max(volumes[-5:]) / volume_avg if volume_avg > 0 else 1.0
-            price_change = (current_price - prices[-10]) / prices[-10] if len(prices) >= 10 else 0
-            momentum_score = min(30, 8 * volume_spike + 8 * abs(price_change) * 100 + 14 * (gamma_exposure / max(1, abs(gamma_exposure))))
-            momentum_text = "Strong institutional momentum" if momentum_score > 20 else "Moderate activity" if momentum_score > 10 else "Low momentum"
+                # --- Original OIPI Calculation ---
+                volume_avg = np.mean(volumes[-20:])
+                volume_spike = max(volumes[-5:]) / volume_avg if volume_avg > 0 else 1.0
+                price_change = (current_price - prices[-10]) / prices[-10] if len(prices) >= 10 else 0
+                momentum_score = min(30, 8 * volume_spike + 8 * abs(price_change) * 100 + 14 * (gamma_exposure / max(1, abs(gamma_exposure))))
+                momentum_text = "Strong institutional momentum" if momentum_score > 20 else "Moderate activity" if momentum_score > 10 else "Low momentum"
 
-            sharpe_ratio = (np.mean(returns) * 252 - RISK_FREE_RATE) / vol_historical if vol_historical > 0 else 1.0
-            growth_factor = roe * profit_margin
-            debt_factor = 1 / (1 + debt_to_equity) if debt_to_equity > 0 else 1
-            health_score = min(30, 10 * sharpe_ratio + 10 * growth_factor + 10 * debt_factor)
-            health_text = "Robust fundamentals" if health_score > 20 else "Stable with risks" if health_score > 10 else "Weak fundamentals"
+                sharpe_ratio = (np.mean(returns) * 252 - RISK_FREE_RATE) / vol_historical if vol_historical > 0 else 1.0
+                growth_factor = roe * profit_margin
+                debt_factor = 1 / (1 + debt_to_equity) if debt_to_equity > 0 else 1
+                health_score = min(30, 10 * sharpe_ratio + 10 * growth_factor + 10 * debt_factor)
+                health_text = "Robust fundamentals" if health_score > 20 else "Stable with risks" if health_score > 10 else "Weak fundamentals"
 
-            sector_pe_avg = {"Technology": 30, "Financial Services": 15, "Healthcare": 25, "Consumer Cyclical": 20}.get(sector, 20)
-            pe_factor = min(1.5, sector_pe_avg / pe_ratio) if pe_ratio > 0 else 1.0
-            pb_factor = min(1.5, 3 / pb_ratio) if pb_ratio > 0 else 1.0
-            cash_flow_est = max(market_cap * profit_margin, 1_000_000) * (1 + roe * 0.5)
-            discount_rate = max(RISK_FREE_RATE + beta * 0.06, 0.01)
-            fair_value = (cash_flow_est / discount_rate) / 1_000_000_000
-            fair_value = max(fair_value, current_price * 0.5)
-            fair_value_text = "Below Fair Value" if current_price < fair_value else "At Fair Value" if abs(current_price - fair_value) < current_price * 0.05 else "Above Fair Value"
-            valuation_score = min(20, 8 * pe_factor + 8 * pb_factor + 4 * (current_price / fair_value if fair_value > 0 else 1))
-            valuation_text = "Undervalued" if valuation_score > 15 else "Fair" if valuation_score > 10 else "Overvalued"
+                sector_pe_avg = {"Technology": 30, "Financial Services": 15, "Healthcare": 25, "Consumer Cyclical": 20}.get(sector, 20)
+                pe_factor = min(1.5, sector_pe_avg / pe_ratio) if pe_ratio > 0 else 1.0
+                pb_factor = min(1.5, 3 / pb_ratio) if pb_ratio > 0 else 1.0
+                cash_flow_est = max(market_cap * profit_margin, 1_000_000) * (1 + roe * 0.5)
+                discount_rate = max(RISK_FREE_RATE + beta * 0.06, 0.01)
+                fair_value = (cash_flow_est / discount_rate) / 1_000_000_000
+                fair_value = max(fair_value, current_price * 0.5)
+                fair_value_text = "Below Fair Value" if current_price < fair_value else "At Fair Value" if abs(current_price - fair_value) < current_price * 0.05 else "Above Fair Value"
+                valuation_score = min(20, 8 * pe_factor + 8 * pb_factor + 4 * (current_price / fair_value if fair_value > 0 else 1))
+                valuation_text = "Undervalued" if valuation_score > 15 else "Fair" if valuation_score > 10 else "Overvalued"
 
-            risk_score = min(10, max(0, 10 - (iv * beta + abs(skew) * 5)))
-            risk_text = "Low risk" if risk_score > 7 else "Moderate risk" if risk_score > 3 else "High risk"
+                risk_score = min(10, max(0, 10 - (iv * beta + abs(skew) * 5)))
+                risk_text = "Low risk" if risk_score > 7 else "Moderate risk" if risk_score > 3 else "High risk"
 
-            expected_move = iv * current_price * (1 + abs(gamma_exposure / max(1, gamma_exposure))) * 0.15
-            move_score = min(10, expected_move / current_price * 100)
-            upper_target = current_price + expected_move
-            lower_target = current_price - expected_move
+                expected_move = iv * current_price * (1 + abs(gamma_exposure / max(1, gamma_exposure))) * 0.15
+                move_score = min(10, expected_move / current_price * 100)
+                upper_target = current_price + expected_move
+                lower_target = current_price - expected_move
 
-            oipi_score = momentum_score + health_score + valuation_score + risk_score + move_score
-            oipi_score = max(0, min(100, oipi_score))
-            oipi_recommendation = "Strong Buy" if oipi_score > 80 else "Buy" if oipi_score > 60 else "Hold" if oipi_score > 40 else "Sell"
+                oipi_score = momentum_score + health_score + valuation_score + risk_score + move_score
+                oipi_score = max(0, min(100, oipi_score))
+                oipi_recommendation = "Strong Buy" if oipi_score > 80 else "Buy" if oipi_score > 60 else "Hold" if oipi_score > 40 else "Sell"
 
-            # --- Additional Metrics (Short, Medium, Long Term) ---
-            short_term_risk = iv * current_price * (1 / 12)**0.5
-            short_term_lower = current_price - short_term_risk
-            short_term_upper = current_price + short_term_risk
+                # --- Additional Metrics (Short, Medium, Long Term) ---
+                short_term_risk = iv * current_price * (1 / 12)**0.5
+                short_term_lower = current_price - short_term_risk
+                short_term_upper = current_price + short_term_risk
 
-            mid_term_risk = iv * current_price * (6 / 12)**0.5
-            mid_term_lower = current_price - mid_term_risk
-            mid_term_upper = current_price + mid_term_risk
+                mid_term_risk = iv * current_price * (6 / 12)**0.5
+                mid_term_lower = current_price - mid_term_risk
+                mid_term_upper = current_price + mid_term_risk
 
-            long_term_risk = iv * current_price * beta
-            long_term_lower = current_price - long_term_risk
-            long_term_upper = current_price + long_term_risk
+                long_term_risk = iv * current_price * beta
+                long_term_lower = current_price - long_term_risk
+                long_term_upper = current_price + long_term_risk
 
-            support = min([s for s in oi_by_strike.keys() if s < current_price], default=current_price - short_term_risk * 1.5) if oi_by_strike else current_price - short_term_risk * 1.5
-            resistance = max([s for s in oi_by_strike.keys() if s > current_price], default=current_price + short_term_risk * 1.5) if oi_by_strike else current_price + short_term_risk * 1.5
-            safe_zone_lower = max(support, fair_value * 0.9)
-            safe_zone_upper = min(resistance, fair_value * 1.1)
+                support = min([s for s in oi_by_strike.keys() if s < current_price], default=current_price - short_term_risk * 1.5) if oi_by_strike else current_price - short_term_risk * 1.5
+                resistance = max([s for s in oi_by_strike.keys() if s > current_price], default=current_price + short_term_risk * 1.5) if oi_by_strike else current_price + short_term_risk * 1.5
+                safe_zone_lower = max(support, fair_value * 0.9)
+                safe_zone_upper = min(resistance, fair_value * 1.1)
 
-            # --- Dynamic Sector Average ---
-            sector_benchmarks = {
-                "Technology": [0.8, 0.6, 0.7, 0.7, 0.8],
-                "Financial Services": [0.6, 0.7, 0.6, 0.8, 0.5],
-                "Healthcare": [0.7, 0.65, 0.75, 0.6, 0.7],
-                "Consumer Cyclical": [0.65, 0.6, 0.65, 0.7, 0.75]
-            }
-            sector_avg = sector_benchmarks.get(sector, [0.7, 0.6, 0.65, 0.8, 0.75])
-
-            # --- Visualization ---
-            col1, col2 = st.columns([2, 1])
-
-            with col1:
-                st.markdown('<div class="section-header">Market </div>', unsafe_allow_html=True)
-                fig_heatmap = go.Figure()
-                price_points = [long_term_lower, mid_term_lower, short_term_lower, safe_zone_lower, current_price, safe_zone_upper, short_term_upper, mid_term_upper, long_term_upper]
-                y_values = [1] * len(price_points)
-                colors = ["#FF4500", "#FF8C00", "#FFD700", "#32CD32", "#FFFFFF", "#32CD32", "#FFD700", "#FF8C00", "#FF4500"]
-                fig_heatmap.add_trace(go.Scatter(x=price_points, y=y_values, mode="markers+text", text=[f"${p:.2f}" for p in price_points], textposition="top center", marker=dict(size=12, color=colors), hoverinfo="x+text"))
-                fig_heatmap.add_shape(type="rect", x0=safe_zone_lower, y0=0.8, x1=safe_zone_upper, y1=1.2, fillcolor="green", opacity=0.3, line_width=0)
-                for strike, oi in oi_by_strike.items():
-                    if oi > oi_total * 0.05:
-                        pressure = 1 if strike > current_price else -1
-                        fig_heatmap.add_shape(type="line", x0=strike, y0=0.9, x1=strike, y1=1.1, line=dict(color="green" if pressure > 0 else "red", width=oi/oi_total*10, dash="dot"))
-                fig_heatmap.add_shape(type="line", x0=fair_value, y0=0, x1=fair_value, y1=2, line=dict(color="blue", dash="dash"))
-                fig_heatmap.add_annotation(x=fair_value, y=1.5, text=f"Fair: ${fair_value:.2f}", showarrow=False, font=dict(color="blue"))
-                fig_heatmap.add_shape(type="line", x0=current_price, y0=0, x1=current_price, y1=2, line=dict(color="white", width=2))
-                fig_heatmap.add_annotation(x=current_price, y=1.7, text=f"Now: ${current_price:.2f}", showarrow=False, font=dict(color="white"))
-                fig_heatmap.add_shape(type="line", x0=gamma_wall, y0=0, x1=gamma_wall, y1=2, line=dict(color="purple", width=1, dash="dot"))
-                fig_heatmap.add_annotation(x=gamma_wall, y=1.9, text=f"Gamma Wall: ${gamma_wall:.2f}", showarrow=False, font=dict(color="purple"))
-                fig_heatmap.update_layout(title="Order Flow & Liquidity", xaxis_title="Price", yaxis=dict(showgrid=False, showticklabels=False, range=[0, 2]), template="plotly_dark", height=300)
-                st.plotly_chart(fig_heatmap, use_container_width=True)
-
-                st.markdown('<div class="section-header">Probability Outlook</div>', unsafe_allow_html=True)
-                cone = calculate_probability_cone(current_price, iv, [1, 5, 30])
-                fig_cone = go.Figure()
-                for day in [1, 5, 30]:
-                    fig_cone.add_trace(go.Scatter(x=[cone[day]["68_lower"], cone[day]["68_upper"]], y=[day, day], mode="lines", line=dict(color="#FFD700", width=1), name=f"{day}-Day 68%"))
-                    fig_cone.add_trace(go.Scatter(x=[cone[day]["95_lower"], cone[day]["95_upper"]], y=[day, day], mode="lines", line=dict(color="#FF4500", width=1, dash="dash"), name=f"{day}-Day 95%"))
-                fig_cone.add_trace(go.Scatter(x=[current_price], y=[0], mode="markers", marker=dict(size=10, color="white"), name="Current Price"))
-                fig_cone.update_layout(title="Probability Cone", xaxis_title="Price Range", yaxis_title="Days Ahead", template="plotly_dark", height=300)
-                st.plotly_chart(fig_cone, use_container_width=True)
-
-                st.markdown('<div class="section-header">Performance </div>', unsafe_allow_html=True)
-                fig_radar = go.Figure()
-                categories = ["Momentum", "Health", "Valuation", "Risk", "VMI", "Momentum"]
-                scores = [momentum_score/30, health_score/30, valuation_score/20, risk_score/10, abs(vmi)*10, momentum_score/30]
-                texts = [momentum_text, health_text, valuation_text, risk_text, f"Vol Momentum: {vmi:.2f}", momentum_text]
-                absolutes = [f"{momentum_score:.1f}/30", f"{health_score:.1f}/30", f"{valuation_score:.1f}/20", f"{risk_score:.1f}/10", f"{abs(vmi):.2f}", f"{momentum_score:.1f}/30"]
-                fig_radar.add_trace(go.Scatterpolar(
-                    r=scores,
-                    theta=categories,
-                    fill="toself",
-                    name=ticker,
-                    line=dict(color="#32CD32", width=2),
-                    hovertemplate="%{theta}<br>Score: %{customdata[0]}<br>Rating: %{customdata[1]}",
-                    customdata=list(zip(absolutes, texts)),
-                    hoverlabel=dict(bgcolor="rgba(200, 200, 200, 0.8)", font_color="black")
-                ))
-                fig_radar.add_trace(go.Scatterpolar(
-                    r=sector_avg,
-                    theta=categories,
-                    fill="toself",
-                    name=f"{sector} Avg",
-                    line=dict(color="#FFD700", width=1),
-                    opacity=0.5,
-                    hovertemplate="%{theta}: %{r:.2f}<br>",
-                    hoverlabel=dict(bgcolor="rgba(200, 200, 200, 0.8)", font_color="black")
-                ))
-                fig_radar.update_layout(
-                    polar=dict(
-                        radialaxis=dict(visible=True, range=[0, 1], tickfont=dict(color="white")),
-                        angularaxis=dict(tickfont=dict(color="white"))
-                    ),
-                    showlegend=True,
-                    title=f"Performance Radar | {ticker} ({oipi_score:.1f}/100)",
-                    template="plotly_dark",
-                    height=300,
-                    margin=dict(l=50, r=50, t=50, b=50)
-                )
-                st.plotly_chart(fig_radar, use_container_width=True)
-
-            with col2:
-                
-                color_rtes = "#32CD32" if rtes > 60 else "#FFD700" if rtes > 40 else "#FF4500"
-                st.markdown(f'<span class="metric-label">Real-Time Edge Score:</span> <span class="metric-value" style="color:{color_rtes}">{rtes:.1f}/100</span> <span class="tooltip">ℹ️<span class="tooltiptext">Overall trading edge based on momentum, liquidity, and sentiment</span></span>', unsafe_allow_html=True)
-                rtes_recommendation = "Strong Buy" if rtes > 80 else "Buy" if rtes > 60 else "Hold" if rtes > 40 else "Sell"
-                st.markdown(f'<span class="metric-label">Recommendation:</span> <span class="metric-value">{rtes_recommendation}</span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">IFM (Momentum):</span> <span class="metric-value">{ifm:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Institutional Flow Momentum: Measures smart money activity</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">LTI (Trap Index):</span> <span class="metric-value">{lti:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Liquidity Trap Index: Detects potential MM traps</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">EAEM Range:</span> <span class="metric-value">${eaem_lower:.2f} - ${eaem_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Event-Adjusted Expected Move: Price range considering events</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">Gamma Wall:</span> <span class="metric-value">${gamma_wall:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Strike with highest gamma pressure, key support/resistance</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">VMI:</span> <span class="metric-value">{vmi:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Volatility Momentum Index: Combines skew and OI for trend strength</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">Sentiment:</span> <span class="metric-value">{sentiment_score:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">News sentiment (0 bearish, 1 bullish)</span></span>', unsafe_allow_html=True)
-
-                
-                color_oipi = "#32CD32" if oipi_score > 60 else "#FFD700" if oipi_score > 40 else "#FF4500"
-                st.markdown(f'<span class="metric-label">OIPI:</span> <span class="metric-value" style="color:{color_oipi}">{oipi_score:.1f}/100</span> <span class="tooltip">ℹ️<span class="tooltiptext">Overall Potential Index: Long-term value score</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">Recommendation:</span> <span class="metric-value">{oipi_recommendation}</span>', unsafe_allow_html=True)
-                insight = (
-                    "Buy Now: Elite opportunity" if oipi_score > 80 else
-                    "Accumulate: Strong potential" if oipi_score > 60 else
-                    "Hold: Evaluate risks" if oipi_score > 40 else
-                    "Sell: Weak outlook"
-                )
-                st.markdown(f'<span class="metric-label">Insight:</span> <span class="metric-value">{insight}</span>', unsafe_allow_html=True)
-
-                st.markdown('<div class="section-header"> </div>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">Current Price:</span> <span class="metric-value">${current_price:.2f}</span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">Fair Value:</span> <span class="metric-value">${fair_value:.2f} - {fair_value_text}</span> <span class="tooltip">ℹ️<span class="tooltiptext">DCF-based intrinsic value</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">Safe Zone:</span> <span class="metric-value">${safe_zone_lower:.2f} - ${safe_zone_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Range between support and resistance</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">SHORT:</span> <span class="metric-value">${short_term_lower:.2f} - ${short_term_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">1-month expected range</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">MEDIUM:</span> <span class="metric-value">${mid_term_lower:.2f} - ${mid_term_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">6-month expected range</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">LONG:</span> <span class="metric-value">${long_term_lower:.2f} - ${long_term_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Long-term range adjusted by beta</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">Gamma:</span> <span class="metric-value">{gamma_exposure:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Gamma exposure: Sensitivity to price changes</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">Options Skew:</span> <span class="metric-value">{skew:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Call vs Put IV difference: Market bias</span></span>', unsafe_allow_html=True)
-                st.markdown(f'<span class="metric-label">Sharpe Ratio:</span> <span class="metric-value">{sharpe_ratio:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Risk-adjusted return</span></span>', unsafe_allow_html=True)
-
-                # Data Download
-                data = {
-                    "Ticker": ticker, "RTES": rtes, "IFM": ifm, "LTI": lti, "EAEM_Lower": eaem_lower, "EAEM_Upper": eaem_upper,
-                    "Gamma_Wall": gamma_wall, "VMI": vmi, "OIPI": oipi_score, "OIPI_Recommendation": oipi_recommendation,
-                    "Momentum": momentum_text, "Health": health_text, "Valuation": valuation_text, "Risk": risk_text,
-                    "Current_Price": current_price, "Fair_Value": fair_value, "Safe_Zone_Lower": safe_zone_lower,
-                    "Safe_Zone_Upper": safe_zone_upper, "Short_Term_Lower": short_term_lower, "Short_Term_Upper": short_term_upper,
-                    "Mid_Term_Lower": mid_term_lower, "Mid_Term_Upper": mid_term_upper, "Long_Term_Lower": long_term_lower,
-                    "Long_Term_Upper": long_term_upper, "IV": iv, "Gamma_Exposure": gamma_exposure, "Options_Skew": skew,
-                    "Sharpe_Ratio": sharpe_ratio, "Market_Cap": market_cap, "P/E": pe_ratio, "P/B": pb_ratio,
-                    "Debt/Equity": debt_to_equity, "ROE": roe, "Profit_Margin": profit_margin
+                # --- Dynamic Sector Average ---
+                sector_benchmarks = {
+                    "Technology": [0.8, 0.6, 0.7, 0.7, 0.8],
+                    "Financial Services": [0.6, 0.7, 0.6, 0.8, 0.5],
+                    "Healthcare": [0.7, 0.65, 0.75, 0.6, 0.7],
+                    "Consumer Cyclical": [0.65, 0.6, 0.65, 0.7, 0.75]
                 }
-                df = pd.DataFrame([data])
-                csv = df.to_csv(index=False)
-                st.download_button(label="📥 Download EdgeMaster Data", data=csv, file_name=f"{ticker}_edgemaster.csv", mime="text/csv", key="download_edge")
+                sector_avg = sector_benchmarks.get(sector, [0.7, 0.6, 0.65, 0.8, 0.75])
 
-            st.markdown("---")
-            st.markdown("*Developed by Ozy |  © 2025*", unsafe_allow_html=True)
+                # --- Visualization ---
+                col1, col2 = st.columns([2, 1])
 
-        except Exception as e:
-            st.error(f"Error processing {ticker}: {str(e)}")
-            import traceback
-            logger.error(f"Tab 11 Pro Dashboard error: {traceback.format_exc()}")
-            st.markdown("---")
-            st.markdown("*Developed by Ozy | © 2025*", unsafe_allow_html=True)
+                with col1:
+                    st.markdown('<div class="section-header">Market </div>', unsafe_allow_html=True)
+                    fig_heatmap = go.Figure()
+                    price_points = [long_term_lower, mid_term_lower, short_term_lower, safe_zone_lower, current_price, safe_zone_upper, short_term_upper, mid_term_upper, long_term_upper]
+                    y_values = [1] * len(price_points)
+                    colors = ["#FF4500", "#FF8C00", "#FFD700", "#32CD32", "#FFFFFF", "#32CD32", "#FFD700", "#FF8C00", "#FF4500"]
+                    fig_heatmap.add_trace(go.Scatter(x=price_points, y=y_values, mode="markers+text", text=[f"${p:.2f}" for p in price_points], textposition="top center", marker=dict(size=12, color=colors), hoverinfo="x+text"))
+                    fig_heatmap.add_shape(type="rect", x0=safe_zone_lower, y0=0.8, x1=safe_zone_upper, y1=1.2, fillcolor="green", opacity=0.3, line_width=0)
+                    for strike, oi in oi_by_strike.items():
+                        if oi > oi_total * 0.05:
+                            pressure = 1 if strike > current_price else -1
+                            fig_heatmap.add_shape(type="line", x0=strike, y0=0.9, x1=strike, y1=1.1, line=dict(color="green" if pressure > 0 else "red", width=oi/oi_total*10, dash="dot"))
+                    fig_heatmap.add_shape(type="line", x0=fair_value, y0=0, x1=fair_value, y1=2, line=dict(color="blue", dash="dash"))
+                    fig_heatmap.add_annotation(x=fair_value, y=1.5, text=f"Fair: ${fair_value:.2f}", showarrow=False, font=dict(color="blue"))
+                    fig_heatmap.add_shape(type="line", x0=current_price, y0=0, x1=current_price, y1=2, line=dict(color="white", width=2))
+                    fig_heatmap.add_annotation(x=current_price, y=1.7, text=f"Now: ${current_price:.2f}", showarrow=False, font=dict(color="white"))
+                    fig_heatmap.add_shape(type="line", x0=gamma_wall, y0=0, x1=gamma_wall, y1=2, line=dict(color="purple", width=1, dash="dot"))
+                    fig_heatmap.add_annotation(x=gamma_wall, y=1.9, text=f"Gamma Wall: ${gamma_wall:.2f}", showarrow=False, font=dict(color="purple"))
+                    fig_heatmap.update_layout(title="Order Flow & Liquidity", xaxis_title="Price", yaxis=dict(showgrid=False, showticklabels=False, range=[0, 2]), template="plotly_dark", height=300)
+                    st.plotly_chart(fig_heatmap, use_container_width=True)
+
+                    st.markdown('<div class="section-header">Probability Outlook</div>', unsafe_allow_html=True)
+                    cone = calculate_probability_cone(current_price, iv, [1, 5, 30])
+                    fig_cone = go.Figure()
+                    for day in [1, 5, 30]:
+                        fig_cone.add_trace(go.Scatter(x=[cone[day]["68_lower"], cone[day]["68_upper"]], y=[day, day], mode="lines", line=dict(color="#FFD700", width=1), name=f"{day}-Day 68%"))
+                        fig_cone.add_trace(go.Scatter(x=[cone[day]["95_lower"], cone[day]["95_upper"]], y=[day, day], mode="lines", line=dict(color="#FF4500", width=1, dash="dash"), name=f"{day}-Day 95%"))
+                    fig_cone.add_trace(go.Scatter(x=[current_price], y=[0], mode="markers", marker=dict(size=10, color="white"), name="Current Price"))
+                    fig_cone.update_layout(title="Probability Cone", xaxis_title="Price Range", yaxis_title="Days Ahead", template="plotly_dark", height=300)
+                    st.plotly_chart(fig_cone, use_container_width=True)
+
+                    st.markdown('<div class="section-header">Performance </div>', unsafe_allow_html=True)
+                    fig_radar = go.Figure()
+                    categories = ["Momentum", "Health", "Valuation", "Risk", "VMI", "Momentum"]
+                    scores = [momentum_score/30, health_score/30, valuation_score/20, risk_score/10, abs(vmi)*10, momentum_score/30]
+                    texts = [momentum_text, health_text, valuation_text, risk_text, f"Vol Momentum: {vmi:.2f}", momentum_text]
+                    absolutes = [f"{momentum_score:.1f}/30", f"{health_score:.1f}/30", f"{valuation_score:.1f}/20", f"{risk_score:.1f}/10", f"{abs(vmi):.2f}", f"{momentum_score:.1f}/30"]
+                    fig_radar.add_trace(go.Scatterpolar(
+                        r=scores,
+                        theta=categories,
+                        fill="toself",
+                        name=ticker,
+                        line=dict(color="#32CD32", width=2),
+                        hovertemplate="%{theta}<br>Score: %{customdata[0]}<br>Rating: %{customdata[1]}",
+                        customdata=list(zip(absolutes, texts)),
+                        hoverlabel=dict(bgcolor="rgba(200, 200, 200, 0.8)", font_color="black")
+                    ))
+                    fig_radar.add_trace(go.Scatterpolar(
+                        r=sector_avg,
+                        theta=categories,
+                        fill="toself",
+                        name=f"{sector} Avg",
+                        line=dict(color="#FFD700", width=1),
+                        opacity=0.5,
+                        hovertemplate="%{theta}: %{r:.2f}<br>",
+                        hoverlabel=dict(bgcolor="rgba(200, 200, 200, 0.8)", font_color="black")
+                    ))
+                    fig_radar.update_layout(
+                        polar=dict(
+                            radialaxis=dict(visible=True, range=[0, 1], tickfont=dict(color="white")),
+                            angularaxis=dict(tickfont=dict(color="white"))
+                        ),
+                        showlegend=True,
+                        title=f"Performance Radar | {ticker} ({oipi_score:.1f}/100)",
+                        template="plotly_dark",
+                        height=300,
+                        margin=dict(l=50, r=50, t=50, b=50)
+                    )
+                    st.plotly_chart(fig_radar, use_container_width=True)
+
+                with col2:
+                    color_rtes = "#32CD32" if rtes > 60 else "#FFD700" if rtes > 40 else "#FF4500"
+                    st.markdown(f'<span class="metric-label">Real-Time Edge Score:</span> <span class="metric-value" style="color:{color_rtes}">{rtes:.1f}/100</span> <span class="tooltip">ℹ️<span class="tooltiptext">Overall trading edge based on momentum, liquidity, and sentiment</span></span>', unsafe_allow_html=True)
+                    rtes_recommendation = "Strong Buy" if rtes > 80 else "Buy" if rtes > 60 else "Hold" if rtes > 40 else "Sell"
+                    st.markdown(f'<span class="metric-label">Recommendation:</span> <span class="metric-value">{rtes_recommendation}</span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">IFM (Momentum):</span> <span class="metric-value">{ifm:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Institutional Flow Momentum: Measures smart money activity</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">LTI (Trap Index):</span> <span class="metric-value">{lti:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Liquidity Trap Index: Detects potential MM traps</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">EAEM Range:</span> <span class="metric-value">${eaem_lower:.2f} - ${eaem_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Event-Adjusted Expected Move: Price range considering events</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">Gamma Wall:</span> <span class="metric-value">${gamma_wall:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Strike with highest gamma pressure, key support/resistance</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">VMI:</span> <span class="metric-value">{vmi:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Volatility Momentum Index: Combines skew and OI for trend strength</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">Sentiment:</span> <span class="metric-value">{sentiment_score:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">News sentiment (0 bearish, 1 bullish)</span></span>', unsafe_allow_html=True)
+
+                    color_oipi = "#32CD32" if oipi_score > 60 else "#FFD700" if oipi_score > 40 else "#FF4500"
+                    st.markdown(f'<span class="metric-label">OIPI:</span> <span class="metric-value" style="color:{color_oipi}">{oipi_score:.1f}/100</span> <span class="tooltip">ℹ️<span class="tooltiptext">Overall Potential Index: Long-term value score</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">Recommendation:</span> <span class="metric-value">{oipi_recommendation}</span>', unsafe_allow_html=True)
+                    insight = (
+                        "Buy Now: Elite opportunity" if oipi_score > 80 else
+                        "Accumulate: Strong potential" if oipi_score > 60 else
+                        "Hold: Evaluate risks" if oipi_score > 40 else
+                        "Sell: Weak outlook"
+                    )
+                    st.markdown(f'<span class="metric-label">Insight:</span> <span class="metric-value">{insight}</span>', unsafe_allow_html=True)
+
+                    st.markdown('<div class="section-header"> </div>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">Current Price:</span> <span class="metric-value">${current_price:.2f}</span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">Fair Value:</span> <span class="metric-value">${fair_value:.2f} - {fair_value_text}</span> <span class="tooltip">ℹ️<span class="tooltiptext">DCF-based intrinsic value</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">Safe Zone:</span> <span class="metric-value">${safe_zone_lower:.2f} - ${safe_zone_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Range between support and resistance</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">SHORT:</span> <span class="metric-value">${short_term_lower:.2f} - ${short_term_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">1-month expected range</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">MEDIUM:</span> <span class="metric-value">${mid_term_lower:.2f} - ${mid_term_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">6-month expected range</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">LONG:</span> <span class="metric-value">${long_term_lower:.2f} - ${long_term_upper:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Long-term range adjusted by beta</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">Gamma:</span> <span class="metric-value">{gamma_exposure:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Gamma exposure: Sensitivity to price changes</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">Options Skew:</span> <span class="metric-value">{skew:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Call vs Put IV difference: Market bias</span></span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="metric-label">Sharpe Ratio:</span> <span class="metric-value">{sharpe_ratio:.2f}</span> <span class="tooltip">ℹ️<span class="tooltiptext">Risk-adjusted return</span></span>', unsafe_allow_html=True)
+
+                    # Data Download
+                    data = {
+                        "Ticker": ticker, "RTES": rtes, "IFM": ifm, "LTI": lti, "EAEM_Lower": eaem_lower, "EAEM_Upper": eaem_upper,
+                        "Gamma_Wall": gamma_wall, "VMI": vmi, "OIPI": oipi_score, "OIPI_Recommendation": oipi_recommendation,
+                        "Momentum": momentum_text, "Health": health_text, "Valuation": valuation_text, "Risk": risk_text,
+                        "Current_Price": current_price, "Fair_Value": fair_value, "Safe_Zone_Lower": safe_zone_lower,
+                        "Safe_Zone_Upper": safe_zone_upper, "Short_Term_Lower": short_term_lower, "Short_Term_Upper": short_term_upper,
+                        "Mid_Term_Lower": mid_term_lower, "Mid_Term_Upper": mid_term_upper, "Long_Term_Lower": long_term_lower,
+                        "Long_Term_Upper": long_term_upper, "IV": iv, "Gamma_Exposure": gamma_exposure, "Options_Skew": skew,
+                        "Sharpe_Ratio": sharpe_ratio, "Market_Cap": market_cap, "P/E": pe_ratio, "P/B": pb_ratio,
+                        "Debt/Equity": debt_to_equity, "ROE": roe, "Profit_Margin": profit_margin
+                    }
+                    df = pd.DataFrame([data])
+                    csv = df.to_csv(index=False)
+                    st.download_button(label="📥 Download EdgeMaster Data", data=csv, file_name=f"{ticker}_edgemaster.csv", mime="text/csv", key="download_edge")
+
+                st.markdown("---")
+                st.markdown("*Developed by Ozy | © 2025*", unsafe_allow_html=True)
+
+            except Exception as e:
+                st.error(f"Error processing {ticker}: {str(e)}")
+                import traceback
+                logger.error(f"Tab 11 Pro Dashboard error: {traceback.format_exc()}")
+                st.markdown("---")
+                st.markdown("*Developed by Ozy | © 2025*", unsafe_allow_html=True)
+
+    with tab12:
+        
+        st.markdown("""
+            <div style='color: #FFFFFF; font-size: 16px; margin-bottom: 10px;'>
+                
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Definir sectores, bonos, VIX, dólar y SPY con sus respectivos tickers
+        sectors_bonds = {
+            "Basic Materials": "XLB",
+            "Consumer Cyclical": "XLY",
+            "Financials": "XLF",
+            "Defense (Aerospace)": "XAR",
+            "Real Estate": "XLRE",
+            "Utilities": "XLU",
+            "Communication Services": "XLC",
+            "Healthcare": "XLV",
+            "Energy": "XLE",
+            "Industrials": "XLI",
+            "Technology": "XLK",
+            "20+ Yr Treasury Bond": "TLT",
+            "7-10 Yr Treasury Bond": "IEF",
+            "1-3 Yr Treasury Bond": "SHY",
+            "VIX (Volatility Index)": "^VIX",
+            "Dollar Index (UUP)": "UUP",
+            "S&P 500 (SPY)": "SPY"
+        }
+
+        # Función auxiliar para obtener datos de API
+        def fetch_api_data(url, params, headers, source):
+            try:
+                response = requests.get(url, params=params, headers=headers, timeout=5)
+                response.raise_for_status()
+                data = response.json()
+                return data
+            except Exception as e:
+                logger.error(f"Error fetching {source} data: {e}")
+                st.write(f"Debug: {source} - Error: {str(e)}")
+                return None
+
+        # Obtener precio actual y cambio diario
+        def get_current_price_and_change(ticker):
+            url = f"https://financialmodelingprep.com/api/v3/quote/{ticker}"
+            params = {"apikey": FMP_API_KEY}
+            data = fetch_api_data(url, params, HEADERS_FMP, f"FMP Quote {ticker}")
+            if data and isinstance(data, list) and len(data) > 0:
+                price = float(data[0].get("price", 1.0))
+                change = float(data[0].get("changesPercentage", 0.0))
+                return price, change
+            return 1.0, 0.0  # Fallback
+
+        # Obtener datos históricos para un ticker con rango de fechas
+        def get_historical_performance(ticker, days):
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+            url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}"
+            params = {
+                "apikey": FMP_API_KEY,
+                "from": start_date.strftime("%Y-%m-%d"),
+                "to": end_date.strftime("%Y-%m-%d")
+            }
+            data = fetch_api_data(url, params, HEADERS_FMP, f"FMP Historical {ticker}")
+            if data and "historical" in data and len(data["historical"]) > 1:
+                prices = [float(entry["close"]) for entry in data["historical"] if "close" in entry]
+                if len(prices) >= 2:
+                    return prices[-1], prices[0]  # Último precio (más antiguo), primer precio (más reciente)
+                st.write(f"Debug: {ticker} - Only {len(prices)} data points for {days} days, using available")
+                return prices[-1], prices[0] if prices else (1.0, 1.0)
+            current_price, _ = get_current_price_and_change(ticker)
+            st.write(f"Debug: {ticker} - No historical data for {days} days, using current price {current_price}")
+            return current_price, current_price
+
+        # Calcular rendimiento porcentual
+        def calculate_performance(start_price, end_price):
+            if start_price and end_price and start_price > 0:
+                return ((end_price - start_price) / start_price) * 100
+            return 0.0
+
+        # Calcular predicción por sector (IPM-S)
+        def calculate_sector_prediction(row, vix_data, dollar_data, spy_data):
+            period_weights = {"1 Day": 0.4, "1 Week": 0.3, "1 Month": 0.15, "1 Quarter": 0.1, "1 Year": 0.05}
+            momentum = sum(row[period] * weight for period, weight in period_weights.items())
+            spy_momentum = sum(spy_data[period] * weight for period, weight in period_weights.items())
+            correlation_factor = 0.5 if row["Sector/Bond"] in ["Technology", "Consumer Cyclical", "Financials"] else 0.3
+            spy_adjustment = spy_momentum * correlation_factor
+            vix_factor = (vix_data["1 Day"] * 0.6 + vix_data["1 Week"] * 0.4) * 0.25
+            dollar_factor = (dollar_data["1 Day"] * 0.6 + dollar_data["1 Week"] * 0.4) * (-0.15 if "Treasury" not in row["Sector/Bond"] else 0.1)
+            ipms_score = momentum + spy_adjustment + vix_factor + dollar_factor
+            direction = "Up" if ipms_score > 0.3 else "Down" if ipms_score < -0.3 else "Neutral"
+            magnitude = min(abs(ipms_score) * (1 + abs(vix_factor) / 10), 4.0)
+            return direction, magnitude, ipms_score
+
+        # Calcular predicción del mercado (IPM-M para SPY)
+        def calculate_market_prediction(df):
+            spy_data = df[df["Sector/Bond"] == "S&P 500 (SPY)"].iloc[0]
+            vix_data = df[df["Sector/Bond"] == "VIX (Volatility Index)"].iloc[0]
+            dollar_data = df[df["Sector/Bond"] == "Dollar Index (UUP)"].iloc[0]
+            sectors = df[~df["Sector/Bond"].str.contains("Treasury|VIX|Dollar|SPY")]
+            period_weights = {"1 Day": 0.4, "1 Week": 0.3, "1 Month": 0.15, "1 Quarter": 0.1, "1 Year": 0.05}
+            spy_momentum = sum(spy_data[period] * weight for period, weight in period_weights.items())
+            sector_momentum = sectors[list(period_weights.keys())].mean().sum() / len(period_weights)
+            vix_factor = (vix_data["1 Day"] * 0.6 + vix_data["1 Week"] * 0.4) * 0.35
+            dollar_factor = (dollar_data["1 Day"] * 0.6 + dollar_data["1 Week"] * 0.4) * -0.2
+            ipmm_score = spy_momentum * 0.5 + sector_momentum * 0.3 + vix_factor + dollar_factor
+            direction = "Up" if ipmm_score > 0.5 else "Down" if ipmm_score < -0.5 else "Neutral"
+            magnitude = min(abs(ipmm_score) * (1 + abs(vix_factor) / 10), 5.0)
+            return direction, magnitude, ipmm_score
+
+        # Obtener datos para todos los períodos
+        performance_data = []
+        periods = {"1 Day": 1, "1 Week": 7, "1 Month": 30, "1 Quarter": 90, "1 Year": 365}
+
+        with st.spinner("Fetching sector, Ozy data..."):
+            for name, ticker in sectors_bonds.items():
+                row = {"Sector/Bond": name}
+                _, daily_change = get_current_price_and_change(ticker)
+                row["1 Day"] = daily_change
+                for period_name, days in list(periods.items())[1:]:
+                    start_price, end_price = get_historical_performance(ticker, days)
+                    perf = calculate_performance(start_price, end_price)
+                    row[period_name] = perf
+                performance_data.append(row)
+
+            # Crear DataFrame
+            df = pd.DataFrame(performance_data)
+
+            # Calcular predicciones por sector
+            vix_data = df[df["Sector/Bond"] == "VIX (Volatility Index)"].iloc[0]
+            dollar_data = df[df["Sector/Bond"] == "Dollar Index (UUP)"].iloc[0]
+            spy_data = df[df["Sector/Bond"] == "S&P 500 (SPY)"].iloc[0]
+            df["Predicted Direction"] = ""
+            df["Predicted Magnitude (%)"] = 0.0
+            df["IPM-S Score"] = 0.0
+            for idx, row in df.iterrows():
+                direction, magnitude, ipms_score = calculate_sector_prediction(row, vix_data, dollar_data, spy_data)
+                df.at[idx, "Predicted Direction"] = direction
+                df.at[idx, "Predicted Magnitude (%)"] = magnitude
+                df.at[idx, "IPM-S Score"] = ipms_score
+
+            # Calcular predicción del mercado (SPY)
+            market_direction, market_magnitude, ipmm_score = calculate_market_prediction(df)
+
+            # Función para colorear celdas con gradiente
+            def color_performance(val):
+                if isinstance(val, (int, float)):
+                    if val > 0:
+                        intensity = min(1.0, val / 10)
+                        return f'background-color: rgba(50, 205, 50, {intensity}); color: #FFFFFF'
+                    elif val < 0:
+                        intensity = min(1.0, abs(val) / 10)
+                        return f'background-color: rgba(255, 69, 0, {intensity}); color: #FFFFFF'
+                return 'background-color: #2D2D2D; color: #FFFFFF'
+
+            # Estilizar la tabla con mayor altura vertical
+            styled_df = df.style.format({
+                "1 Day": "{:.2f}%",
+                "1 Week": "{:.2f}%",
+                "1 Month": "{:.2f}%",
+                "1 Quarter": "{:.2f}%",
+                "1 Year": "{:.2f}%",
+                "Predicted Magnitude (%)": "{:.2f}%",
+                "IPM-S Score": "{:.2f}"
+            }).applymap(color_performance, subset=["1 Day", "1 Week", "1 Month", "1 Quarter", "1 Year", "IPM-S Score"]).set_properties(**{
+                'text-align': 'center',
+                'border': '1px solid #555555',
+                'font-family': 'Arial, sans-serif',
+                'font-size': '14px',
+                'padding': '8px'
+            }).set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', '#1E1E1E'),
+                    ('color', '#32CD32'),
+                    ('font-weight', 'bold'),
+                    ('text-align', 'center'),
+                    ('border', '1px solid #555555'),
+                    ('padding', '10px'),
+                ]},
+                {'selector': 'td', 'props': [
+                    ('border', '1px solid #555555'),
+                ]},
+            ])
+
+            # Mostrar la tabla más larga verticalmente
+            st.dataframe(styled_df, use_container_width=True, height=800)  # Altura aumentada a 800px
+
+            # Mostrar predicción del mercado (SPY)
+            
+            market_color = "#32CD32" if market_direction == "Up" else "#FF4500" if market_direction == "Down" else "#FFFFFF"
+            st.markdown(f"""
+                <div style='text-align: center; font-size: 18px;'>
+                    <span style='color: {market_color}; font-weight: bold;'>Predicted Direction: {market_direction}</span><br>
+                    Expected Magnitude: ±{market_magnitude:.2f}%<br>
+                    <span style='font-size: 14px; color: #FFD700;'>IPM-M Score: {ipmm_score:.2f}</span>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Gráfico interactivo
+            
+            fig = go.Figure()
+            for period in periods.keys():
+                fig.add_trace(go.Bar(
+                    x=df["Sector/Bond"],
+                    y=df[period],
+                    name=period,
+                    marker_color=['#32CD32' if x > 0 else '#FF4500' for x in df[period]],
+                    opacity=0.8
+                ))
+            fig.update_layout(
+                
+                xaxis_title="Sector/Bond",
+                yaxis_title="Performance (%)",
+                barmode='group',
+                template="plotly_dark",
+                plot_bgcolor="#1E1E1E",
+                paper_bgcolor="#1E1E1E",
+                font=dict(color="#FFFFFF", size=12),
+                legend=dict(yanchor="top", y=1.1, xanchor="right", x=1),
+                height=500
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Descarga CSV
+            csv = df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Sector Performance Data with Predictions",
+                data=csv,
+                file_name="sector_performance_map_with_predictions.csv",
+                mime="text/csv",
+                key="download_sector_map_tab12"
+            )
+
+            st.markdown(f"*Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Powered by Ozy*")
 
 if __name__ == "__main__":
     main()
