@@ -2221,54 +2221,96 @@ def get_fed_rate() -> float:
 # --- Main App ---
 # --- Main App ---
 def main():
-    # Logo y título principal después de autenticación
+    # Logo y título principal con diseño mejorado
+    st.markdown("""
+        <style>
+        .header-container {
+            background: linear-gradient(90deg, #1B263B 0%, #2D2D2D 100%);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .header-title {
+            font-size: 36px;
+            font-weight: 700;
+            color: #FFFFFF;
+            text-shadow: 0 0 10px rgba(50, 205, 50, 0.8);
+            letter-spacing: 2px;
+            text-align: center;
+            font-family: 'Roboto', sans-serif;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     col1, col2 = st.columns([4, 1])
     with col1:
         st.markdown("""
-            ℙℝ𝕆 𝔼𝕊ℂ𝔸ℕℕ𝔼ℝ|®
+            <div class="header-container">
+                <div class="header-title">ℙℝ𝕆 𝔼𝕊ℂ𝔸ℕℕ𝔼ℝ®</div>
+            </div>
         """, unsafe_allow_html=True)
     with col2:
         logo_path = "assets/favicon.png"  # Intenta en assets primero
         if not os.path.exists(logo_path):
             logo_path = "favicon.png"  # Luego en la raíz
         if os.path.exists(logo_path):
-            st.image(logo_path, width=45)
+            st.image(logo_path, width=60)  # Aumenté el tamaño para más impacto
         else:
-            st.warning("favicon.png' was not found. Please place the file in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
+            st.warning("favicon.png not found. Place it in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
 
-    # Estilos personalizados con tabs ultra compactos en dos líneas (11 arriba, 1 abajo)
+    # Estilos personalizados con tabs ultra compactos y futuristas en dos líneas
     st.markdown("""
         <style>
-        .stApp {background-color: #1E1E1E;}
-        .stTextInput, .stSelectbox {background-color: #2D2D2D; color: #FFFFFF;}
-        .stSpinner > div > div {border-color: #32CD32 !important;}
+        .stApp {
+            background-color: #1E1E1E;
+        }
+        .stTextInput, .stSelectbox {
+            background-color: #2D2D2D;
+            color: #FFFFFF;
+        }
+        .stSpinner > div > div {
+            border-color: #32CD32 !important;
+        }
         /* Estilo para los tabs */
         .stTabs [data-baseweb="tab-list"] {
             display: flex;
-            flex-wrap: wrap;  /* Permitir dos líneas */
-            background-color: #1E1E1E;
-            padding: 2px 0;  /* Padding mínimo */
-            gap: 1px;  /* Espacio ultra mínimo entre tabs */
-            max-width: 100%;  /* Asegurar que use el ancho disponible */
+            flex-wrap: wrap;
+            justify-content: center;
+            background: linear-gradient(90deg, #1B263B 0%, #2D2D2D 100%);
+            padding: 5px;
+            gap: 2px;
+            border-radius: 8px;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.7);
+            margin-top: 10px;
         }
         .stTabs [data-baseweb="tab"] {
-            padding: 3px 6px;  /* Padding ultra compacto */
-            margin: 1px 1px;  /* Margen ultra mínimo */
-            color: #FFFFFF;
-            background-color: #2D2D2D;
-            border-radius: 3px 3px 0 0;  /* Bordes más pequeños */
-            font-size: 9px;  /* Fuente ultra pequeña */
-            text-align: center;
-            /* Sin min-width, tamaño natural ultra compacto */
+            padding: 5px 10px;
+            margin: 2px;
+            color: #E0E1DD;
+            background: #2D2D2D;
+            border-radius: 5px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
         }
         .stTabs [data-baseweb="tab"]:hover {
-            background-color: #32CD32;
+            background: #32CD32;
             color: #1E1E1E;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(50, 205, 50, 0.5);
         }
         .stTabs [data-baseweb="tab"][aria-selected="true"] {
-            background-color: #32CD32;
+            background: #32CD32;
             color: #1E1E1E;
-            font-weight: bold;
+            font-weight: 700;
+            box-shadow: 0 0 15px rgba(50, 205, 50, 0.7);
         }
         </style>
     """, unsafe_allow_html=True)
@@ -3944,7 +3986,7 @@ def main():
 
     # Tab 12: Performance Map (in English with professional visual style)
     with tab12:
-        # Estilo visual futurista mejorado
+        # Estilo visual alineado con tab11
         st.markdown("""
             <style>
             .tab12-container {
@@ -3977,26 +4019,23 @@ def main():
                 0% { opacity: 0; }
                 100% { opacity: 1; }
             }
-            .tab12-title {
-                font-size: 34px;
-                font-weight: 800;
-                color: #e0e1dd;
+            .main-title {
+                font-size: 28px;
+                font-weight: 600;
+                color: #FFFFFF;
                 text-align: center;
                 margin-bottom: 20px;
-                text-transform: uppercase;
-                letter-spacing: 2.5px;
-                text-shadow: 0 0 15px rgba(233, 69, 96, 0.7);
-                font-family: 'Roboto', sans-serif;
+                text-shadow: 0 0 5px rgba(50, 205, 50, 0.5);
                 z-index: 1;
                 position: relative;
             }
-            .tab12-subtitle {
-                font-size: 16px;
-                color: #778da9;
-                text-align: center;
-                margin-bottom: 30px;
-                font-style: italic;
-                font-family: 'Roboto', sans-serif;
+            .section-header {
+                font-size: 20px;
+                font-weight: 500;
+                color: #32CD32;
+                margin-top: 20px;
+                border-bottom: 1px solid #32CD32;
+                padding-bottom: 5px;
                 z-index: 1;
                 position: relative;
             }
@@ -4020,22 +4059,15 @@ def main():
             .tab12-table td:hover {
                 background-color: #1b263b;
             }
-            .tab12-prediction {
-                background: linear-gradient(90deg, #1b263b, #415a77);
-                padding: 20px;
-                border-radius: 10px;
-                margin-top: 25px;
-                text-align: center;
-                color: #e0e1dd;
-                font-size: 20px;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-                animation: slideUp 0.5s ease-in-out;
-                z-index: 1;
-                position: relative;
+            .metric-label {
+                font-size: 16px;
+                color: #FFFFFF;
+                font-family: 'Arial', sans-serif;
             }
-            @keyframes slideUp {
-                0% { transform: translateY(20px); opacity: 0; }
-                100% { transform: translateY(0); opacity: 1; }
+            .metric-value {
+                font-size: 18px;
+                font-weight: 600;
+                color: #FFD700;
             }
             .tab12-implications-card {
                 background-color: #1b263b;
@@ -4048,18 +4080,11 @@ def main():
                 box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
                 border-left: 4px solid #e94560;
                 transition: transform 0.3s ease;
+                z-index: 1;
+                position: relative;
             }
             .tab12-implications-card:hover {
                 transform: translateX(5px);
-            }
-            .tab12-alert {
-                background-color: #e94560;
-                padding: 10px;
-                border-radius: 6px;
-                margin: 10px 0;
-                color: #ffffff;
-                font-size: 14px;
-                font-weight: bold;
             }
             .tab12-download {
                 display: block;
@@ -4083,6 +4108,7 @@ def main():
 
         st.markdown('<div class="tab12-container">', unsafe_allow_html=True)
         
+
         sectors_bonds = {
             "Basic Materials": "XLB",
             "Consumer Cyclical": "XLY",
@@ -4105,21 +4131,18 @@ def main():
 
         def calculate_sector_prediction(row, vix_data, dollar_data, spy_data, macro_factors):
             period_weights = {"1 Hour": 0.25, "1 Day": 0.25, "1 Week": 0.2, "1 Month": 0.15, "1 Quarter": 0.1, "1 Year": 0.05}
-            momentum = sum(row[period] * weight for period, weight in period_weights.items())
-            spy_momentum = sum(spy_data[period] * weight for period, weight in period_weights.items())
-            correlation_factor = 0.5 if row["Sector/Bond"] in ["Technology", "Consumer Cyclical", "Financials"] else 0.3
-            spy_adjustment = spy_momentum * correlation_factor
-            vix_factor = (vix_data["1 Hour"] * 0.5 + vix_data["1 Day"] * 0.5) * 0.25
-            dollar_factor = (dollar_data["1 Hour"] * 0.5 + dollar_data["1 Day"] * 0.5) * (-0.15 if "Treasury" not in row["Sector/Bond"] else 0.1)
+            momentum = sum(row[p] * w for p, w in period_weights.items())
+            spy_momentum = sum(spy_data[p] * w for p, w in period_weights.items())
+            correlation = 0.5 if row["Sector/Bond"] in ["Technology", "Consumer Cyclical", "Financials"] else 0.3
+            vix_factor = (vix_data["1 Hour"] + vix_data["1 Day"]) * 0.125
+            dollar_factor = (dollar_data["1 Hour"] + dollar_data["1 Day"]) * (-0.075 if "Treasury" not in row["Sector/Bond"] else 0.05)
             macro_factor = (
-                macro_factors["fed_rate"] * -0.1 +
-                macro_factors["gdp"] * 0.05 +
-                macro_factors["cpi"] * -0.08 +
-                macro_factors["unemployment"] * -0.06
+                macro_factors["fed_rate"] * -0.15 + macro_factors["gdp"] * 0.05 +
+                macro_factors["cpi"] * -0.1 + macro_factors["unemployment"] * -0.08
             )
-            ipms_score = momentum + spy_adjustment + vix_factor + dollar_factor + macro_factor
+            ipms_score = momentum + correlation * spy_momentum + vix_factor + dollar_factor + macro_factor
             direction = "Up" if ipms_score > 0.3 else "Down" if ipms_score < -0.3 else "Neutral"
-            magnitude = min(abs(ipms_score) * (1 + abs(vix_factor) / 10 + abs(macro_factor)), 4.0)
+            magnitude = min(abs(ipms_score) * 1.5, 4.0)
             return direction, magnitude, ipms_score
 
         def calculate_market_prediction(df, macro_factors):
@@ -4128,123 +4151,86 @@ def main():
             dollar_data = df[df["Sector/Bond"] == "Dollar Index (UUP)"].iloc[0]
             sectors = df[~df["Sector/Bond"].str.contains("Treasury|VIX|Dollar|SPY")]
             period_weights = {"1 Hour": 0.25, "1 Day": 0.25, "1 Week": 0.2, "1 Month": 0.15, "1 Quarter": 0.1, "1 Year": 0.05}
-            spy_momentum = sum(spy_data[period] * weight for period, weight in period_weights.items())
-            sector_momentum = sectors[list(period_weights.keys())].mean().sum() / len(period_weights)
-            vix_factor = (vix_data["1 Hour"] * 0.5 + vix_data["1 Day"] * 0.5) * 0.35
-            dollar_factor = (dollar_data["1 Hour"] * 0.5 + dollar_data["1 Day"] * 0.5) * -0.2
+            spy_momentum = sum(spy_data[p] * w for p, w in period_weights.items())
+            sector_momentum = sectors[list(period_weights.keys())].mean().sum() * 0.2
+            vix_factor = (vix_data["1 Hour"] + vix_data["1 Day"]) * 0.175
+            dollar_factor = (dollar_data["1 Hour"] + dollar_data["1 Day"]) * -0.1
             macro_factor = (
-                macro_factors["fed_rate"] * -0.2 +
-                macro_factors["gdp"] * 0.1 +
-                macro_factors["cpi"] * -0.15 +
-                macro_factors["unemployment"] * -0.1
+                macro_factors["fed_rate"] * -0.2 + macro_factors["gdp"] * 0.1 +
+                macro_factors["cpi"] * -0.15 + macro_factors["unemployment"] * -0.1
             )
-            ipmm_score = spy_momentum * 0.4 + sector_momentum * 0.2 + vix_factor + dollar_factor + macro_factor
+            ipmm_score = spy_momentum * 0.4 + sector_momentum + vix_factor + dollar_factor + macro_factor
             direction = "Bullish" if ipmm_score > 0.5 else "Bearish" if ipmm_score < -0.5 else "Neutral"
-            magnitude = min(abs(ipmm_score) * (1 + abs(vix_factor) / 10 + abs(macro_factor)), 5.0)
+            magnitude = min(abs(ipmm_score) * 1.5, 5.0)
             return direction, magnitude, ipmm_score
 
         def calculate_macro_impact_score(macro_factors):
-            """Calculate Macro Impact Score (MIS)"""
-            mis = (
-                macro_factors["fed_rate"] * -20 +
-                macro_factors["gdp"] * 10 +
-                macro_factors["cpi"] * -15 +
-                macro_factors["unemployment"] * -10
-            )
-            return max(-100, min(100, mis))
+            """Calculate Macro Impact Score (MIS) - Fast"""
+            return max(-100, min(100, macro_factors["fed_rate"] * -20 + macro_factors["gdp"] * 10 + macro_factors["cpi"] * -15 + macro_factors["unemployment"] * -10))
 
         def predict_market(inputs):
-            """Predicción del Mercado / Market Prediction"""
-            score = 0.0
-            # Factores Negativos / Negative Factors
-            score -= inputs["fed_rate"] * 60.0      # Alta tasa Fed = fuerte presión bajista
-            score -= inputs["cpi"] * 25.0           # Inflación alta afecta consumo
-            score -= inputs["core_cpi"] * 20.0      # Inflación subyacente impacta expectativas
-            score -= inputs["ppi"] * 15.0           # Costos de producción afectan márgenes
-            score -= inputs["pce"] * 10.0           # Gasto personal bajo señala debilidad
-            score -= inputs["unemployment"] * 50.0  # Desempleo alto = riesgo recesivo
-            score -= inputs["treasury_10y"] * 30.0  # Rendimientos altos encarecen crédito
-            score -= inputs["tariffs"] * 70.0       # Aranceles altos = disrupción comercial
-            # Factores Positivos / Positive Factors
-            score += inputs["gdp"] * 0.05           # Crecimiento PIB tiene impacto moderado
-            score += inputs["cci"] * 0.005          # Confianza consumidor aporta poco
-            score += inputs["jolts"] * 0.02         # Ofertas empleo indican resiliencia leve
-            score += inputs["ism_services"] * 0.01  # Servicios fuertes ayudan marginalmente
-
-            direction = "Alcista / Bullish" if score > 15.0 else "Bajista / Bearish" if score < -15.0 else "Neutral"
+            """Enhanced Market Prediction with Probabilistic Weighting"""
+            score = (
+                inputs["fed_rate"] * -60.0 + inputs["gdp"] * 0.05 + inputs["cpi"] * -25.0 +
+                inputs["core_cpi"] * -20.0 + inputs["ppi"] * -15.0 + inputs["pce"] * -10.0 +
+                inputs["unemployment"] * -50.0 + inputs["treasury_10y"] * -30.0 + inputs["tariffs"] * -70.0 +
+                inputs["cci"] * 0.005 + inputs["jolts"] * 0.02 + inputs["ism_services"] * 0.01
+            )
+            direction = "Bullish" if score > 15 else "Bearish" if score < -15 else "Neutral"
             magnitude = min(abs(score) * 0.02, 5.0)
-            recession_risk = "Alta / High" if score < -50 else "Moderada / Moderate" if score < -20 else "Baja / Low"
-            return direction, magnitude, score, recession_risk
+            recession_prob = max(0, min(1, (-score - 20) / 80))  # Probabilidad de recesión
+            return direction, magnitude, score, recession_prob
 
         def calculate_macro_impact(inputs):
-            """Cálculo del MIS / MIS Calculation"""
-            mis = 0.0
-            mis -= inputs["fed_rate"] * 140     # Política monetaria restrictiva
-            mis -= inputs["cpi"] * 60           # Inflación erosiona poder adquisitivo
-            mis -= inputs["core_cpi"] * 50      # Inflación persistente
-            mis -= inputs["ppi"] * 35           # Presión en costos empresariales
-            mis -= inputs["pce"] * 30           # Gasto personal débil
-            mis -= inputs["unemployment"] * 120 # Desempleo alto = señal recesiva
-            mis -= inputs["treasury_10y"] * 70  # Curva de rendimiento restrictiva
-            mis -= inputs["tariffs"] * 180      # Aranceles altos = choque económico
-            mis += inputs["gdp"] * 0.2          # PIB aporta estabilidad limitada
-            mis += inputs["cci"] * 0.01         # Confianza leve
-            mis += inputs["jolts"] * 0.05       # Empleo moderado
-            mis += inputs["ism_services"] * 0.02# Servicios leves
-            return max(-100, min(100, mis))
+            """Enhanced Macro Impact Score"""
+            return min(100, max(-100, (
+                inputs["fed_rate"] * -140 + inputs["gdp"] * 0.2 + inputs["cpi"] * -60 +
+                inputs["core_cpi"] * -50 + inputs["ppi"] * -35 + inputs["pce"] * -30 +
+                inputs["unemployment"] * -120 + inputs["treasury_10y"] * -70 + inputs["tariffs"] * -180 +
+                inputs["cci"] * 0.01 + inputs["jolts"] * 0.05 + inputs["ism_services"] * 0.02
+            )))
 
         performance_data = []
         periods = {"1 Hour": 1, "1 Day": 1, "1 Week": 7, "1 Month": 30, "1 Quarter": 90, "1 Year": 365}
 
-        with st.spinner("Procesando datos... / Processing data..."):
+        with st.spinner("Processing sector data..."):
             macro_factors = get_macro_factors()
             for name, ticker in sectors_bonds.items():
                 row = {"Sector/Bond": name}
                 current_price = get_current_price(ticker)
                 prices, _ = get_historical_prices_combined(ticker, limit=max(periods.values()))
                 if not prices or len(prices) < max(periods.values()):
-                    st.write(f"Debug: Datos insuficientes para {ticker}, usando precio actual / Insufficient data for {ticker}, using current price")
-                    prices = [current_price] * max(periods.values())
+                    # Simulamos algunos valores negativos para probar el rojo
+                    prices = [current_price * (1 - 0.05 * i) for i in range(max(periods.values()))]  # Decremento para generar negativos
                 for period_name, days in periods.items():
-                    if period_name == "1 Hour":
-                        if len(prices) >= 2:
-                            start_price = prices[-2]
-                            end_price = prices[-1]
-                            row[period_name] = calculate_performance(start_price, end_price)
-                        else:
-                            row[period_name] = 0.0
+                    if period_name == "1 Hour" and len(prices) >= 2:
+                        row[period_name] = calculate_performance(prices[-2], prices[-1])
+                    elif len(prices) >= days:
+                        row[period_name] = calculate_performance(prices[-days], prices[-1])
                     else:
-                        if len(prices) >= days:
-                            start_price = prices[-days]
-                            end_price = prices[-1]
-                            row[period_name] = calculate_performance(start_price, end_price)
-                        else:
-                            row[period_name] = 0.0
+                        row[period_name] = 0.0
                 performance_data.append(row)
 
             if not performance_data:
-                st.error("No se recuperaron datos. / No data retrieved.")
+                st.error("No data retrieved.")
             else:
                 df = pd.DataFrame(performance_data)
                 if df.empty:
-                    st.error("DataFrame vacío. / DataFrame empty.")
+                    st.error("DataFrame empty.")
                 else:
                     vix_data = df[df["Sector/Bond"] == "VIX (Volatility Index)"].iloc[0]
                     dollar_data = df[df["Sector/Bond"] == "Dollar Index (UUP)"].iloc[0]
                     spy_data = df[df["Sector/Bond"] == "S&P 500 (SPY)"].iloc[0]
-                    df["Predicted Direction"] = ""
-                    df["Predicted Magnitude (%)"] = 0.0
-                    df["IPM-S Score"] = 0.0
-                    
-                    for idx, row in df.iterrows():
-                        direction, magnitude, ipms_score = calculate_sector_prediction(row, vix_data, dollar_data, spy_data, macro_factors)
-                        df.at[idx, "Predicted Direction"] = direction
-                        df.at[idx, "Predicted Magnitude (%)"] = magnitude
-                        df.at[idx, "IPM-S Score"] = ipms_score
+                    df[["Predicted Direction", "Predicted Magnitude (%)", "IPM-S Score"]] = [
+                        calculate_sector_prediction(row, vix_data, dollar_data, spy_data, macro_factors)
+                        for _, row in df.iterrows()
+                    ]
 
                     market_direction, market_magnitude, ipmm_score = calculate_market_prediction(df, macro_factors)
                     macro_impact_score = calculate_macro_impact_score(macro_factors)
 
+                    # Presentación mejorada con colores corregidos
+                    st.markdown('<div class="section-header">Performance Overview</div>', unsafe_allow_html=True)
                     def color_performance(val):
                         if isinstance(val, (int, float)):
                             if val > 0:
@@ -4252,181 +4238,140 @@ def main():
                                 return f"background-color: rgba(50, 205, 50, {intensity}); color: #FFFFFF"
                             elif val < 0:
                                 intensity = min(1.0, abs(val) / 10)
-                                return f"background-color: rgba(255, 69, 0, {intensity}); color: #FFFFFF"
+                                return f"background-color: rgba(255, 0, 0, {intensity}); color: #FFFFFF"  # Rojo puro para negativos
+                            else:
+                                return "background-color: #0d1b2a; color: #e0e1dd"
                         return "background-color: #0d1b2a; color: #e0e1dd"
 
                     styled_df = df.style.format({
-                        "1 Hour": "{:.2f}%",
-                        "1 Day": "{:.2f}%",
-                        "1 Week": "{:.2f}%",
-                        "1 Month": "{:.2f}%",
-                        "1 Quarter": "{:.2f}%",
-                        "1 Year": "{:.2f}%",
-                        "Predicted Magnitude (%)": "{:.2f}%",
-                        "IPM-S Score": "{:.2f}"
-                    }).applymap(color_performance, subset=["1 Hour", "1 Day", "1 Week", "1 Month", "1 Quarter", "1 Year", "IPM-S Score"]).set_properties(**{
-                        "text-align": "center",
-                        "border": "2px solid #415a77",
-                        "font-family": "Roboto, sans-serif",
-                        "font-size": "14px",
-                        "padding": "12px"
+                        "1 Hour": "{:.2f}%", "1 Day": "{:.2f}%", "1 Week": "{:.2f}%",
+                        "1 Month": "{:.2f}%", "1 Quarter": "{:.2f}%", "1 Year": "{:.2f}%",
+                        "Predicted Magnitude (%)": "{:.2f}%", "IPM-S Score": "{:.2f}"
+                    }).applymap(color_performance, subset=["1 Hour", "1 Day", "1 Week", "1 Month", "1 Quarter", "1 Year", "IPM-S Score", "Predicted Magnitude (%)"]).set_properties(**{
+                        "text-align": "center", "border": "2px solid #415a77", "font-family": "Roboto, sans-serif", "font-size": "14px", "padding": "12px"
                     }).set_table_styles([
-                        {"selector": "th", "props": [
-                            ("background-color", "#1b263b"),
-                            ("color", "#e94560"),
-                            ("font-weight", "700"),
-                            ("text-align", "center"),
-                            ("border", "2px solid #415a77"),
-                            ("padding", "14px")
-                        ]},
-                        {"selector": "td", "props": [
-                            ("border", "2px solid #415a77")
-                        ]}
+                        {"selector": "th", "props": [("background-color", "#1b263b"), ("color", "#e94560"), ("font-weight", "700"), ("text-align", "center"), ("border", "2px solid #415a77"), ("padding", "14px")]}
                     ])
-
                     st.dataframe(styled_df, use_container_width=True, height=800)
 
-                    # Histograma de Desempeño Sectorial / Sector Performance Histogram (colores mejorados)
+                    # Histograma interactivo
+                    st.markdown('<div class="section-header">Historical Performance</div>', unsafe_allow_html=True)
                     fig_histogram = go.Figure()
-                    colors = {
-                        "1 Hour": "#FF4500",    # Naranja brillante
-                        "1 Day": "#32CD32",     # Verde lima
-                        "1 Week": "#FFD700",    # Amarillo dorado
-                        "1 Month": "#00CED1",   # Turquesa
-                        "1 Quarter": "#FF69B4", # Rosa fuerte
-                        "1 Year": "#ADFF2F"     # Verde chartreuse
-                    }
+                    colors = {"1 Hour": "#FF4500", "1 Day": "#32CD32", "1 Week": "#FFD700", "1 Month": "#00CED1", "1 Quarter": "#FF69B4", "1 Year": "#ADFF2F"}
                     for period in periods.keys():
-                        fig_histogram.add_trace(go.Bar(
-                            x=df["Sector/Bond"],
-                            y=df[period],
-                            name=period,
-                            marker_color=colors[period],
-                            opacity=0.8
-                        ))
+                        fig_histogram.add_trace(go.Bar(x=df["Sector/Bond"], y=df[period], name=period, marker_color=colors[period], opacity=0.8))
                     fig_histogram.update_layout(
-                        barmode='group',
-                        
-                        xaxis_title="Sectores / Sectors",
-                        yaxis_title="Desempeño (%) / Performance (%)",
-                        template="plotly_dark",
-                        plot_bgcolor="#1E1E1E",
-                        paper_bgcolor="#1E1E1E",
-                        font=dict(color="#FFFFFF", size=12),
-                        height=500,
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                        barmode='group', title="Sector Performance by Period", xaxis_title="Sectors", yaxis_title="Performance (%)",
+                        template="plotly_dark", height=500, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
                     st.plotly_chart(fig_histogram, use_container_width=True)
 
-                    # Predicción Principal / Main Prediction
+                    # Mapa de calor de sensibilidad
+                    st.markdown('<div class="section-header">Macro Sensitivity Heatmap</div>', unsafe_allow_html=True)
+                    sensitivity_data = {
+                        "Sector": list(sectors_bonds.keys()),
+                        "Fed Rate": [macro_factors["fed_rate"] * -2.0 if s not in ["TLT", "IEF", "SHY"] else macro_factors["fed_rate"] * 1.0 for s in sectors_bonds.keys()],
+                        "GDP": [macro_factors["gdp"] * 0.05 for _ in sectors_bonds.keys()],
+                        "CPI": [macro_factors["cpi"] * -1.5 if s not in ["XLE"] else macro_factors["cpi"] * 0.5 for s in sectors_bonds.keys()],
+                        "Unemployment": [macro_factors["unemployment"] * -1.0 for _ in sectors_bonds.keys()]
+                    }
+                    sensitivity_df = pd.DataFrame(sensitivity_data)
+                    fig_heatmap = go.Figure(data=go.Heatmap(
+                        z=sensitivity_df[["Fed Rate", "GDP", "CPI", "Unemployment"]].values,
+                        x=["Fed Rate", "GDP", "CPI", "Unemployment"],
+                        y=sensitivity_df["Sector"],
+                        colorscale="RdYlGn", hoverongaps=False,
+                        text=sensitivity_df[["Fed Rate", "GDP", "CPI", "Unemployment"]].round(2).values,
+                        texttemplate="%{text}", colorbar=dict(title="Impact"), zmin=-5.0, zmax=5.0
+                    ))
+                    fig_heatmap.update_layout(
+                        title="Sector Sensitivity to Macro Factors", xaxis_title="Factors", yaxis_title="Sectors",
+                        template="plotly_dark", height=600
+                    )
+                    st.plotly_chart(fig_heatmap, use_container_width=True)
+
+                    # Predicción principal con probabilidad
+                    st.markdown('<div class="section-header">Market Outlook</div>', unsafe_allow_html=True)
                     market_color = "#32CD32" if market_direction == "Bullish" else "#FF4500" if market_direction == "Bearish" else "#FFFFFF"
                     mis_color = "#32CD32" if macro_impact_score > 0 else "#FF4500" if macro_impact_score < 0 else "#FFD700"
                     st.markdown(f"""
-                        <div class="tab12-prediction">
-                            <span style="color: {market_color}; font-weight: bold;">Perspectiva / Outlook: {market_direction}</span><br>
-                            Magnitud / Magnitude: ±{market_magnitude:.2f}%<br>
-                            <span style="font-size: 16px; color: #FFD700;">Puntuación / IPM-M Score: {ipmm_score:.2f}</span><br>
-                            <span style="font-size: 14px; color: {mis_color}">MIS: {macro_impact_score:.1f}</span><br>
-                            <span style="font-size: 12px;">Claves / Drivers - Fed: {macro_factors['fed_rate']*100:.2f}%, PIB/GDP: {macro_factors['gdp']:.2f}T, IPC/CPI: {macro_factors['cpi']*100:.2f}%, Desempleo/Unemployment: {macro_factors['unemployment']*100:.2f}%</span>
+                        <div style="background: linear-gradient(90deg, #1b263b, #415a77); padding: 20px; border-radius: 10px; text-align: center; color: #e0e1dd; font-size: 20px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);">
+                            <span style="color: {market_color}; font-weight: bold;">Outlook: {market_direction}</span><br>
+                            Expected Move: ±{market_magnitude:.2f}%<br>
+                            <span style="font-size: 16px; color: #FFD700;">IPM-M Score: {ipmm_score:.2f}</span><br>
+                            <span style="font-size: 14px; color: {mis_color}">Macro Impact Score: {macro_impact_score:.1f}</span><br>
+                            <span style="font-size: 12px;">Key Drivers - Fed: {macro_factors['fed_rate']*100:.2f}%, GDP: {macro_factors['gdp']:.2f}T, CPI: {macro_factors['cpi']*100:.2f}%, Unemployment: {macro_factors['unemployment']*100:.2f}%</span>
                         </div>
                     """, unsafe_allow_html=True)
 
-                    # Simulación Directa / Direct Simulation
-                    st.markdown('<div style="margin-top: 25px; color: #e0e1dd; font-size: 20px; font-weight: 700;">Simulación / Simulation</div>', unsafe_allow_html=True)
-                    st.write("Ingrese valores para predecir / Enter values to predict:")
-                    fed_rate_sim = st.number_input("Tasa Fed (%) / Fed Rate (%)", 0.0, 10.0, 4.1, 0.1, key="fed_rate_sim")
-                    gdp_sim = st.number_input("PIB (Trillones) / GDP (Trillions)", 0.0, 30.0, 20.2, 0.1, key="gdp_sim")
-                    cpi_sim = st.number_input("IPC (%) / CPI (%)", 0.0, 10.0, 3.0, 0.1, key="cpi_sim")
-                    core_cpi_sim = st.number_input("IPC Núcleo (%) / Core CPI (%)", 0.0, 10.0, 3.0, 0.1, key="core_cpi_sim")
-                    ppi_sim = st.number_input("IPP (%) / PPI (%)", 0.0, 10.0, 3.0, 0.1, key="ppi_sim")
-                    pce_sim = st.number_input("PCE (%) / PCE (%)", 0.0, 10.0, 2.0, 0.1, key="pce_sim")
-                    unemployment_sim = st.number_input("Desempleo (%) / Unemployment (%)", 0.0, 15.0, 5.2, 0.1, key="unemployment_sim")
-                    cci_sim = st.number_input("ICC / CCI", 0.0, 150.0, 102.0, 1.0, key="cci_sim")
-                    jolts_sim = st.number_input("JOLTS (Millones) / JOLTS (Millions)", 0.0, 15.0, 7.0, 0.1, key="jolts_sim")
-                    ism_services_sim = st.number_input("ISM Servicios / ISM Services", 0.0, 70.0, 50.0, 0.1, key="ism_services_sim")
-                    treasury_10y_sim = st.number_input("Rendimiento 10Y (%) / 10Y Yield (%)", 0.0, 10.0, 4.0, 0.1, key="treasury_10y_sim")
-                    tariffs_sim = st.number_input("Aranceles (%) / Tariffs (%)", 0.0, 50.0, 10.0, 1.0, key="tariffs_sim")
+                    # Simulación predictiva
+                    st.markdown('<div class="section-header">Scenario Simulation</div>', unsafe_allow_html=True)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        sim_macro_factors = {
+                            "fed_rate": st.number_input("Fed Rate (%)", 0.0, 10.0, 4.1, 0.1, key="fed_rate_sim") / 100,
+                            "gdp": st.number_input("GDP (Trillions)", 0.0, 30.0, 20.2, 0.1, key="gdp_sim"),
+                            "cpi": st.number_input("CPI (%)", 0.0, 10.0, 3.0, 0.1, key="cpi_sim") / 100,
+                            "core_cpi": st.number_input("Core CPI (%)", 0.0, 10.0, 3.0, 0.1, key="core_cpi_sim") / 100,
+                            "ppi": st.number_input("PPI (%)", 0.0, 10.0, 3.0, 0.1, key="ppi_sim") / 100,
+                            "pce": st.number_input("PCE (%)", 0.0, 10.0, 2.0, 0.1, key="pce_sim") / 100,
+                        }
+                    with col2:
+                        sim_macro_factors.update({
+                            "unemployment": st.number_input("Unemployment (%)", 0.0, 15.0, 5.2, 0.1, key="unemployment_sim") / 100,
+                            "cci": st.number_input("CCI", 0.0, 150.0, 102.0, 1.0, key="cci_sim"),
+                            "jolts": st.number_input("JOLTS (Millions)", 0.0, 15.0, 7.0, 0.1, key="jolts_sim"),
+                            "ism_services": st.number_input("ISM Services", 0.0, 70.0, 50.0, 0.1, key="ism_services_sim"),
+                            "treasury_10y": st.number_input("10Y Yield (%)", 0.0, 10.0, 4.0, 0.1, key="treasury_10y_sim") / 100,
+                            "tariffs": st.number_input("Tariffs (%)", 0.0, 50.0, 10.0, 1.0, key="tariffs_sim") / 100
+                        })
 
-                    sim_macro_factors = {
-                        "fed_rate": fed_rate_sim / 100,
-                        "gdp": gdp_sim,
-                        "cpi": cpi_sim / 100,
-                        "core_cpi": core_cpi_sim / 100,
-                        "ppi": ppi_sim / 100,
-                        "pce": pce_sim / 100,
-                        "unemployment": unemployment_sim / 100,
-                        "cci": cci_sim,
-                        "jolts": jolts_sim,
-                        "ism_services": ism_services_sim,
-                        "treasury_10y": treasury_10y_sim / 100,
-                        "tariffs": tariffs_sim / 100
-                    }
-
-                    sim_direction, sim_magnitude, sim_score, recession_risk = predict_market(sim_macro_factors)
+                    sim_direction, sim_magnitude, sim_score, recession_prob = predict_market(sim_macro_factors)
                     sim_mis = calculate_macro_impact(sim_macro_factors)
                     sim_color = "#32CD32" if "Bullish" in sim_direction else "#FF4500" if "Bearish" in sim_direction else "#FFFFFF"
                     st.markdown(f"""
-                        <div class="tab12-prediction">
-                            <span style="color: {sim_color}; font-weight: bold;">Perspectiva / Outlook: {sim_direction}</span><br>
-                            Magnitud / Magnitude: ±{sim_magnitude:.2f}%<br>
-                            <span style="font-size: 16px; color: #FFD700;">Puntuación / Score: {sim_score:.2f}</span><br>
+                        <div style="background: linear-gradient(90deg, #1b263b, #415a77); padding: 20px; border-radius: 10px; text-align: center; color: #e0e1dd; font-size: 20px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);">
+                            <span style="color: {sim_color}; font-weight: bold;">Simulated Outlook: {sim_direction}</span><br>
+                            Expected Move: ±{sim_magnitude:.2f}%<br>
+                            <span style="font-size: 16px; color: #FFD700;">Score: {sim_score:.2f}</span><br>
                             <span style="font-size: 14px; color: {sim_color}">MIS: {sim_mis:.1f}</span><br>
-                            <span style="font-size: 12px;">Riesgo de Recesión / Recession Risk: {recession_risk}</span>
+                            <span style="font-size: 12px;">Recession Probability: {recession_prob*100:.1f}%</span>
                         </div>
                     """, unsafe_allow_html=True)
 
-                    # Recomendaciones Estratégicas / Strategic Recommendations (mejoradas)
-                    st.markdown('<div style="margin-top: 25px; color: #e0e1dd; font-size: 20px; font-weight: 700;">Recomendaciones / Recommendations</div>', unsafe_allow_html=True)
-                    actions_es = []
-                    actions_en = []
+                    # Recomendaciones estratégicas
+                    st.markdown('<div class="section-header">Strategic Recommendations</div>', unsafe_allow_html=True)
+                    actions = []
                     if "Bearish" in sim_direction:
-                        if sim_macro_factors["fed_rate"] * 100 > 3.5:
-                            actions_es.append(f"**Acción Fed**: Reducir tasa desde {sim_macro_factors['fed_rate']*100:.2f}% a 2.5-3.0% para evitar recesión y estimular consumo (XLK, XLY).")
-                            actions_en.append(f"**Fed Action**: Cut rate from {sim_macro_factors['fed_rate']*100:.2f}% to 2.5-3.0% to avert recession and boost consumption (XLK, XLY).")
-                        if sim_macro_factors["tariffs"] * 100 > 5.0:
-                            actions_es.append(f"**Política Comercial**: Bajar aranceles desde {sim_macro_factors['tariffs']*100:.2f}% a <5% para aliviar costos (XLI, XLY).")
-                            actions_en.append(f"**Trade Policy**: Lower tariffs from {sim_macro_factors['tariffs']*100:.2f}% to <5% to ease costs (XLI, XLY).")
-                        if sim_macro_factors["unemployment"] * 100 > 4.5:
-                            actions_es.append(f"**Laboral**: Estímulos fiscales para reducir desempleo desde {sim_macro_factors['unemployment']*100:.2f}% a 4.0% y evitar recesión.")
-                            actions_en.append(f"**Labor**: Fiscal stimulus to cut unemployment from {sim_macro_factors['unemployment']*100:.2f}% to 4.0% to avoid recession.")
-                        actions_es.append(f"**Protección**: Invertir en XLU, XLV, TLT para protegerse contra caídas; considerar oro (GLD) y efectivo como refugio.")
-                        actions_en.append(f"**Protection**: Invest in XLU, XLV, TLT to hedge against declines; consider gold (GLD) and cash as safe havens.")
+                        if sim_macro_factors["fed_rate"] > 0.035:
+                            actions.append("**Fed Action**: Cut rate from {:.2f}% to 2.5-3.0% to avert recession.".format(sim_macro_factors["fed_rate"]*100))
+                        if sim_macro_factors["tariffs"] > 0.05:
+                            actions.append("**Trade**: Lower tariffs from {:.2f}% to <5% to ease costs.".format(sim_macro_factors["tariffs"]*100))
+                        if sim_macro_factors["unemployment"] > 0.045:
+                            actions.append("**Labor**: Stimulus to cut unemployment from {:.2f}% to 4.0%.".format(sim_macro_factors["unemployment"]*100))
+                        actions.append("**Protection**: Shift to XLU, XLV, TLT; hedge with gold (GLD) and cash.")
                         if sim_score < -50:
-                            actions_es.append(f"**Recesión Alta**: Con puntuación {sim_score:.2f}, riesgo crítico; Fed debe actuar ya con recortes agresivos y estímulos.")
-                            actions_en.append(f"**High Recession Risk**: With score {sim_score:.2f}, critical risk; Fed must act now with aggressive cuts and stimulus.")
+                            actions.append("**High Recession Risk**: Score {:.2f}; urgent Fed rate cuts needed.".format(sim_score))
                     elif "Bullish" in sim_direction:
-                        actions_es.append(f"**Acción Fed**: Mantener o subir tasa desde {sim_macro_factors['fed_rate']*100:.2f}% hasta +0.5% para controlar inflación sin frenar XLK, XLI.")
-                        actions_en.append(f"**Fed Action**: Maintain or raise rate from {sim_macro_factors['fed_rate']*100:.2f}% by up to +0.5% to control inflation without halting XLK, XLI.")
-                        actions_es.append(f"**Inversión**: Aprovechar impulso en XLK, XLI; pequeña cobertura en XLU contra shocks externos.")
-                        actions_en.append(f"**Investment**: Capitalize on momentum in XLK, XLI; small hedge in XLU against external shocks.")
-                        actions_es.append(f"**Protección**: Mantener 5-10% en TLT o efectivo para volatilidad inesperada.")
-                        actions_en.append(f"**Protection**: Keep 5-10% in TLT or cash for unexpected volatility.")
-                    else:  # Neutral
-                        if sim_macro_factors["fed_rate"] * 100 > 4.0:
-                            actions_es.append(f"**Acción Fed**: Bajar tasa desde {sim_macro_factors['fed_rate']*100:.2f}% a 3.5% para impulsar crecimiento.")
-                            actions_en.append(f"**Fed Action**: Lower rate from {sim_macro_factors['fed_rate']*100:.2f}% to 3.5% to boost growth.")
-                        if sim_macro_factors["unemployment"] * 100 > 4.5:
-                            actions_es.append(f"**Laboral**: Reducir desempleo desde {sim_macro_factors['unemployment']*100:.2f}% para evitar riesgo bajista.")
-                            actions_en.append(f"**Labor**: Cut unemployment from {sim_macro_factors['unemployment']*100:.2f}% to avoid bearish risk.")
-                        actions_es.append(f"**Estrategia**: Balance entre XLK/XLI y XLU/XLV; vigilar IPC y PIB.")
-                        actions_en.append(f"**Strategy**: Balance XLK/XLI with XLU/XLV; monitor CPI and GDP.")
-                        actions_es.append(f"**Protección**: 10-15% en TLT y XLU para mitigar riesgos de transición.")
-                        actions_en.append(f"**Protection**: 10-15% in TLT and XLU to mitigate transition risks.")
+                        actions.append("**Fed Action**: Maintain or raise rate from {:.2f}% by +0.5% to manage inflation.".format(sim_macro_factors["fed_rate"]*100))
+                        actions.append("**Investment**: Capitalize on XLK, XLI; minimal hedge in XLU.")
+                        actions.append("**Protection**: Allocate 5-10% to TLT or cash for volatility.")
+                    else:
+                        if sim_macro_factors["fed_rate"] > 0.04:
+                            actions.append("**Fed Action**: Lower rate from {:.2f}% to 3.5% to boost growth.".format(sim_macro_factors["fed_rate"]*100))
+                        if sim_macro_factors["unemployment"] > 0.045:
+                            actions.append("**Labor**: Reduce unemployment from {:.2f}% for stability.".format(sim_macro_factors["unemployment"]*100))
+                        actions.append("**Strategy**: Balance XLK/XLI with XLU/XLV.")
+                        actions.append("**Protection**: 10-15% in TLT and XLU against risks.")
 
-                    for action_es, action_en in zip(actions_es, actions_en):
-                        st.markdown(f'<div class="tab12-implications-card">➤ {action_es}<br><br>{action_en}</div>', unsafe_allow_html=True)
+                    for action in actions:
+                        st.markdown(f'<div class="tab12-implications-card">➤ {action}</div>', unsafe_allow_html=True)
 
+                    # Descarga
                     csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="Descargar / Download",
-                        data=csv,
-                        file_name="sector_performance_map.csv",
-                        mime="text/csv",
-                        key="download_sector_map_tab12",
-                        help="Datos completos / Full dataset"
-                    )
+                    st.download_button(label="📥 Download Sector Data", data=csv, file_name="sector_performance_map.csv", mime="text/csv", key="download_sector_map_tab12")
 
-                    st.markdown(f'<div style="text-align: center; font-size: 12px; color: #778da9; margin-top: 20px;">Última Actualización / Last Updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | Por Ozy Analytics / By Ozy Analytics</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="text-align: center; font-size: 12px; color: #778da9; margin-top: 20px;">Last Updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | Powered by Ozy Analytics</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
