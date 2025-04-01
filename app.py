@@ -2410,11 +2410,80 @@ def main():
             st.markdown("---")
             st.markdown("*Developed by Ozy | © 2025*")
 
-    # Tab 2: Market Scanner
+        # Tab 2: Market Scanner
     with tab2:
-        st.subheader("")
-        st.write("")
-        if st.button("🔄 Run Scan", key="run_scan_tab2"):
+        st.subheader("Market Scanner")
+
+        # --- Primer Scanner: Batch Market Scanner ---
+        st.markdown("### Batch Market Scanner")
+        scan_type = st.selectbox(
+            "Select Scan Type", 
+            ["Bullish (Upward Momentum)", "Bearish (Downward Momentum)", "Breakouts", "Unusual Volume"], 
+            key="scan_type_tab2"
+        )
+        max_results = st.slider(
+            "Max Stocks to Display", 
+            1, 200, 30, 
+            key="max_results_tab2"
+        )
+
+        if st.button("🚀 Start Batch Scan", key="batch_scan_tab2"):
+            with st.spinner("Scanning market..."):
+                stock_list = get_stock_list_combined()
+                if not stock_list:
+                    st.error("No se pudo obtener la lista de acciones.")
+                else:
+                    num_workers = min(50, max(10, len(stock_list) // 5))
+                    results = []
+
+                    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                        futures = [executor.submit(scan_stock, symbol, scan_type) for symbol in stock_list]
+                        for future in futures:
+                            result = future.result()
+                            if result:
+                                results.append(result)
+
+                    if results:
+                        df_results = pd.DataFrame(results[:max_results])
+                        styled_df = df_results.style.background_gradient(cmap="Blues").set_properties(**{"text-align": "center"})
+                        st.dataframe(styled_df, use_container_width=True)
+
+                        if "Volume" in df_results.columns:
+                            fig = go.Figure()
+                            for _, row in df_results.iterrows():
+                                color = "green" if row.get("Breakout Type") == "Up" else "red" if row.get("Breakout Type") == "Down" else "blue"
+                                fig.add_trace(go.Bar(
+                                    x=[row["Symbol"]],
+                                    y=[row["Volume"]],
+                                    marker_color=color,
+                                    hovertext=f"Symbol: {row['Symbol']}<br>Volume: {row['Volume']:,}<br>Breakout: {row.get('Breakout Type', 'N/A')}<br>Change: {row.get('Possible Change (%)', 'N/A')}%"
+                                ))
+                            fig.update_layout(
+                                title="📊 Volume Distribution",
+                                xaxis_title="Stock Symbol",
+                                yaxis_title="Volume",
+                                template="plotly_dark"
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+
+                        # Descarga CSV para el primer scanner
+                        csv = pd.DataFrame(results).to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Market Scan Data",
+                            data=csv,
+                            file_name=f"market_scan_{scan_type.replace(' ', '_').lower()}.csv",
+                            mime="text/csv",
+                            key="download_market_scan_tab2"
+                        )
+                    else:
+                        st.warning("No stocks match the criteria.")
+
+        # Separador visual entre secciones
+        st.markdown("---")
+
+        # --- Segundo Scanner: Precision Predictor Pro ---
+        st.markdown("### Precision Predictor Pro")
+        if st.button("🔄 Run Precision Scan", key="run_scan_tab2"):
             with st.spinner("Scanning Market..."):
                 def fetch_api_data(url, params, headers, source):
                     try:
@@ -2598,7 +2667,7 @@ def main():
                         st.warning("\n".join(alerts))
 
                     top_pick = df_motion.iloc[0]
-                    st.success(f"Top: {top_pick['Ticker']} | FMS: {top_pick['FMS']:.1f} | Direction: {top_pick['Direction']} | GCF: {top_pick['GCF']:.1f}%")
+                    st.success(f"Top Pick: {top_pick['Ticker']} | FMS: {top_pick['FMS']:.1f} | Direction: {top_pick['Direction']} | GCF: {top_pick['GCF']:.1f}%")
 
                     fig = go.Figure()
                     fig.add_trace(go.Bar(x=df_motion["Ticker"], y=df_motion["FMS"], name="Future Motion Score", marker_color="purple"))
@@ -2620,7 +2689,7 @@ def main():
 
                     csv_motion = df_motion.to_csv(index=False)
                     st.download_button(
-                        label="📥 Download Predictions",
+                        label="📥 Download Precision Predictions",
                         data=csv_motion,
                         file_name="precision_predictor_pro.csv",
                         mime="text/csv",
@@ -2631,13 +2700,11 @@ def main():
                     if failed_stocks:
                         st.write("Failed stocks and reasons:")
                         for stock, reason in failed_stocks[:11]:
-                            st.write(f"- {stock}: {reason}")
+                            st.write(f"-pleen {stock}: {reason}")
                     st.write("Stocks attempted:", stocks_to_scan[:25])
                     st.write("Check API connectivity (FMP, Tradier, etc.), API keys, or try again later.")
 
                 st.markdown(f"*Last Scan: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Powered by Ozy*")
-
-    # Tab 3: News
     with tab3:
         st.subheader("News Scanner")
         keywords = st.text_input("Enter keywords (comma-separated):", "Trump").split(",")
