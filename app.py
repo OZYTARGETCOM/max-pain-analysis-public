@@ -2414,7 +2414,7 @@ def main():
         if os.path.exists(logo_path):
             st.image(logo_path, width=60)
         else:
-            st.warning("favicon.png not found. Place it in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
+            st.warning("")
 
     # Estilos personalizados con tabs ultra compactos y futuristas en dos líneas
     st.markdown("""
