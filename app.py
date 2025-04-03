@@ -3055,7 +3055,7 @@ def main():
             }
             auto_oi = int(100000 * (1 + iv_factor * 2))
             auto_oi_key = next((k for k, v in volume_options.items() if v >= auto_oi), "0.1M")
-            use_auto_oi = st.checkbox("Auto OI (Volatility-Based)", value=True, key="auto_oi")
+            use_auto_oi = st.checkbox("Auto OI (Volatility-Based)", value=False, key="auto_oi")
             if use_auto_oi:
                 open_interest_threshold = volume_options[auto_oi_key]
                 st.write(f"Auto OI Set: {auto_oi_key} ({volume_options[auto_oi_key]:,})")
@@ -3075,7 +3075,7 @@ def main():
             }
             auto_gamma = max(0.001, min(0.05, iv_factor / 20))
             auto_gamma_key = next((k for k, v in gamma_options.items() if v >= auto_gamma), "0.001")
-            use_auto_gamma = st.checkbox("Auto Gamma (Volatility-Based)", value=True, key="auto_gamma")
+            use_auto_gamma = st.checkbox("Auto Gamma (Volatility-Based)", value=False, key="auto_gamma")
             if use_auto_gamma:
                 gamma_threshold = gamma_options[auto_gamma_key]
                 st.write(f"Auto Gamma Set: {auto_gamma_key}")
