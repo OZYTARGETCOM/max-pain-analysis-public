@@ -39,6 +39,9 @@ import streamlit.components.v1 as components
 import math
 import krakenex
 import base64
+import logging
+
+logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 # API Sessions and Configurations
 session_fmp = requests.Session()
@@ -50,6 +53,11 @@ session_tradier.mount("https://", adapter)
 num_workers = min(100, multiprocessing.cpu_count() * 2)
 
 # API Keys and Constants
+# Configurar cliente de Kraken con las claves proporcionadas
+API_KEY = "kyFpw+5fbrFIMDuWJmtkbbbr/CgH/MS63wv7dRz3rndamK/XnjNOVkgP"
+PRIVATE_KEY = "7xbaBIp902rSBVdIvtfrUNbRHEHMkfMHPEf4rssz+ZwSwjUZFegjdyyYZzcE5DbBrUbtFdGRRGRjTuTnEblZWA=="
+kraken = krakenex.API(key=API_KEY, secret=PRIVATE_KEY)
+
 FMP_API_KEY = "bQ025fPNVrYcBN4KaExd1N3Xczyk44wM"
 FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
 TRADIER_API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
@@ -421,60 +429,6 @@ def calculate_possible_movement(symbol, eps_est, revenue_est, time):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def fetch_api_data(url: str, params: Dict, headers: Dict, source: str) -> Optional[Dict]:
-    session = session_fmp if "FMP" in source else session_tradier
-    try:
-        response = session.get(url, params=params, headers=headers, timeout=5)
-        response.raise_for_status()
-        logger.debug(f"{source} fetch success: {len(response.text)} bytes")
-        return response.json()
-    except requests.RequestException as e:
-        logger.error(f"{source} error: {e}")
-        return None
-
-@st.cache_data(ttl=60)  # Cache for 60 seconds to reduce API calls
-def get_current_price(ticker: str) -> float:
-    """
-    Fetch the current price of a stock ticker using Tradier API with FMP fallback.
-    
-    Args:
-        ticker (str): Stock ticker symbol (e.g., "SPY", "AAPL").
-    
-    Returns:
-        float: Current price of the stock, or 0.0 if fetch fails.
-    """
-    # Try Tradier API first
-    url_tradier = f"{TRADIER_BASE_URL}/markets/quotes"
-    params_tradier = {"symbols": ticker}
-    try:
-        response = session_tradier.get(url_tradier, params=params_tradier, headers=HEADERS_TRADIER, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-        if data and "quotes" in data and "quote" in data["quotes"]:
-            quote = data["quotes"]["quote"]
-            if isinstance(quote, list):  # Handle case where multiple quotes are returned
-                quote = quote[0]
-            price = float(quote.get("last", 0.0))
-            if price > 0:
-                logger.info(f"Fetched current price for {ticker} from Tradier: ${price:.2f}")
-                return price
-    except Exception as e:
-        logger.warning(f"Tradier failed to fetch price for {ticker}: {str(e)}")
-
     # Fallback to FMP API
     url_fmp = f"{FMP_BASE_URL}/quote/{ticker}"
     params_fmp = {"apikey": FMP_API_KEY}
@@ -493,31 +447,160 @@ def get_current_price(ticker: str) -> float:
     logger.error(f"Unable to fetch current price for {ticker} from any API")
     return 0.0
 
-@st.cache_data(ttl=CACHE_TTL)
+
+# Definiciones de funciones necesarias antes de main()
+# Definiciones de funciones necesarias antes de main()
+# Definiciones de funciones necesarias antes de main()
+def fetch_api_data(url: str, params: Dict, headers: Dict, source: str) -> Optional[Dict]:
+    """
+    Realiza una solicitud GET a una API con manejo de reintentos y logging.
+    """
+    session = session_fmp if "FMP" in source else session_tradier
+    try:
+        response = session.get(url, params=params, headers=headers, timeout=5)
+        response.raise_for_status()
+        logger.debug(f"{source} fetch success: {len(response.text)} bytes")
+        return response.json()
+    except requests.RequestException as e:
+        logger.error(f"{source} error: {e}")
+        return None
+
+@st.cache_data(ttl=60)
+def get_current_price(ticker: str) -> float:
+    """
+    Obtiene el precio actual de un ticker usando la API de Tradier con fallback a FMP.
+    """
+    url_tradier = f"{TRADIER_BASE_URL}/markets/quotes"
+    params_tradier = {"symbols": ticker}
+    try:
+        response = session_tradier.get(url_tradier, params=params_tradier, headers=HEADERS_TRADIER, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        if data and "quotes" in data and "quote" in data["quotes"]:
+            quote = data["quotes"]["quote"]
+            if isinstance(quote, list):
+                quote = quote[0]
+            price = float(quote.get("last", 0.0))
+            if price > 0:
+                logger.info(f"Fetched current price for {ticker} from Tradier: ${price:.2f}")
+                return price
+    except Exception as e:
+        logger.warning(f"Failed to fetch price for {ticker}: {str(e)}")
+
+    url_fmp = f"{FMP_BASE_URL}/quote/{ticker}"
+    params_fmp = {"apikey": FMP_API_KEY}
+    try:
+        response = session_fmp.get(url_fmp, params=params_fmp, headers=HEADERS_FMP, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        if data and isinstance(data, list) and len(data) > 0:
+            price = float(data[0].get("price", 0.0))
+            if price > 0:
+                logger.info(f"Fetched current price for {ticker} from FMP: ${price:.2f}")
+                return price
+    except Exception as e:
+        logger.error(f"FMP failed to fetch price for {ticker}: {str(e)}")
+
+    logger.error(f"Unable to fetch current price for {ticker} from any API")
+    return 0.0
+
+@st.cache_data(ttl=86400)
 def get_expiration_dates(ticker: str) -> List[str]:
-    if not ticker or not ticker.isalnum():
-        return []
+    """
+    Obtiene las fechas de vencimiento de opciones para un ticker dado usando la API de Tradier.
+    """
     url = f"{TRADIER_BASE_URL}/markets/options/expirations"
     params = {"symbol": ticker}
-    data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier")
-    if (data is not None and 
-        isinstance(data, dict) and 
-        'expirations' in data and 
-        data['expirations'] is not None and 
-        isinstance(data['expirations'], dict) and 
-        'date' in data['expirations'] and 
-        data['expirations']['date'] is not None):
-        try:
-            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            expiration_dates = [date_str for date_str in sorted(data['expirations']['date'])
-                                if (datetime.strptime(date_str, "%Y-%m-%d") - today).days >= 0]
-            logger.info(f"Found {len(expiration_dates)} expiration dates for {ticker}")
+    try:
+        response = session_tradier.get(url, params=params, headers=HEADERS_TRADIER, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        if data and "expirations" in data and "date" in data["expirations"]:
+            expiration_dates = data["expirations"]["date"]
+            logger.info(f"Fetched {len(expiration_dates)} expiration dates for {ticker}")
             return expiration_dates
-        except (ValueError, TypeError) as e:
-            logger.error(f"Error processing expiration dates for {ticker}: {str(e)}")
-            return []
-    logger.error(f"No valid expiration dates found for {ticker}")
-    return []
+        logger.warning(f"No expiration dates found for {ticker}")
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching expiration dates for {ticker}: {str(e)}")
+        return []
+
+@st.cache_data(ttl=60)
+def get_current_prices(tickers: List[str]) -> Dict[str, float]:
+    """
+    Obtiene precios actuales para una lista de tickers usando la API de Tradier con fallback a FMP.
+    """
+    prices_dict = {ticker: 0.0 for ticker in tickers}
+    
+    tickers_str = ",".join(tickers)
+    url_tradier = f"{TRADIER_BASE_URL}/markets/quotes"
+    params_tradier = {"symbols": tickers_str}
+    try:
+        response = session_tradier.get(url_tradier, params=params_tradier, headers=HEADERS_TRADIER, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        if data and "quotes" in data and "quote" in data["quotes"]:
+            quotes = data["quotes"]["quote"]
+            if isinstance(quotes, dict):
+                quotes = [quotes]
+            for quote in quotes:
+                ticker = quote.get("symbol", "")
+                price = float(quote.get("last", 0.0))
+                if ticker in prices_dict and price > 0:
+                    prices_dict[ticker] = price
+            fetched = [t for t, p in prices_dict.items() if p > 0]
+            logger.info(f"Fetched prices for {len(fetched)}/{len(tickers)} tickers from Tradier: {fetched}")
+    except Exception as e:
+        logger.warning(f"Tradier failed to fetch prices for batch: {str(e)}")
+
+    missing_tickers = [t for t, p in prices_dict.items() if p == 0.0]
+    if missing_tickers:
+        url_fmp = f"{FMP_BASE_URL}/quote/{','.join(missing_tickers)}"
+        params_fmp = {"apikey": FMP_API_KEY}
+        try:
+            response = session_fmp.get(url_fmp, params=params_fmp, headers=HEADERS_FMP, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            if data and isinstance(data, list):
+                for item in data:
+                    ticker = item.get("symbol", "")
+                    price = float(item.get("price", 0.0))
+                    if ticker in prices_dict and price > 0:
+                        prices_dict[ticker] = price
+                fetched = [t for t, p in prices_dict.items() if p > 0 and t in missing_tickers]
+                logger.info(f"Fetched prices for {len(fetched)}/{len(missing_tickers)} missing tickers from FMP: {fetched}")
+        except Exception as e:
+            logger.error(f"FMP failed to fetch prices for batch: {str(e)}")
+
+    failed = [t for t, p in prices_dict.items() if p == 0.0]
+    if failed:
+        logger.error(f"Unable to fetch prices for {len(failed)} tickers: {failed}")
+
+    return prices_dict
+
+@st.cache_data(ttl=3600)
+def get_metaverse_stocks() -> List[str]:
+    """
+    Obtiene una lista de los 50 stocks más activos desde FMP o usa una lista de respaldo.
+    """
+    url = "https://financialmodelingprep.com/api/v3/stock_market/actives"
+    params = {"apikey": FMP_API_KEY}
+    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Actives")
+    if data and isinstance(data, list):
+        return [stock["symbol"] for stock in data[:50]]
+    logger.warning("Failed to retrieve stocks from FMP API. Using fallback list.")
+    return ["NVDA", "TSLA", "AAPL", "AMD", "PLTR", "META", "RBLX", "U", "COIN", "HOOD"]
+
+
+
+
+
+
+
+
+
+
+
 
 @st.cache_data(ttl=CACHE_TTL)
 def get_options_data(ticker: str, expiration_date: str) -> List[Dict]:
@@ -1644,7 +1727,7 @@ def fetch_coingecko_data(ticker: str) -> dict:
     try:
         response = requests.get(url, timeout=5)
         if response.status_code != 200:
-            logger.error(f"Error fetching CoinGecko data for {ticker}: {response.status_code}")
+            logger.error(f"Error fetching  data for {ticker}: {response.status_code}")
             return {}
         data = response.json()
         market_data = data.get("market_data", {})
@@ -1663,7 +1746,7 @@ def fetch_coingecko_data(ticker: str) -> dict:
             "volatility": volatility
         }
     except Exception as e:
-        logger.error(f"Error fetching CoinGecko data for {ticker}: {str(e)}")
+        logger.error(f"Error fetching  data for {ticker}: {str(e)}")
         return {}
 
 def calculate_crypto_max_pain(bids: pd.DataFrame, asks: pd.DataFrame) -> float:
@@ -2504,217 +2587,266 @@ def main():
 
     # Tab 2: Market Scanner
     with tab2:
-        st.subheader("Market Scanner")
-
-        # Batch Market Scanner
-        st.markdown("### Batch Market Scanner")
-        scan_type = st.selectbox("Select Scan Type", ["Bullish (Upward Momentum)", "Bearish (Downward Momentum)", "Breakouts", "Unusual Volume"], key="scan_type_tab2")
-        max_results = st.slider("Max Stocks to Display", 1, 200, 30, key="max_results_tab2")
+        st.subheader("Market Scanner Pro")
         
-        if st.button("🚀 Start Batch Scan", key="batch_scan_tab2"):
-            with st.spinner("Scanning market..."):
-                stock_list = get_stock_list_combined()
-                if not stock_list:
-                    st.error("No se pudo obtener la lista de acciones.")
-                else:
-                    batch_size = 50
-                    prices_dict = get_current_prices(stock_list)  # Obtener precios en lotes
-                    results = []
-                    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                        futures = [executor.submit(scan_stock_batch, stock_list[i:i + batch_size], scan_type) 
-                                  for i in range(0, len(stock_list), batch_size)]
-                        for future in futures:
-                            batch_results = future.result()
-                            results.extend(batch_results)
-                    
-                    if results:
-                        df_results = pd.DataFrame(results[:max_results])
-                        styled_df = df_results.style.background_gradient(cmap="Blues").set_properties(**{"text-align": "center"})
-                        page_size = 10
-                        page = st.number_input("Page", min_value=1, value=1, step=1, key="page_tab2")
-                        start_idx = (page - 1) * page_size
-                        end_idx = start_idx + page_size
-                        st.dataframe(styled_df.data.iloc[start_idx:end_idx], use_container_width=True)
-                        
-                        fig = go.Figure()
-                        for _, row in df_results.iterrows():
-                            color = "green" if row.get("Breakout Type") == "Up" else "red" if row.get("Breakout Type") == "Down" else "blue"
-                            fig.add_trace(go.Bar(x=[row["Symbol"]], y=[row["Volume"]], marker_color=color,
-                                                 hovertext=f"Symbol: {row['Symbol']}<br>Volume: {row['Volume']:,}<br>Breakout: {row.get('Breakout Type', 'N/A')}<br>Change: {row.get('Possible Change (%)', 'N/A')}%"))
-                        fig.update_layout(title="📊 Volume Distribution", xaxis_title="Stock Symbol", yaxis_title="Volume", template="plotly_dark")
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        csv = df_results.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download Market Scan Data",
-                            data=csv,
-                            file_name=f"market_scan_{scan_type.replace(' ', '_').lower()}.csv",
-                            mime="text/csv",
-                            key="download_market_scan_tab2"
-                        )
-                    else:
-                        st.warning("No stocks match the criteria.")
+        # Selección de tipo de escaneo y máximo de resultados
+        scan_type = st.selectbox(
+            "Select Scan Type",
+            ["Bullish (Upward Momentum)", "Bearish (Downward Momentum)", "Breakouts", "Unusual Volume"],
+            key="scan_type_tab2"
+        )
+        max_results = st.slider("Max Stocks to Display", 1, 200, 20, key="max_results_tab2")
         
-        st.markdown("---")
-
-        # Precision Predictor Pro
-        st.markdown("### Precision Predictor Pro")
-        if st.button("🔄 Run Precision Scan", key="run_scan_tab2"):
-            with st.spinner("Scanning Market..."):
-                @st.cache_data(ttl=3600)
-                def get_metaverse_stocks():
-                    url = "https://financialmodelingprep.com/api/v3/stock_market/actives"
-                    params = {"apikey": FMP_API_KEY}
-                    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Actives")
-                    if data and isinstance(data, list):
-                        return [stock["symbol"] for stock in data[:50]]
-                    logger.warning("Failed to retrieve stocks from FMP API. Using fallback list.")
-                    return ["NVDA", "TSLA", "AAPL", "AMD", "PLTR", "META", "RBLX", "U", "COIN", "HOOD"]
-
+        # Botón para iniciar el escaneo
+        if st.button("🚀 Run Market Scan", key="run_scan_tab2"):
+            with st.spinner(f"Scanning Market ({scan_type})..."):
+                # Obtener lista de stocks a escanear
                 stocks_to_scan = get_metaverse_stocks()
                 st.write(f"Scanning {len(stocks_to_scan)} stocks: {stocks_to_scan[:25]}...")
-                motion_data = []
+                
+                # Inicializar estructuras para almacenar datos
+                scan_data = []
                 alerts = []
                 failed_stocks = []
-
+                extra_metrics = {"avg_iv": 0, "max_gwe": 0, "key_levels": []}
+                
+                # Obtener precios actuales
                 prices_dict = get_current_prices(stocks_to_scan)
+                
+                # Escanear stocks en paralelo
                 with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                    futures = {executor.submit(get_historical_prices_combined, stock, limit=30): stock for stock in stocks_to_scan}
+                    futures = {
+                        executor.submit(get_historical_prices_combined, stock, limit=30): stock
+                        for stock in stocks_to_scan
+                    }
                     for future in futures:
                         stock = futures[future]
                         try:
+                            # Obtener precio actual
                             current_price = prices_dict.get(stock, 0.0)
                             if not current_price or current_price <= 0:
                                 current_price = 1.0
                                 logger.debug(f"{stock}: No valid current price, using fallback $1.0")
-
+                            
+                            # Obtener precios y volúmenes históricos
                             prices, volumes = future.result()
                             if not prices or len(prices) < 5:
                                 prices = [current_price] * 10
                                 volumes = [1000000] * 10
                                 logger.debug(f"{stock}: Insufficient historical data, using fallback.")
-
+                            
+                            # Convertir a arrays de numpy
                             prices = np.array(prices)
                             volumes = np.array(volumes)
                             returns = np.diff(prices) / prices[:-1]
                             vol_historical = np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.1
-
+                            
+                            # Obtener datos de opciones
                             exp_dates = get_expiration_dates(stock)
                             iv, gwe, skew_dynamic = vol_historical, 0, 0
                             support_level, resistance_level = current_price * 0.95, current_price * 1.05
                             if exp_dates:
                                 options_data = get_options_data(stock, exp_dates[0])
                                 if options_data:
-                                    iv_calls = np.mean([float(opt["greeks"].get("smv_vol", 0)) for opt in options_data if opt.get("option_type", "").lower() == "call" and "greeks" in opt]) or vol_historical
-                                    iv_puts = np.mean([float(opt["greeks"].get("smv_vol", 0)) for opt in options_data if opt.get("option_type", "").lower() == "put" and "greeks" in opt]) or vol_historical
+                                    iv_calls = np.mean([
+                                        float(opt["greeks"].get("smv_vol", 0))
+                                        for opt in options_data
+                                        if opt.get("option_type", "").lower() == "call" and "greeks" in opt
+                                    ]) or vol_historical
+                                    iv_puts = np.mean([
+                                        float(opt["greeks"].get("smv_vol", 0))
+                                        for opt in options_data
+                                        if opt.get("option_type", "").lower() == "put" and "greeks" in opt
+                                    ]) or vol_historical
                                     iv = np.mean([iv_calls, iv_puts])
+                                    extra_metrics["avg_iv"] += iv
                                     oi_calls = sum(int(opt.get("open_interest", 0)) for opt in options_data if opt.get("option_type", "").lower() == "call")
                                     oi_puts = sum(int(opt.get("open_interest", 0)) for opt in options_data if opt.get("option_type", "").lower() == "put")
                                     skew_dynamic = (iv_calls - iv_puts) * (oi_calls / (oi_puts + 1)) / iv if iv > 0 else 0
                                     strikes = np.array([float(opt["strike"]) for opt in options_data])
                                     strikes_near_price = strikes[np.abs(strikes - current_price) < current_price * 0.1]
-                                    gwe = sum(float(opt["greeks"].get("gamma", 0)) * int(opt.get("open_interest", 0)) / (abs(float(opt["strike"]) - current_price) + 0.01) 
-                                             for opt in options_data if "greeks" in opt and float(opt["strike"]) in strikes_near_price)
+                                    gwe = sum(
+                                        float(opt["greeks"].get("gamma", 0)) * int(opt.get("open_interest", 0)) / (abs(float(opt["strike"]) - current_price) + 0.01)
+                                        for opt in options_data
+                                        if "greeks" in opt and float(opt["strike"]) in strikes_near_price
+                                    )
                                     gwe *= current_price / 1000 if gwe != 0 else 0
+                                    extra_metrics["max_gwe"] = max(extra_metrics["max_gwe"], abs(gwe))
                                     support_level = np.min(strikes) if strikes.size > 0 else current_price * 0.95
                                     resistance_level = np.max(strikes) if strikes.size > 0 else current_price * 1.05
-
+                                    extra_metrics["key_levels"].append({"stock": stock, "support": support_level, "resistance": resistance_level})
+                            
+                            # Calcular métricas
                             volume_avg = np.mean(volumes[:-5]) if len(volumes) > 5 else 1
                             volume_spike = np.max(volumes[-5:]) / volume_avg if volume_avg > 0 else 1.0
                             oi_total = sum(int(opt.get("open_interest", 0)) for opt in options_data) if exp_dates and options_data else 0
                             lmi = volume_spike * (1 + oi_total / (1000000 * vol_historical + 1)) * (1 / (vol_historical + 0.1))
-
+                            
                             momentum = calculate_momentum(prices, vol_historical)
                             rsi = calculate_rsi(prices)
-
+                            
+                            # Puntaje de catalizadores
                             catalyst_score = 0
                             url = f"{FMP_BASE_URL}/earning_calendar"
                             params = {"apikey": FMP_API_KEY, "from": datetime.now().strftime('%Y-%m-%d'), "to": (datetime.now() + timedelta(days=5)).strftime('%Y-%m-%d')}
-                            earnings_data = fetch_api_data(url, params, HEADERS_FMP, "FMP Earnings")
-                            if earnings_data and any(e.get("symbol") == stock for e in earnings_data):
-                                catalyst_score += 40 if iv > vol_historical * 1.5 else 25
+                            try:
+                                response = session_fmp.get(url, params=params, headers=HEADERS_FMP, timeout=5)
+                                response.raise_for_status()
+                                earnings_data = response.json()
+                                if earnings_data and any(e.get("symbol") == stock for e in earnings_data):
+                                    catalyst_score += 40 if iv > vol_historical * 1.5 else 25
+                            except Exception as e:
+                                logger.error(f"FMP Earnings error for {stock}: {str(e)}")
+                            
                             url_macro = f"{FMP_BASE_URL}/economic-calendar"
-                            macro_data = fetch_api_data(url_macro, {"apikey": FMP_API_KEY, "from": datetime.now().strftime('%Y-%m-%d'), "to": (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')}, HEADERS_FMP, "FMP Macro")
-                            if macro_data and len(macro_data) > 0:
-                                catalyst_score += 30 if any(e.get("impact", "Low") in ["High", "Medium"] for e in macro_data) else 15
-
+                            params_macro = {"apikey": FMP_API_KEY, "from": datetime.now().strftime('%Y-%m-%d'), "to": (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')}
+                            try:
+                                response = session_fmp.get(url_macro, params=params_macro, headers=HEADERS_FMP, timeout=5)
+                                response.raise_for_status()
+                                macro_data = response.json()
+                                if macro_data and len(macro_data) > 0:
+                                    catalyst_score += 30 if any(e.get("impact", "Low") in ["High", "Medium"] for e in macro_data) else 15
+                            except Exception as e:
+                                logger.error(f"FMP Macro error for {stock}: {str(e)}")
+                            
+                            # Calcular FMS (Future Motion Score)
                             iv_hv_ratio = iv / vol_historical if vol_historical > 0 else 1.0
                             iv_weight = 40 + (iv_hv_ratio - 1) * 10 if iv_hv_ratio > 1 else 40
                             gwe_weight = 35 + abs(gwe) * 5 if abs(gwe) > 0.5 else 35
                             lmi_weight = 25 + (lmi - 1) * 5 if lmi > 1 else 25
                             skew_weight = 20 + abs(skew_dynamic) * 10 if abs(skew_dynamic) > 0.2 else 20
                             momentum_weight = 15 + abs(momentum) * 5 if abs(momentum) > 0.1 else 15
-
                             fms = iv_hv_ratio * iv_weight + abs(gwe) * gwe_weight + lmi * lmi_weight + abs(skew_dynamic) * skew_weight + abs(momentum) * momentum_weight + catalyst_score
-
+                            
+                            # Determinar dirección con ajuste para Bearish
                             direction_score = (gwe * 0.5) + (skew_dynamic * 0.3) + (momentum * 0.2)
-                            direction = "Up" if direction_score > 0.7 and (rsi < 35 or lmi > 2.5) else "Down" if direction_score < -0.7 and (rsi > 65 or lmi > 2.5) else "Neutral"
-
+                            direction = "Up" if direction_score > 0.7 and (rsi < 35 or lmi > 2.5) else "Down" if direction_score < -0.3 and (rsi > 50 or lmi > 1.5) else "Neutral"
+                            
+                            # Filtrar según tipo de escaneo
+                            if scan_type == "Bullish (Upward Momentum)" and (direction != "Up" or fms < 100):
+                                continue
+                            elif scan_type == "Bearish (Downward Momentum)" and (direction != "Down" or fms < 25):  # Ajustado de 50 a 25
+                                continue
+                            elif scan_type == "Breakouts" and abs(direction_score) < 0.9:
+                                continue
+                            elif scan_type == "Unusual Volume" and lmi < 2.0:
+                                continue
+                            
+                            # Calcular GCF (Confidence Factor)
                             signal_strength = min(1.0, abs(direction_score) / 2.0) * 50
                             catalyst_boost = catalyst_score * 1.5
                             agreement = 30 if (gwe * skew_dynamic > 0 and gwe * momentum > 0) else 15
                             liquidity_boost = 20 if lmi > 2.0 and abs(rsi - 50) < 20 else 0
                             gcf = min(100, signal_strength + catalyst_boost + agreement + liquidity_boost)
-
+                            
+                            # Generar alertas
                             if gcf > 95 and fms > 150:
                                 alerts.append(f"⚠️ HIGH CONFIDENCE ALERT: {stock} | FMS: {fms:.1f} | Direction: {direction} | GCF: {gcf:.1f}%")
-
-                            motion_data.append({
-                                "Ticker": stock, "Price": current_price, "IV/HV": iv_hv_ratio, "GWE": gwe, "Skew": skew_dynamic,
-                                "LMI": lmi, "Momentum": momentum, "RSI": rsi, "FMS": fms, "Direction": direction, "GCF": gcf,
-                                "Catalyst": catalyst_score > 0, "Support": support_level, "Resistance": resistance_level
+                            
+                            # Almacenar datos
+                            scan_data.append({
+                                "Ticker": stock,
+                                "Price": current_price,
+                                "IV/HV": iv_hv_ratio,
+                                "GWE": gwe,
+                                "Skew": skew_dynamic,
+                                "LMI": lmi,
+                                "Momentum": momentum,
+                                "RSI": rsi,
+                                "FMS": fms,
+                                "Direction": direction,
+                                "GCF": gcf,
+                                "Catalyst": catalyst_score > 0,
+                                "Support": support_level,
+                                "Resistance": resistance_level,
+                                "Volume": volumes[-1] if volumes.size > 0 else 0
                             })
                         except Exception as e:
                             logger.error(f"Error scanning {stock}: {str(e)}")
                             failed_stocks.append((stock, str(e)))
-
-                if motion_data:
-                    df_motion = pd.DataFrame(motion_data).sort_values("FMS", ascending=False)[:20]
-                    styled_df = df_motion.style.format({
-                        "Price": "${:.2f}", "IV/HV": "{:.2f}", "GWE": "{:.2f}", "Skew": "{:.2f}", "LMI": "{:.2f}",
-                        "Momentum": "{:.2f}", "RSI": "{:.1f}", "FMS": "{:.1f}", "GCF": "{:.1f}", "Support": "${:.2f}", "Resistance": "${:.2f}"
+                
+                # Mostrar resultados
+                if scan_data:
+                    df_scan = pd.DataFrame(scan_data).sort_values("FMS", ascending=False)[:max_results]
+                    styled_df = df_scan.style.format({
+                        "Price": "${:.2f}",
+                        "IV/HV": "{:.2f}",
+                        "GWE": "{:.2f}",
+                        "Skew": "{:.2f}",
+                        "LMI": "{:.2f}",
+                        "Momentum": "{:.2f}",
+                        "RSI": "{:.1f}",
+                        "FMS": "{:.1f}",
+                        "GCF": "{:.1f}",
+                        "Support": "${:.2f}",
+                        "Resistance": "${:.2f}",
+                        "Volume": "{:,.0f}"
                     }).background_gradient(cmap="Purples", subset=["FMS"]).background_gradient(cmap="Greens", subset=["GCF"])
                     st.dataframe(styled_df, use_container_width=True)
-
+                    
+                    # Mostrar alertas
                     if alerts:
                         st.warning("\n".join(alerts))
-
-                    top_pick = df_motion.iloc[0]
-                    st.success(f"Top Pick: {top_pick['Ticker']} | FMS: {top_pick['FMS']:.1f} | Direction: {top_pick['Direction']} | GCF: {top_pick['GCF']:.1f}%")
-
-                    fig = go.Figure()
-                    fig.add_trace(go.Bar(x=df_motion["Ticker"], y=df_motion["FMS"], name="Future Motion Score", marker_color="purple"))
-                    fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["GCF"], name="Confidence", mode="lines+markers", yaxis="y2", line=dict(color="lime")))
-                    fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["Support"], name="Support", mode="lines", line=dict(color="cyan", dash="dash")))
-                    fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["Resistance"], name="Resistance", mode="lines", line=dict(color="red", dash="dash")))
-                    fig.update_layout(
-                        xaxis_title="Ticker", yaxis_title="Future Motion Score (FMS)",
-                        yaxis2=dict(title="Confidence Factor (GCF %)", overlaying="y", side="right", range=[0, 100]),
-                        template="plotly_dark", plot_bgcolor="#1E1E1E", paper_bgcolor="#1E1E1E",
-                        font=dict(color="#FFFFFF", size=14), legend=dict(yanchor="top", y=1.1, xanchor="right", x=1),
-                        height=600
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-
-                    csv_motion = df_motion.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download Precision Predictions",
-                        data=csv_motion,
-                        file_name="precision_predictor_pro.csv",
-                        mime="text/csv",
-                        key="download_scan_tab2"
-                    )
+                    
+                    # Mostrar el mejor resultado solo si hay datos
+                    if not df_scan.empty:
+                        top_pick = df_scan.iloc[0]
+                        st.success(f"Top Pick: {top_pick['Ticker']} | FMS: {top_pick['FMS']:.1f} | Direction: {top_pick['Direction']} | GCF: {top_pick['GCF']:.1f}%")
+                        
+                        # Crear gráfica
+                        fig = go.Figure()
+                        fig.add_trace(go.Bar(x=df_scan["Ticker"], y=df_scan["FMS"], name="Future Motion Score", marker_color="purple"))
+                        fig.add_trace(go.Scatter(x=df_scan["Ticker"], y=df_scan["GCF"], name="Confidence", mode="lines+markers", yaxis="y2", line=dict(color="lime")))
+                        fig.add_trace(go.Scatter(x=df_scan["Ticker"], y=df_scan["Support"], name="Support", mode="lines", line=dict(color="cyan", dash="dash")))
+                        fig.add_trace(go.Scatter(x=df_scan["Ticker"], y=df_scan["Resistance"], name="Resistance", mode="lines", line=dict(color="red", dash="dash")))
+                        fig.add_trace(go.Bar(x=df_scan["Ticker"], y=df_scan["Volume"], name="Volume", marker_color="blue", opacity=0.5, yaxis="y3"))
+                        fig.update_layout(
+                            xaxis_title="Ticker",
+                            yaxis_title="Future Motion Score (FMS)",
+                            yaxis2=dict(title="Confidence Factor (GCF %)", overlaying="y", side="right", range=[0, 100]),
+                            yaxis3=dict(title="Volume", overlaying="y", side="left", anchor="free", position=0.05, range=[0, max(df_scan["Volume"]) * 1.2] if not df_scan["Volume"].empty else [0, 1000000]),
+                            template="plotly_dark",
+                            plot_bgcolor="#1E1E1E",
+                            paper_bgcolor="#1E1E1E",
+                            font=dict(color="#FFFFFF", size=14),
+                            legend=dict(yanchor="top", y=1.1, xanchor="right", x=1),
+                            height=600
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Descarga de datos
+                        csv_scan = df_scan.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Market Scan Data",
+                            data=csv_scan,
+                            file_name=f"market_scan_pro_{scan_type.replace(' ', '_').lower()}.csv",
+                            mime="text/csv",
+                            key="download_scan_tab2"
+                        )
+                        
+                        # Insights adicionales
+                        st.markdown("#### Extra Scan Insights")
+                        num_stocks = len(scan_data)
+                        extra_metrics["avg_iv"] = extra_metrics["avg_iv"] / num_stocks if num_stocks > 0 else 0
+                        st.write(f"**Average Implied Volatility (IV):** {extra_metrics['avg_iv']:.2%}")
+                        st.write(f"**Max Gamma Weighted Exposure (GWE):** {extra_metrics['max_gwe']:.2f}")
+                        st.write("**Key Levels (Top 5 Stocks by FMS):**")
+                        top_5_levels = sorted(extra_metrics["key_levels"], key=lambda x: df_scan[df_scan["Ticker"] == x["stock"]]["FMS"].iloc[0] if x["stock"] in df_scan["Ticker"].values else 0, reverse=True)[:5]
+                        for level in top_5_levels:
+                            st.write(f"- {level['stock']}: Support: ${level['support']:.2f}, Resistance: ${level['resistance']:.2f}")
+                    else:
+                        st.warning(f"No stocks met the criteria for '{scan_type}'. Try adjusting the scan type or check data availability.")
                 else:
-                    st.error("No stocks with sufficient data found.")
+                    st.error("")
                     if failed_stocks:
                         st.write("Failed stocks and reasons:")
                         for stock, reason in failed_stocks[:11]:
                             st.write(f"- {stock}: {reason}")
                     st.write("Stocks attempted:", stocks_to_scan[:25])
-                    st.write("Check API connectivity (FMP, Tradier, etc.), API keys, or try again later.")
-
+                    
+                
+                # Pie de página
                 st.markdown(f"*Last Scan: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Powered by Ozy*")
-
     # Tab 3: News Scanner
     with tab3:
         st.subheader("News Scanner")
@@ -3435,29 +3567,47 @@ def main():
     # Tab 8: Crypto Insights
     with tab8:
         st.subheader("Crypto Insights")
+        
+        # Entrada del usuario
         ticker = st.text_input("Enter Crypto Ticker (e.g., BTC, ETH, XRP):", value="BTC", key="crypto_ticker_tab8").upper()
         selected_pair = f"{ticker}/USD"
+        
+        # Botón de actualización
         refresh_button = st.button("Refresh Orders", key="refresh_tab8")
+        
+        # Placeholder para actualización dinámica
         placeholder = st.empty()
+        
+        # Procesar datos al hacer clic o en la primera carga
         if refresh_button or "tab8_initialized" not in st.session_state:
             with st.spinner(f"Fetching data for {selected_pair}..."):
                 try:
+                    # Obtener datos de mercado de CoinGecko
                     market_data = fetch_coingecko_data(ticker)
                     if not market_data:
-                        st.error(f"Failed to fetch market data for {ticker} from Ozyforward files.")
+                        st.error(f"Failed to fetch market data for {ticker} from CoinGecko.")
+                        logger.error(f"No market data returned for {ticker} from CoinGecko")
                     else:
+                        # Obtener libro de órdenes de Kraken
+                        logger.info(f"Attempting to fetch order book for {selected_pair}")
                         bids, asks, current_price = fetch_order_book(ticker, depth=500)
                         if bids.empty or asks.empty:
-                            st.error(f"Failed to fetch order book for {selected_pair}. Verify the ticker.")
+                            st.error(f"Failed to fetch order book for {selected_pair}. Verify the ticker or check Kraken API status.")
+                            logger.error(f"Order book fetch failed: bids={len(bids)}, asks={len(asks)} for {selected_pair}")
                         else:
+                            # Mostrar datos en el placeholder
                             with placeholder.container():
-                                st.markdown(f"### Bitcoin USD ({ticker}USD)")
+                                st.markdown(f"### {ticker} USD ({ticker}USD)")
                                 st.write(f"**Price**: ${market_data['price']:,.2f}")
                                 st.write(f"**Change (24h)**: {market_data['change_value']:,.2f} ({market_data['change_percent']:.2f}%)")
                                 st.write(f"**Volume (24h)**: {market_data['volume']:,.0f}")
                                 st.write(f"**Market Cap**: ${market_data['market_cap']:,.0f}")
+                                
+                                # Generar y mostrar gráfico de burbujas
                                 fig, order_metrics = plot_order_book_bubbles_with_max_pain(bids, asks, current_price, ticker, market_data['volatility'])
                                 st.plotly_chart(fig, use_container_width=True, key=f"plotly_chart_tab8_{ticker}_{int(time.time())}")
+                                
+                                # Mostrar métricas
                                 pressure_color = "#32CD32" if order_metrics['net_pressure'] > 0 else "#FF4500" if order_metrics['net_pressure'] < 0 else "#FFFFFF"
                                 st.write(f"**Net Pressure**: <span style='color:{pressure_color}'>{order_metrics['net_pressure']:,.0f}</span> ({order_metrics['trend']})", unsafe_allow_html=True)
                                 st.write(f"**Volatility (Annualized)**: {order_metrics['volatility']:.2f}%")
@@ -3466,12 +3616,17 @@ def main():
                                 st.write("**Whale Accumulation Zones**: " + ", ".join([f"${zone:.2f}" for zone in order_metrics['whale_zones']]))
                                 edge_color = "#32CD32" if order_metrics['edge_score'] > 50 else "#FF4500" if order_metrics['edge_score'] < 30 else "#FFD700"
                                 st.write(f"**Trader's Edge Score**: <span style='color:{edge_color}'>{order_metrics['edge_score']:.1f}</span> (0-100)", unsafe_allow_html=True)
+                            
+                            # Marcar como inicializado
                             st.session_state["tab8_initialized"] = True
                 except Exception as e:
                     st.error(f"Error processing data for {selected_pair}: {str(e)}")
-                    logger.error(f"Error in Tab 8: {str(e)}")
-                    st.markdown("---")
-                    st.markdown("*Developed by Ozy | © 2025*")
+                    logger.error(f"Tab 8 error: {str(e)}")
+        
+        # Pie de página
+        st.markdown("---")
+        st.markdown("*Developed by Ozy | © 2025*")
+
 
     # Tab 9: Earnings Calendar
     with tab9:
