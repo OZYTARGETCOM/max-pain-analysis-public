@@ -1,27 +1,44 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import numpy as np
 import os
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 import plotly.graph_objects as go
-import plotly.express as px
 from datetime import datetime, timedelta
 import multiprocessing
+import streamlit as st
+import pandas as pd
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from scipy import stats
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+import numpy as np
+import csv
 import bcrypt
 import sqlite3
-import socket
-import math
-import base64
-import streamlit.components.v1 as components
-from scipy.stats import norm
-import krakenex
+import os
+from sklearn.linear_model import LinearRegression
 from bs4 import BeautifulSoup
+import socket
+from scipy.stats import norm
+import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
+import logging
+import time
+from typing import List, Dict, Optional, Tuple
+import streamlit.components.v1 as components
+import math
+import krakenex
+import base64
 
 # API Sessions and Configurations
 session_fmp = requests.Session()
@@ -3055,7 +3072,7 @@ def main():
             }
             auto_oi = int(100000 * (1 + iv_factor * 2))
             auto_oi_key = next((k for k, v in volume_options.items() if v >= auto_oi), "0.1M")
-            use_auto_oi = st.checkbox("Auto OI (Volatility-Based)", value=False, key="auto_oi")
+            use_auto_oi = st.checkbox("Auto OI (Volatility-Based)", value=True, key="auto_oi")
             if use_auto_oi:
                 open_interest_threshold = volume_options[auto_oi_key]
                 st.write(f"Auto OI Set: {auto_oi_key} ({volume_options[auto_oi_key]:,})")
@@ -3075,7 +3092,7 @@ def main():
             }
             auto_gamma = max(0.001, min(0.05, iv_factor / 20))
             auto_gamma_key = next((k for k, v in gamma_options.items() if v >= auto_gamma), "0.001")
-            use_auto_gamma = st.checkbox("Auto Gamma (Volatility-Based)", value=False, key="auto_gamma")
+            use_auto_gamma = st.checkbox("Auto Gamma (Volatility-Based)", value=True, key="auto_gamma")
             if use_auto_gamma:
                 gamma_threshold = gamma_options[auto_gamma_key]
                 st.write(f"Auto Gamma Set: {auto_gamma_key}")
