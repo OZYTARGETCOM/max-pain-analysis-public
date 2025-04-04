@@ -212,7 +212,7 @@ if not st.session_state["authenticated"]:
         st.image(logo_path, width=150)
         st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.warning("No 'favicon.png' found for login screen. Place it in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
+        st.warning("")
     
     st.title("🔒 VIP ACCESS")
     
