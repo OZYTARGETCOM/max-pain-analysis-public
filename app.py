@@ -41,6 +41,7 @@ import krakenex
 import base64
 import logging
 
+
 logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 # API Sessions and Configurations
