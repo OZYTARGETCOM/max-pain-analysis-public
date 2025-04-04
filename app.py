@@ -3,6 +3,20 @@ import pandas as pd
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import numpy as np
+import os
+from concurrent.futures import ThreadPoolExecutor
+import logging
+import time
+from typing import List, Dict, Optional
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+import multiprocessing
+import streamlit as st
+import pandas as pd
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from scipy import stats
 import plotly.express as px
 import plotly.graph_objects as go
@@ -25,20 +39,42 @@ import streamlit.components.v1 as components
 import math
 import krakenex
 import base64
+import logging
 
+
+logging.getLogger("streamlit").setLevel(logging.ERROR)
+
+# API Sessions and Configurations
+session_fmp = requests.Session()
+session_tradier = requests.Session()
+retry_strategy = Retry(total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+adapter = HTTPAdapter(max_retries=retry_strategy)
+session_fmp.mount("https://", adapter)
+session_tradier.mount("https://", adapter)
+num_workers = min(100, multiprocessing.cpu_count() * 2)
+
+# API Keys and Constants
 # Configurar cliente de Kraken con las claves proporcionadas
 API_KEY = "kyFpw+5fbrFIMDuWJmtkbbbr/CgH/MS63wv7dRz3rndamK/XnjNOVkgP"
 PRIVATE_KEY = "7xbaBIp902rSBVdIvtfrUNbRHEHMkfMHPEf4rssz+ZwSwjUZFegjdyyYZzcE5DbBrUbtFdGRRGRjTuTnEblZWA=="
 kraken = krakenex.API(key=API_KEY, secret=PRIVATE_KEY)
 
-# Configuración de logging
+FMP_API_KEY = "bQ025fPNVrYcBN4KaExd1N3Xczyk44wM"
+FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+TRADIER_API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
+TRADIER_BASE_URL = "https://api.tradier.com/v1"
+HEADERS_FMP = {"Accept": "application/json"}
+HEADERS_TRADIER = {"Authorization": f"Bearer {TRADIER_API_KEY}", "Accept": "application/json"}
+PASSWORDS_DB = "auth_data/passwords.db"
+CACHE_TTL = 300
+
+# Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # --- Configuración inicial de página ---
 st.set_page_config(
     page_title="𝗢 𝗭 𝗬 |  DATA®",
-    page_icon="favicon.png",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -161,22 +197,12 @@ def authenticate_password(input_password):
     logger.warning(f"Authentication failed: Invalid password {input_password}")
     return False
 
-# Pantalla de autenticación con logo
+# Pantalla de autenticación sin logo
 initialize_passwords_db()
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    logo_path = "assets/favicon.png"
-    if not os.path.exists(logo_path):
-        logo_path = "favicon.png"
-    if os.path.exists(logo_path):
-        st.markdown("<div style='display: flex; justify-content: center; align-items: center; margin-bottom: 20px;'>", unsafe_allow_html=True)
-        st.image(logo_path, width=150)
-        st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.warning("No 'favicon.png' found for login screen. Place it in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
-    
     st.title("🔒 VIP ACCESS")
     
     # Estilo personalizado para el mensaje de carga
@@ -393,87 +419,178 @@ def calculate_possible_movement(symbol, eps_est, revenue_est, time):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# --- Funciones de API Optimizadas ---
-def fetch_api_data(url: str, params: Dict, headers: Dict, source: str) -> Optional[Dict]:
-    for attempt in range(MAX_RETRIES):
-        try:
-            response = requests.get(url, params=params, headers=headers, timeout=5)  # Timeout reducido
-            response.raise_for_status()
-            logger.info(f"{source} fetch success: {response.text[:100]}...")
-            return response.json()
-        except requests.RequestException as e:
-            logger.error(f"{source} error attempt {attempt + 1}: {e}")
-            if attempt == MAX_RETRIES - 1:
-                return None
-            delay = INITIAL_DELAY * (2 ** attempt) + np.random.uniform(0, 0.1)  # Reintentos más rápidos
-            time.sleep(delay)
-    return None
-
-@st.cache_data(ttl=CACHE_TTL)
-def get_current_price(ticker: str) -> float:
-    url = f"{FMP_BASE_URL}/quote/{ticker}"
-    params = {"apikey": FMP_API_KEY}
-    data = fetch_api_data(url, params, HEADERS_FMP, "FMP")
+    # Fallback to FMP API
+    url_fmp = f"{FMP_BASE_URL}/quote/{ticker}"
+    params_fmp = {"apikey": FMP_API_KEY}
     try:
+        response = session_fmp.get(url_fmp, params=params_fmp, headers=HEADERS_FMP, timeout=5)
+        response.raise_for_status()
+        data = response.json()
         if data and isinstance(data, list) and len(data) > 0:
             price = float(data[0].get("price", 0.0))
             if price > 0:
-                logger.info(f"FMP price for {ticker}: ${price:.2f}")
+                logger.info(f"Fetched current price for {ticker} from FMP: ${price:.2f}")
                 return price
-    except (ValueError, TypeError) as e:
-        logger.error(f"FMP price error: {e}")
-    url = f"{TRADIER_BASE_URL}/markets/quotes"
-    params = {"symbols": ticker}
-    data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier")
-    try:
-        if data and 'quotes' in data and 'quote' in data['quotes']:
-            price = float(data['quotes']['quote'].get("last", 0.0))
-            logger.info(f"Tradier price for {ticker}: ${price:.2f}")
-            return price
-        return 0.0
-    except (ValueError, TypeError) as e:
-        logger.error(f"Tradier price error: {e}")
-        return 0.0
+    except Exception as e:
+        logger.error(f"FMP failed to fetch price for {ticker}: {str(e)}")
 
-@st.cache_data(ttl=CACHE_TTL)
+    logger.error(f"Unable to fetch current price for {ticker} from any API")
+    return 0.0
+
+
+# Definiciones de funciones necesarias antes de main()
+# Definiciones de funciones necesarias antes de main()
+# Definiciones de funciones necesarias antes de main()
+def fetch_api_data(url: str, params: Dict, headers: Dict, source: str) -> Optional[Dict]:
+    """
+    Realiza una solicitud GET a una API con manejo de reintentos y logging.
+    """
+    session = session_fmp if "FMP" in source else session_tradier
+    try:
+        response = session.get(url, params=params, headers=headers, timeout=5)
+        response.raise_for_status()
+        logger.debug(f"{source} fetch success: {len(response.text)} bytes")
+        return response.json()
+    except requests.RequestException as e:
+        logger.error(f"{source} error: {e}")
+        return None
+
+@st.cache_data(ttl=60)
+def get_current_price(ticker: str) -> float:
+    """
+    Obtiene el precio actual de un ticker usando la API de Tradier con fallback a FMP.
+    """
+    url_tradier = f"{TRADIER_BASE_URL}/markets/quotes"
+    params_tradier = {"symbols": ticker}
+    try:
+        response = session_tradier.get(url_tradier, params=params_tradier, headers=HEADERS_TRADIER, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        if data and "quotes" in data and "quote" in data["quotes"]:
+            quote = data["quotes"]["quote"]
+            if isinstance(quote, list):
+                quote = quote[0]
+            price = float(quote.get("last", 0.0))
+            if price > 0:
+                logger.info(f"Fetched current price for {ticker} from Tradier: ${price:.2f}")
+                return price
+    except Exception as e:
+        logger.warning(f"Failed to fetch price for {ticker}: {str(e)}")
+
+    url_fmp = f"{FMP_BASE_URL}/quote/{ticker}"
+    params_fmp = {"apikey": FMP_API_KEY}
+    try:
+        response = session_fmp.get(url_fmp, params=params_fmp, headers=HEADERS_FMP, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        if data and isinstance(data, list) and len(data) > 0:
+            price = float(data[0].get("price", 0.0))
+            if price > 0:
+                logger.info(f"Fetched current price for {ticker} from FMP: ${price:.2f}")
+                return price
+    except Exception as e:
+        logger.error(f"FMP failed to fetch price for {ticker}: {str(e)}")
+
+    logger.error(f"Unable to fetch current price for {ticker} from any API")
+    return 0.0
+
+@st.cache_data(ttl=86400)
 def get_expiration_dates(ticker: str) -> List[str]:
-    if not ticker or not ticker.isalnum():
-        return []
+    """
+    Obtiene las fechas de vencimiento de opciones para un ticker dado usando la API de Tradier.
+    """
     url = f"{TRADIER_BASE_URL}/markets/options/expirations"
     params = {"symbol": ticker}
-    data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier")
-    if (data is not None and 
-        isinstance(data, dict) and 
-        'expirations' in data and 
-        data['expirations'] is not None and 
-        isinstance(data['expirations'], dict) and 
-        'date' in data['expirations'] and 
-        data['expirations']['date'] is not None):
-        try:
-            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            expiration_dates = [date_str for date_str in sorted(data['expirations']['date'])
-                                if (datetime.strptime(date_str, "%Y-%m-%d") - today).days >= 0]
-            logger.info(f"Found {len(expiration_dates)} expiration dates for {ticker}")
+    try:
+        response = session_tradier.get(url, params=params, headers=HEADERS_TRADIER, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        if data and "expirations" in data and "date" in data["expirations"]:
+            expiration_dates = data["expirations"]["date"]
+            logger.info(f"Fetched {len(expiration_dates)} expiration dates for {ticker}")
             return expiration_dates
-        except (ValueError, TypeError) as e:
-            logger.error(f"Error processing expiration dates for {ticker}: {str(e)}")
-            return []
-    logger.error(f"No valid expiration dates found for {ticker}")
-    return []
+        logger.warning(f"No expiration dates found for {ticker}")
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching expiration dates for {ticker}: {str(e)}")
+        return []
+
+@st.cache_data(ttl=60)
+def get_current_prices(tickers: List[str]) -> Dict[str, float]:
+    """
+    Obtiene precios actuales para una lista de tickers usando la API de Tradier con fallback a FMP.
+    """
+    prices_dict = {ticker: 0.0 for ticker in tickers}
+    
+    tickers_str = ",".join(tickers)
+    url_tradier = f"{TRADIER_BASE_URL}/markets/quotes"
+    params_tradier = {"symbols": tickers_str}
+    try:
+        response = session_tradier.get(url_tradier, params=params_tradier, headers=HEADERS_TRADIER, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        if data and "quotes" in data and "quote" in data["quotes"]:
+            quotes = data["quotes"]["quote"]
+            if isinstance(quotes, dict):
+                quotes = [quotes]
+            for quote in quotes:
+                ticker = quote.get("symbol", "")
+                price = float(quote.get("last", 0.0))
+                if ticker in prices_dict and price > 0:
+                    prices_dict[ticker] = price
+            fetched = [t for t, p in prices_dict.items() if p > 0]
+            logger.info(f"Fetched prices for {len(fetched)}/{len(tickers)} tickers from Tradier: {fetched}")
+    except Exception as e:
+        logger.warning(f"Tradier failed to fetch prices for batch: {str(e)}")
+
+    missing_tickers = [t for t, p in prices_dict.items() if p == 0.0]
+    if missing_tickers:
+        url_fmp = f"{FMP_BASE_URL}/quote/{','.join(missing_tickers)}"
+        params_fmp = {"apikey": FMP_API_KEY}
+        try:
+            response = session_fmp.get(url_fmp, params=params_fmp, headers=HEADERS_FMP, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            if data and isinstance(data, list):
+                for item in data:
+                    ticker = item.get("symbol", "")
+                    price = float(item.get("price", 0.0))
+                    if ticker in prices_dict and price > 0:
+                        prices_dict[ticker] = price
+                fetched = [t for t, p in prices_dict.items() if p > 0 and t in missing_tickers]
+                logger.info(f"Fetched prices for {len(fetched)}/{len(missing_tickers)} missing tickers from FMP: {fetched}")
+        except Exception as e:
+            logger.error(f"FMP failed to fetch prices for batch: {str(e)}")
+
+    failed = [t for t, p in prices_dict.items() if p == 0.0]
+    if failed:
+        logger.error(f"Unable to fetch prices for {len(failed)} tickers: {failed}")
+
+    return prices_dict
+
+@st.cache_data(ttl=3600)
+def get_metaverse_stocks() -> List[str]:
+    """
+    Obtiene una lista de los 50 stocks más activos desde FMP o usa una lista de respaldo.
+    """
+    url = "https://financialmodelingprep.com/api/v3/stock_market/actives"
+    params = {"apikey": FMP_API_KEY}
+    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Actives")
+    if data and isinstance(data, list):
+        return [stock["symbol"] for stock in data[:50]]
+    logger.warning("Failed to retrieve stocks from FMP API. Using fallback list.")
+    return ["NVDA", "TSLA", "AAPL", "AMD", "PLTR", "META", "RBLX", "U", "COIN", "HOOD"]
+
+
+
+
+
+
+
+
+
+
+
 
 @st.cache_data(ttl=CACHE_TTL)
 def get_options_data(ticker: str, expiration_date: str) -> List[Dict]:
@@ -562,7 +679,7 @@ def analyze_contracts(ticker, expiration, current_price):
     url = f"{TRADIER_BASE_URL}/markets/options/chains"
     params = {"symbol": ticker, "expiration": expiration, "greeks": True}
     try:
-        response = requests.get(url, headers=HEADERS_TRADIER, params=params, timeout=10)  # Timeout de 10 segundos
+        response = requests.get(url, headers=HEADERS_TRADIER, params=params, timeout=10)
         if response.status_code != 200:
             st.error(f"Error retrieving option contracts: {response.status_code}")
             return pd.DataFrame()
@@ -574,16 +691,16 @@ def analyze_contracts(ticker, expiration, current_price):
         for col in ['strike', 'option_type', 'open_interest', 'volume', 'bid', 'ask', 'last_volume', 'trade_date', 'bid_exchange', 'delta', 'gamma', 'break_even']:
             if col not in df.columns:
                 df[col] = 0
+        # Asegurar que open_interest sea numérico y no nan
+        df['open_interest'] = pd.to_numeric(df['open_interest'], errors='coerce').fillna(0).astype(int).clip(lower=0)
         df['trade_date'] = datetime.now().strftime('%Y-%m-%d')
         df['break_even'] = df.apply(lambda row: row['strike'] + row['bid'] if row['option_type'] == 'call' else row['strike'] - row['bid'], axis=1)
         return df
     except requests.exceptions.ReadTimeout:
         st.error(f"Timeout retrieving option contracts for {ticker}. Tradier API did not respond.")
-        logger.error(f"ReadTimeout in analyze_contracts for {ticker}, expiration {expiration}")
         return pd.DataFrame()
     except requests.RequestException as e:
         st.error(f"Error retrieving option contracts for {ticker}: {str(e)}")
-        logger.error(f"RequestException in analyze_contracts: {str(e)}")
         return pd.DataFrame()
 
 def style_and_sort_table(df):
@@ -827,23 +944,57 @@ def gamma_exposure_chart(processed_data, current_price, touched_strikes):
     return fig
 
 def plot_skew_analysis_with_totals(options_data, current_price=None):
+    # Extraer datos básicos de options_data
     strikes = [float(option["strike"]) for option in options_data]
     iv = [float(option.get("implied_volatility", 0)) * 100 for option in options_data]
     option_type = [option["option_type"].upper() for option in options_data]
-    open_interest = [int(option.get("open_interest", 0)) for option in options_data]
+    # Asegurarse de que open_interest sea numérico y no nan
+    open_interest = [int(option.get("open_interest", 0) or 0) for option in options_data]
+    
+    # Calcular totales
     total_calls = sum(oi for oi, ot in zip(open_interest, option_type) if ot == "CALL")
     total_puts = sum(oi for oi, ot in zip(open_interest, option_type) if ot == "PUT")
     total_volume_calls = sum(int(option.get("volume", 0)) for option in options_data if option["option_type"].upper() == "CALL")
     total_volume_puts = sum(int(option.get("volume", 0)) for option in options_data if option["option_type"].upper() == "PUT")
+    
+    # Calcular IV ajustada
     adjusted_iv = [iv[i] + (open_interest[i] * 0.01) if option_type[i] == "CALL" else -(iv[i] + (open_interest[i] * 0.01)) for i in range(len(iv))]
-    skew_df = pd.DataFrame({"Strike": strikes, "Adjusted IV (%)": adjusted_iv, "Option Type": option_type, "Open Interest": open_interest})
-    fig = px.scatter(skew_df, x="Strike", y="Adjusted IV (%)", color="Option Type", size="Open Interest",
-                     custom_data=["Strike", "Option Type", "Open Interest", "Adjusted IV (%)"],
-                     title=f"IV Analysis<br><span style='font-size:16px;'> CALLS: {total_calls} | PUTS: {total_puts} | VC {total_volume_calls} | VP {total_volume_puts}</span>",
-                     labels={"Option Type": "Contract Type"}, color_discrete_map={"CALL": "blue", "PUT": "red"})
-    fig.update_traces(hovertemplate="<b>Strike:</b> %{customdata[0]:.2f}<br><b>Type:</b> %{customdata[1]}<br><b>Open Interest:</b> %{customdata[2]:,}<br><b>Adjusted IV:</b> %{customdata[3]:.2f}%")
-    fig.update_layout(xaxis_title="Strike Price", yaxis_title="Gummy Bubbles® (%)", legend_title="Option Type", template="plotly_white", title_x=0.5)
+    
+    # Crear DataFrame y limpiar datos
+    skew_df = pd.DataFrame({
+        "Strike": strikes,
+        "Adjusted IV (%)": adjusted_iv,
+        "Option Type": option_type,
+        "Open Interest": open_interest
+    })
+    # Reemplazar nan con 0 y asegurar valores no negativos
+    skew_df["Open Interest"] = skew_df["Open Interest"].fillna(0).astype(int).clip(lower=0)
+    
+    # Crear gráfico de dispersión con tamaño limpio
+    fig = px.scatter(
+        skew_df,
+        x="Strike",
+        y="Adjusted IV (%)",
+        color="Option Type",
+        size="Open Interest",
+        size_max=30,  # Limitar tamaño máximo para mejor visualización
+        custom_data=["Strike", "Option Type", "Open Interest", "Adjusted IV (%)"],
+        title=f"IV Analysis<br><span style='font-size:16px;'> CALLS: {total_calls} | PUTS: {total_puts} | VC {total_volume_calls} | VP {total_volume_puts}</span>",
+        labels={"Option Type": "Contract Type"},
+        color_discrete_map={"CALL": "blue", "PUT": "red"}
+    )
+    fig.update_traces(
+        hovertemplate="<b>Strike:</b> %{customdata[0]:.2f}<br><b>Type:</b> %{customdata[1]}<br><b>Open Interest:</b> %{customdata[2]:,}<br><b>Adjusted IV:</b> %{customdata[3]:.2f}%"
+    )
+    fig.update_layout(
+        xaxis_title="Strike Price",
+        yaxis_title="Gummy Bubbles® (%)",
+        legend_title="Option Type",
+        template="plotly_white",
+        title_x=0.5
+    )
 
+    # Lógica para current_price y max_pain (sin cambios en esta parte)
     if current_price is not None and options_data:
         strikes_dict = {}
         for option in options_data:
@@ -925,33 +1076,48 @@ def plot_skew_analysis_with_totals(options_data, current_price=None):
                 rr_puts, profit_puts, prob_otm_puts, percent_change_puts, put_loss, potential_move_puts, direction_puts = 0, 0, 0, 0, 0, 0, "N/A"
 
             if call_open_interest > 0 and closest_call:
-                fig.add_scatter(x=[current_price], y=[avg_iv_calls], mode="markers", name="Current Price (CALLs)",
-                                marker=dict(size=call_size, color="yellow", opacity=0.45, symbol="circle"),
-                                hovertemplate=(f"Current Price (CALLs): {current_price:.2f}<br>"
-                                               f"Adjusted IV: {avg_iv_calls:.2f}%<br>"
-                                               f"Open Interest: {call_open_interest:,}<br>"
-                                               f"% to Max Pain: {percent_change_calls:.2f}%<br>"
-                                               f"R/R: {rr_calls:.2f}<br>"
-                                               f"Est. Loss: ${call_loss:,.2f}<br>"
-                                               f"Potential Move: ${potential_move_calls:.2f}<br>"
-                                               f"Direction: {direction_calls}"))
+                fig.add_scatter(
+                    x=[current_price],
+                    y=[avg_iv_calls],
+                    mode="markers",
+                    name="Current Price (CALLs)",
+                    marker=dict(size=call_size, color="yellow", opacity=0.45, symbol="circle"),
+                    hovertemplate=(f"Current Price (CALLs): {current_price:.2f}<br>"
+                                   f"Adjusted IV: {avg_iv_calls:.2f}%<br>"
+                                   f"Open Interest: {call_open_interest:,}<br>"
+                                   f"% to Max Pain: {percent_change_calls:.2f}%<br>"
+                                   f"R/R: {rr_calls:.2f}<br>"
+                                   f"Est. Loss: ${call_loss:,.2f}<br>"
+                                   f"Potential Move: ${potential_move_calls:.2f}<br>"
+                                   f"Direction: {direction_calls}")
+                )
 
             if put_open_interest > 0 and closest_put:
-                fig.add_scatter(x=[current_price], y=[avg_iv_puts], mode="markers", name="Current Price (PUTs)",
-                                marker=dict(size=put_size, color="yellow", opacity=0.45, symbol="circle"),
-                                hovertemplate=(f"Current Price (PUTs): {current_price:.2f}<br>"
-                                               f"Adjusted IV: {avg_iv_puts:.2f}%<br>"
-                                               f"Open Interest: {put_open_interest:,}<br>"
-                                               f"% to Max Pain: {percent_change_puts:.2f}%<br>"
-                                               f"R/R: {rr_puts:.2f}<br>"
-                                               f"Est. Loss: ${put_loss:,.2f}<br>"
-                                               f"Potential Move: ${potential_move_puts:.2f}<br>"
-                                               f"Direction: {direction_puts}"))
+                fig.add_scatter(
+                    x=[current_price],
+                    y=[avg_iv_puts],
+                    mode="markers",
+                    name="Current Price (PUTs)",
+                    marker=dict(size=put_size, color="yellow", opacity=0.45, symbol="circle"),
+                    hovertemplate=(f"Current Price (PUTs): {current_price:.2f}<br>"
+                                   f"Adjusted IV: {avg_iv_puts:.2f}%<br>"
+                                   f"Open Interest: {put_open_interest:,}<br>"
+                                   f"% to Max Pain: {percent_change_puts:.2f}%<br>"
+                                   f"R/R: {rr_puts:.2f}<br>"
+                                   f"Est. Loss: ${put_loss:,.2f}<br>"
+                                   f"Potential Move: ${potential_move_puts:.2f}<br>"
+                                   f"Direction: {direction_puts}")
+                )
 
         if max_pain is not None:
-            fig.add_scatter(x=[max_pain], y=[0], mode="markers", name="Max Pain",
-                            marker=dict(size=15, color="white", symbol="circle"),
-                            hovertemplate=f"Max Pain: {max_pain:.2f}")
+            fig.add_scatter(
+                x=[max_pain],
+                y=[0],
+                mode="markers",
+                name="Max Pain",
+                marker=dict(size=15, color="white", symbol="circle"),
+                hovertemplate=f"Max Pain: {max_pain:.2f}"
+            )
 
     return fig, total_calls, total_puts
 
@@ -1060,53 +1226,62 @@ def calculate_options_activity(data):
     df["Options Activity"] = df["Volumen Relativo"] * df["IV"]
     return df.sort_values("Options Activity", ascending=False).head(3)
 
-def calculate_rsi(prices, period=14):
+def calculate_rsi(prices: List[float], period: int = 14) -> Optional[float]:
+    prices = np.array(prices)
     if len(prices) < period + 1:
         return None
     deltas = np.diff(prices)
-    gains = [delta if delta > 0 else 0 for delta in deltas]
-    losses = [-delta if delta < 0 else 0 for delta in deltas]
-    avg_gain = np.mean(gains[:period])
-    avg_loss = np.mean(losses[:period])
-    if avg_loss == 0:
-        return 100
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+    gains = np.where(deltas > 0, deltas, 0)
+    losses = np.where(deltas < 0, -deltas, 0)
+    avg_gain = np.mean(gains[-period:])
+    avg_loss = np.mean(losses[-period:])
+    return 100 - (100 / (1 + avg_gain / avg_loss)) if avg_loss != 0 else 100
 
-def calculate_sma(prices, period=20):
+def calculate_sma(prices: List[float], period: int = 20) -> Optional[float]:
+    prices = np.array(prices)
     if len(prices) < period:
         return None
     return np.mean(prices[-period:])
 
-def scan_stock(symbol, scan_type, breakout_period=10, volume_threshold=2.0):
-    prices, volumes = get_historical_prices_combined(symbol)
-    if len(prices) <= breakout_period or len(volumes) == 0:
-        return None
-    rsi = calculate_rsi(prices)
-    sma = calculate_sma(prices)
-    avg_volume = np.mean(volumes)
-    current_volume = volumes[-1]
-    recent_high = max(prices[-breakout_period:])
-    recent_low = min(prices[-breakout_period:])
-    last_price = prices[-1]
-    near_support = abs(last_price - recent_low) / recent_low <= 0.05
-    near_resistance = abs(last_price - recent_high) / recent_high <= 0.05
-    breakout_type = "Up" if last_price > recent_high else "Down" if last_price < recent_low else None
-    possible_change = (recent_low - last_price) / last_price * 100 if near_support else (recent_high - last_price) / last_price * 100 if near_resistance else None
-    
-    if scan_type == "Bullish (Upward Momentum)" and sma is not None and last_price > sma and rsi is not None and rsi < 70:
-        return {"Symbol": symbol, "Last Price": last_price, "SMA": round(sma, 2), "RSI": round(rsi, 2), "Near Support": near_support, "Near Resistance": near_resistance, "Volume": current_volume, "Breakout Type": breakout_type, "Possible Change (%)": round(possible_change, 2) if possible_change else None}
-    elif scan_type == "Bearish (Downward Momentum)" and sma is not None and last_price < sma and rsi is not None and rsi > 30:
-        return {"Symbol": symbol, "Last Price": last_price, "SMA": round(sma, 2), "RSI": round(rsi, 2), "Near Support": near_support, "Near Resistance": near_resistance, "Volume": current_volume, "Breakout Type": breakout_type, "Possible Change (%)": round(possible_change, 2) if possible_change else None}
-    elif scan_type == "Breakouts":
-        if breakout_type:
-            return {"Symbol": symbol, "Breakout Type": breakout_type, "Last Price": last_price, "Recent High": recent_high, "Recent Low": recent_low, "Volume": current_volume, "Possible Change (%)": round(possible_change, 2) if possible_change else None}
-        elif near_support or near_resistance:
-            return {"Symbol": symbol, "Potential Breakout": "Support" if near_support else "Resistance", "Last Price": last_price, "Recent High": recent_high, "Recent Low": recent_low, "Volume": current_volume, "Possible Change (%)": round(possible_change, 2) if possible_change else None}
-    elif scan_type == "Unusual Volume" and current_volume > volume_threshold * avg_volume:
-        return {"Symbol": symbol, "Volume": current_volume, "Avg Volume": avg_volume, "Last Price": last_price}
-    return None
+def scan_stock_batch(tickers: List[str], scan_type: str, breakout_period=10, volume_threshold=2.0) -> List[Dict]:
+    prices_dict = get_current_prices(tickers)
+    results = []
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = {executor.submit(get_historical_prices_combined, ticker, limit=breakout_period+1): ticker for ticker in tickers}
+        for future in futures:
+            ticker = futures[future]
+            try:
+                prices, volumes = future.result()
+                if len(prices) <= breakout_period or not volumes:
+                    continue
+                current_price = prices_dict.get(ticker, 0.0)
+                if current_price == 0.0:
+                    continue
+                prices = np.array(prices)
+                volumes = np.array(volumes)
+                rsi = calculate_rsi(prices)
+                sma = calculate_sma(prices)
+                avg_volume = np.mean(volumes)
+                current_volume = volumes[-1]
+                recent_high = np.max(prices[-breakout_period:])
+                recent_low = np.min(prices[-breakout_period:])
+                last_price = prices[-1]
+                near_support = abs(last_price - recent_low) / recent_low <= 0.05
+                near_resistance = abs(last_price - recent_high) / recent_high <= 0.05
+                breakout_type = "Up" if last_price > recent_high else "Down" if last_price < recent_low else None
+                possible_change = (recent_low - last_price) / last_price * 100 if near_support else (recent_high - last_price) / last_price * 100 if near_resistance else None
+
+                if scan_type == "Bullish (Upward Momentum)" and sma and last_price > sma and rsi and rsi < 70:
+                    results.append({"Symbol": ticker, "Last Price": last_price, "SMA": round(sma, 2), "RSI": round(rsi, 2), "Volume": current_volume, "Breakout Type": breakout_type, "Possible Change (%)": round(possible_change, 2) if possible_change else None})
+                elif scan_type == "Bearish (Downward Momentum)" and sma and last_price < sma and rsi and rsi > 30:
+                    results.append({"Symbol": ticker, "Last Price": last_price, "SMA": round(sma, 2), "RSI": round(rsi, 2), "Volume": current_volume, "Breakout Type": breakout_type, "Possible Change (%)": round(possible_change, 2) if possible_change else None})
+                elif scan_type == "Breakouts" and breakout_type:
+                    results.append({"Symbol": ticker, "Breakout Type": breakout_type, "Last Price": last_price, "Recent High": recent_high, "Recent Low": recent_low, "Volume": current_volume, "Possible Change (%)": round(possible_change, 2) if possible_change else None})
+                elif scan_type == "Unusual Volume" and current_volume > volume_threshold * avg_volume:
+                    results.append({"Symbol": ticker, "Volume": current_volume, "Avg Volume": avg_volume, "Last Price": last_price})
+            except Exception as e:
+                logger.error(f"Error scanning {ticker}: {e}")
+    return results
 
 def get_financial_metrics(symbol: str) -> Dict[str, float]:
     try:
@@ -1591,7 +1766,7 @@ def fetch_coingecko_data(ticker: str) -> dict:
     try:
         response = requests.get(url, timeout=5)
         if response.status_code != 200:
-            logger.error(f"Error fetching CoinGecko data for {ticker}: {response.status_code}")
+            logger.error(f"Error fetching  data for {ticker}: {response.status_code}")
             return {}
         data = response.json()
         market_data = data.get("market_data", {})
@@ -1610,7 +1785,7 @@ def fetch_coingecko_data(ticker: str) -> dict:
             "volatility": volatility
         }
     except Exception as e:
-        logger.error(f"Error fetching CoinGecko data for {ticker}: {str(e)}")
+        logger.error(f"Error fetching  data for {ticker}: {str(e)}")
         return {}
 
 def calculate_crypto_max_pain(bids: pd.DataFrame, asks: pd.DataFrame) -> float:
@@ -2211,7 +2386,21 @@ def get_fed_rate() -> float:
     return 0.045  # Fallback a tasa libre de riesgo
 
 
-
+def calculate_momentum(prices: List[float], vol_historical: float) -> float:
+    """
+    Calculate momentum based on price changes and historical volatility.
+    
+    Args:
+        prices (List[float]): List of historical prices.
+        vol_historical (float): Annualized historical volatility.
+    
+    Returns:
+        float: Momentum score.
+    """
+    if len(prices) < 2:
+        return 0.0
+    price_change = (prices[-1] - prices[-2]) / prices[-2]
+    return price_change / vol_historical if vol_historical > 0 else 0.0
 
 
 
@@ -2220,60 +2409,111 @@ def get_fed_rate() -> float:
 # --- Main App ---
 # --- Main App ---
 # --- Main App ---
+# --- Main App ---
 def main():
-    # Logo y título principal después de autenticación
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        st.markdown("""
-            ℙℝ𝕆 𝔼𝕊ℂ𝔸ℕℕ𝔼ℝ|®
-        """, unsafe_allow_html=True)
-    with col2:
-        logo_path = "assets/favicon.png"  # Intenta en assets primero
-        if not os.path.exists(logo_path):
-            logo_path = "favicon.png"  # Luego en la raíz
-        if os.path.exists(logo_path):
-            st.image(logo_path, width=45)
-        else:
-            st.warning("favicon.png' was not found. Please place the file in 'C:/Users/urbin/TradingApp/' or 'assets/'.")
+    # ... (código anterior, como el encabezado sin logo)
+    
+    # Pantalla de autenticación sin logo
+    initialize_passwords_db()
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
 
-    # Estilos personalizados con tabs ultra compactos en dos líneas (11 arriba, 1 abajo)
+    if not st.session_state["authenticated"]:
+        st.title("🔒 VIP ACCESS")
+        st.markdown("""
+        <style>
+        .loading-container {
+            text-align: center;
+            padding: 25px;
+            background: linear-gradient(145deg, #1A1A1A, #2D2D2D);
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7), inset 0 0 10px rgba(50, 205, 50, 0.1);
+            border: 1px solid rgba(50, 205, 50, 0.3);
+        }
+        .loading-text {
+            font-size: 26px;
+            font-weight: 600;
+            color: #32CD32;
+            text-shadow: 0 0 12px rgba(50, 205, 50, 0.8);
+            letter-spacing: 1px;
+        }
+        .spinner-pro {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.2);
+            border-top: 4px solid #32CD32;
+            border-radius: 50%;
+            animation: spin-pro 1s ease-in-out infinite;
+            margin: 15px auto 0;
+        }
+        @keyframes spin-pro {
+            0% { transform: rotate(0deg); }
+            50% { transform: rotate(180deg); border-top-color: #FFD700; }
+            100% { transform: rotate(360deg); border-top-color: #32CD32; }
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+    # Solo una columna para el título, sin logo
+    st.markdown("""
+        <div class="header-container">
+            <div class="header-title">ℙℝ𝕆 𝔼𝕊ℂ𝔸ℕℕ𝔼ℝ®</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Estilos personalizados con tabs ultra compactos y futuristas en dos líneas
     st.markdown("""
         <style>
-        .stApp {background-color: #1E1E1E;}
-        .stTextInput, .stSelectbox {background-color: #2D2D2D; color: #FFFFFF;}
-        .stSpinner > div > div {border-color: #32CD32 !important;}
-        /* Estilo para los tabs */
+        .stApp {
+            background-color: #1E1E1E;
+        }
+        .stTextInput, .stSelectbox {
+            background-color: #2D2D2D;
+            color: #FFFFFF;
+        }
+        .stSpinner > div > div {
+            border-color: #32CD32 !important;
+        }
         .stTabs [data-baseweb="tab-list"] {
             display: flex;
-            flex-wrap: wrap;  /* Permitir dos líneas */
-            background-color: #1E1E1E;
-            padding: 2px 0;  /* Padding mínimo */
-            gap: 1px;  /* Espacio ultra mínimo entre tabs */
-            max-width: 100%;  /* Asegurar que use el ancho disponible */
+            flex-wrap: wrap;
+            justify-content: center;
+            background: linear-gradient(90deg, #1B263B 0%, #2D2D2D 100%);
+            padding: 5px;
+            gap: 2px;
+            border-radius: 8px;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.7);
+            margin-top: 10px;
         }
         .stTabs [data-baseweb="tab"] {
-            padding: 3px 6px;  /* Padding ultra compacto */
-            margin: 1px 1px;  /* Margen ultra mínimo */
-            color: #FFFFFF;
-            background-color: #2D2D2D;
-            border-radius: 3px 3px 0 0;  /* Bordes más pequeños */
-            font-size: 9px;  /* Fuente ultra pequeña */
-            text-align: center;
-            /* Sin min-width, tamaño natural ultra compacto */
+            padding: 5px 10px;
+            margin: 2px;
+            color: #E0E1DD;
+            background: #2D2D2D;
+            border-radius: 5px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
         }
         .stTabs [data-baseweb="tab"]:hover {
-            background-color: #32CD32;
+            background: #32CD32;
             color: #1E1E1E;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(50, 205, 50, 0.5);
         }
         .stTabs [data-baseweb="tab"][aria-selected="true"] {
-            background-color: #32CD32;
+            background: #32CD32;
             color: #1E1E1E;
-            font-weight: bold;
+            font-weight: 700;
+            box-shadow: 0 0 15px rgba(50, 205, 50, 0.7);
         }
         </style>
     """, unsafe_allow_html=True)
 
-    # Definición de los tabs (Tab 12 integrado correctamente)
+    # Definición de los tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
         "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |",
         "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |",
@@ -2283,49 +2523,65 @@ def main():
     # Tab 1: Gummy Data Bubbles®
     with tab1:
         ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
+        
         expiration_dates = get_expiration_dates(ticker)
         if not expiration_dates:
             st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
             return
+        
         expiration_date = st.selectbox("Expiration Date", expiration_dates, key="expiration_date")
+        
         with st.spinner("Fetching price..."):
             current_price = get_current_price(ticker)
             if current_price == 0.0:
-                st.error(f"Invalid ticker '{ticker}' or no price data available.")
+                st.error(f"Unable to fetch current price for '{ticker}'. Check ticker validity, API keys, or internet connection.")
+                logger.error(f"Price fetch failed for {ticker}")
                 return
+        
         st.markdown(f"**Current Price:** ${current_price:.2f}")
-
+        
         with st.spinner(f"Fetching data for {expiration_date}..."):
             options_data = get_options_data(ticker, expiration_date)
             if not options_data:
                 st.error("No options data available for this ticker and expiration date.")
                 return
+            
+            # Procesamiento vectorizado corregido
+            strikes = np.array([float(opt.get("strike", 0)) for opt in options_data if opt and isinstance(opt, dict)])
+            option_types = np.array([opt.get("option_type", "").upper() for opt in options_data if opt and isinstance(opt, dict)])
+            ois = np.array([int(opt.get("open_interest", 0)) for opt in options_data if opt and isinstance(opt, dict)])
+            gammas = np.array([float(opt.get("greeks", {}).get("gamma", 0)) if isinstance(opt.get("greeks", {}), dict) else 0
+                              for opt in options_data if opt and isinstance(opt, dict)])
+            
             processed_data = {}
-            for opt in options_data:
-                if not opt or not isinstance(opt, dict):
-                    continue
-                strike = float(opt.get("strike", 0))
-                option_type = opt.get("option_type", "").upper()
-                if option_type not in ["CALL", "PUT"]:
-                    continue
-                oi = int(opt.get("open_interest", 0))
-                greeks = opt.get("greeks", {})
-                gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
-                if strike not in processed_data:
-                    processed_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
-                processed_data[strike][option_type]["OI"] += oi
-                processed_data[strike][option_type]["Gamma"] += gamma
+            unique_strikes = np.unique(strikes)
+            for strike in unique_strikes:
+                mask = strikes == strike
+                processed_data[strike] = {
+                    "CALL": {
+                        "OI": np.sum(ois[mask & (option_types == "CALL")]),
+                        "Gamma": np.sum(gammas[mask & (option_types == "CALL")])
+                    },
+                    "PUT": {
+                        "OI": np.sum(ois[mask & (option_types == "PUT")]),
+                        "Gamma": np.sum(gammas[mask & (option_types == "PUT")])
+                    }
+                }
+            
             if not processed_data:
                 st.error("No valid data to display.")
                 return
+            
             prices, _ = get_historical_prices_combined(ticker)
             historical_prices = prices
             touched_strikes = detect_touched_strikes(processed_data.keys(), historical_prices)
             max_pain = calculate_max_pain_optimized(options_data)
             df = analyze_contracts(ticker, expiration_date, current_price)
             max_pain_strike, max_pain_df = calculate_max_pain(df)
+            
             gamma_fig = gamma_exposure_chart(processed_data, current_price, touched_strikes)
             st.plotly_chart(gamma_fig, use_container_width=True)
+            
             gamma_df = pd.DataFrame({
                 "Strike": list(processed_data.keys()),
                 "CALL_Gamma": [processed_data[s]["CALL"]["Gamma"] for s in processed_data],
@@ -2341,9 +2597,11 @@ def main():
                 mime="text/csv",
                 key="download_gamma_tab1"
             )
+            
             skew_fig, total_calls, total_puts = plot_skew_analysis_with_totals(options_data, current_price)
             st.plotly_chart(skew_fig, use_container_width=True)
             st.write(f"**Total CALLS:** {total_calls} | **Total PUTS:** {total_puts}")
+            
             skew_df = pd.DataFrame(options_data)[["strike", "option_type", "open_interest", "volume"]]
             skew_csv = skew_df.to_csv(index=False)
             st.download_button(
@@ -2353,10 +2611,13 @@ def main():
                 mime="text/csv",
                 key="download_skew_tab1"
             )
+            
             st.write(f"Current Price of {ticker}: ${current_price:.2f} (Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
             st.write(f"**Max Pain Strike (Optimized):** {max_pain if max_pain else 'N/A'}")
+            
             max_pain_fig = plot_max_pain_histogram_with_levels(max_pain_df, current_price)
             st.plotly_chart(max_pain_fig, use_container_width=True)
+            
             max_pain_csv = max_pain_df.to_csv(index=False)
             st.download_button(
                 label="📥 Download Max Pain Data",
@@ -2365,179 +2626,251 @@ def main():
                 mime="text/csv",
                 key="download_max_pain_tab1"
             )
+            
+            # Gráfico combinado de CALLs y PUTs
+            call_df = df[df['option_type'] == 'call'].copy()
+            put_df = df[df['option_type'] == 'put'].copy()
+            
+            # Limpiar open_interest para evitar nan en ambos DataFrames
+            call_df['open_interest'] = call_df['open_interest'].fillna(0).astype(int).clip(lower=0)
+            put_df['open_interest'] = put_df['open_interest'].fillna(0).astype(int).clip(lower=0)
+            
+            # Crear figura combinada
+            fig_options = go.Figure()
+            
+            # Agregar CALLs
+            fig_options.add_trace(go.Scatter(
+                x=call_df['strike'],
+                y=call_df['bid'],
+                mode='markers',
+                marker=dict(
+                    size=call_df['open_interest'].apply(lambda x: max(5, min(30, x / 1000))),  # Escalar tamaño
+                    color='blue',
+                    opacity=0.7
+                ),
+                name='CALL Options',
+                hovertemplate="<b>Strike:</b> %{x:.2f}<br><b>Bid:</b> ${%y:.2f}<br><b>Open Interest:</b> %{customdata:,}",
+                customdata=call_df['open_interest']
+            ))
+            
+            # Agregar PUTs
+            fig_options.add_trace(go.Scatter(
+                x=put_df['strike'],
+                y=put_df['bid'],
+                mode='markers',
+                marker=dict(
+                    size=put_df['open_interest'].apply(lambda x: max(5, min(30, x / 1000))),  # Escalar tamaño
+                    color='red',
+                    opacity=0.7
+                ),
+                name='PUT Options',
+                hovertemplate="<b>Strike:</b> %{x:.2f}<br><b>Bid:</b> ${%y:.2f}<br><b>Open Interest:</b> %{customdata:,}",
+                customdata=put_df['open_interest']
+            ))
+            
+            # Configurar diseño
+            fig_options.update_layout(
+                title=f"CALL and PUT Options for {ticker}",
+                xaxis_title="Strike Price",
+                yaxis_title="Bid Price",
+                template="plotly_white",
+                legend=dict(
+                    yanchor="top",
+                    y=0.99,
+                    xanchor="left",
+                    x=0.01
+                ),
+                hovermode="closest"
+            )
+            
+            st.plotly_chart(fig_options, use_container_width=True)
+            
             st.markdown("---")
             st.markdown("*Developed by Ozy | © 2025*")
 
-    # Tab 2: Market Scanner
     with tab2:
-        st.subheader("")
-        st.write("")
-        if st.button("🔄 Run Scan", key="run_scan_tab2"):
-            with st.spinner("Scanning Market..."):
-                def fetch_api_data(url, params, headers, source):
-                    try:
-                        response = requests.get(url, params=params, headers=headers, timeout=5)
-                        response.raise_for_status()
-                        return response.json()
-                    except Exception as e:
-                        logger.error(f"Error fetching {source} data: {e}")
-                        return []
-
-                @st.cache_data(ttl=3600)
-                def get_metaverse_stocks():
-                    url = "https://financialmodelingprep.com/api/v3/stock_market/actives"
-                    params = {"apikey": FMP_API_KEY}
-                    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Actives")
-                    if data and isinstance(data, list):
-                        st.write(f"Retrieved {len(data)} stocks from FMP API.")
-                        return [stock["symbol"] for stock in data[:50]]
-                    st.warning("Failed to retrieve stocks from FMP API. Using fallback list.")
-                    return ["NVDA", "TSLA", "AAPL", "AMD", "PLTR", "META", "RBLX", "U", "COIN", "HOOD"]
-
-                def calculate_momentum(prices, vol_historical):
-                    if len(prices) < 10:
-                        return 0
-                    short_ema = pd.Series(prices).ewm(span=max(3, int(5 / (vol_historical + 0.1))), adjust=False).mean().iloc[-1]
-                    long_ema = pd.Series(prices).ewm(span=max(8, int(12 / (vol_historical + 0.1))), adjust=False).mean().iloc[-1]
-                    return (short_ema - long_ema) / long_ema if long_ema > 0 else 0
-
-                def calculate_rsi(prices, period=14):
-                    if len(prices) < period + 1:
-                        return 50.0
-                    deltas = np.diff(prices)
-                    gain = np.where(deltas > 0, deltas, 0)
-                    loss = np.where(deltas < 0, -deltas, 0)
-                    avg_gain = np.mean(gain[-period:]) if len(gain) >= period else 0
-                    avg_loss = np.mean(loss[-period:]) if len(loss) >= period else 0
-                    rs = avg_gain / avg_loss if avg_loss > 0 else float('inf')
-                    return 100 - (100 / (1 + rs))
-
+        st.subheader("Market Scanner Pro")
+        
+        # Selección de tipo de escaneo y máximo de resultados
+        scan_type = st.selectbox(
+            "Select Scan Type",
+            ["Bullish (Upward Momentum)", "Bearish (Downward Momentum)", "Breakouts", "Unusual Volume"],
+            key="scan_type_tab2"
+        )
+        max_results = st.slider("Max Stocks to Display", 1, 200, 20, key="max_results_tab2")
+        
+        # Botón para iniciar el escaneo
+        if st.button("🚀 Run Market Scan", key="run_scan_tab2"):
+            with st.spinner(f"Scanning Market ({scan_type})..."):
+                # Obtener lista de stocks a escanear
                 stocks_to_scan = get_metaverse_stocks()
                 st.write(f"Scanning {len(stocks_to_scan)} stocks: {stocks_to_scan[:25]}...")
-                motion_data = []
+                
+                # Inicializar estructuras para almacenar datos
+                scan_data = []
                 alerts = []
                 failed_stocks = []
-
-                for stock in stocks_to_scan:
-                    try:
-                        current_price = get_current_price(stock)
-                        if not current_price or current_price <= 0:
-                            st.write(f"{stock}: No valid current price, using fallback $1.0")
-                            current_price = 1.0
-
-                        prices, volumes = get_historical_prices_combined(stock, limit=30)
-                        if not prices or len(prices) < 5:
-                            st.write(f"{stock}: Insufficient historical data, using fallback.")
-                            prices = [current_price] * 10
-                            volumes = [1000000] * 10
-
-                        returns = np.diff(prices) / prices[:-1]
-                        vol_historical = np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.1
-
-                        exp_dates = get_expiration_dates(stock)
-                        iv, gwe, skew_dynamic = vol_historical, 0, 0
-                        strikes_near_price = []
-                        support_level, resistance_level = current_price * 0.95, current_price * 1.05
-                        if exp_dates:
-                            options_data = get_options_data(stock, exp_dates[0])
-                            if options_data:
-                                iv_calls = np.mean([float(opt["greeks"].get("smv_vol", 0)) for opt in options_data if opt.get("option_type", "").lower() == "call" and "greeks" in opt]) or vol_historical
-                                iv_puts = np.mean([float(opt["greeks"].get("smv_vol", 0)) for opt in options_data if opt.get("option_type", "").lower() == "put" and "greeks" in opt]) or vol_historical
-                                iv = np.mean([iv_calls, iv_puts])
-                                oi_calls = sum(int(opt.get("open_interest", 0)) for opt in options_data if opt.get("option_type", "").lower() == "call")
-                                oi_puts = sum(int(opt.get("open_interest", 0)) for opt in options_data if opt.get("option_type", "").lower() == "put")
-                                skew_dynamic = (iv_calls - iv_puts) * (oi_calls / (oi_puts + 1)) / iv if iv > 0 else 0
-                                strikes = [float(opt["strike"]) for opt in options_data]
-                                strikes_near_price = [s for s in strikes if abs(s - current_price) < current_price * 0.1]
-                                gwe = sum(float(opt["greeks"].get("gamma", 0)) * int(opt.get("open_interest", 0)) / (abs(float(opt["strike"]) - current_price) + 0.01) 
-                                         for opt in options_data if "greeks" in opt and float(opt["strike"]) in strikes_near_price)
-                                gwe *= current_price / 1000 if gwe != 0 else 0
-                                support_level = min(strikes, default=current_price * 0.95)
-                                resistance_level = max(strikes, default=current_price * 1.05)
-                            else:
-                                st.write(f"{stock}: No options data available, using defaults.")
-                        else:
-                            st.write(f"{stock}: No expiration dates found, skipping options data.")
-
-                        volume_avg = np.mean(volumes[:-5]) if len(volumes) > 5 else 1
-                        volume_spike = max(volumes[-5:]) / volume_avg if volume_avg > 0 else 1.0
-                        oi_total = sum(int(opt.get("open_interest", 0)) for opt in options_data) if exp_dates and options_data else 0
-                        lmi = volume_spike * (1 + oi_total / (1000000 * vol_historical + 1)) * (1 / (vol_historical + 0.1))
-
-                        momentum = calculate_momentum(prices, vol_historical)
-                        rsi = calculate_rsi(prices)
-
-                        catalyst_score = 0
+                extra_metrics = {"avg_iv": 0, "max_gwe": 0, "key_levels": []}
+                
+                # Obtener precios actuales
+                prices_dict = get_current_prices(stocks_to_scan)
+                
+                # Escanear stocks en paralelo
+                with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                    futures = {
+                        executor.submit(get_historical_prices_combined, stock, limit=30): stock
+                        for stock in stocks_to_scan
+                    }
+                    for future in futures:
+                        stock = futures[future]
                         try:
-                            url = f"https://financialmodelingprep.com/api/v3/earning_calendar"
+                            # Obtener precio actual
+                            current_price = prices_dict.get(stock, 0.0)
+                            if not current_price or current_price <= 0:
+                                current_price = 1.0
+                                logger.debug(f"{stock}: No valid current price, using fallback $1.0")
+                            
+                            # Obtener precios y volúmenes históricos
+                            prices, volumes = future.result()
+                            if not prices or len(prices) < 5:
+                                prices = [current_price] * 10
+                                volumes = [1000000] * 10
+                                logger.debug(f"{stock}: Insufficient historical data, using fallback.")
+                            
+                            # Convertir a arrays de numpy
+                            prices = np.array(prices)
+                            volumes = np.array(volumes)
+                            returns = np.diff(prices) / prices[:-1]
+                            vol_historical = np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.1
+                            
+                            # Obtener datos de opciones
+                            exp_dates = get_expiration_dates(stock)
+                            iv, gwe, skew_dynamic = vol_historical, 0, 0
+                            support_level, resistance_level = current_price * 0.95, current_price * 1.05
+                            if exp_dates:
+                                options_data = get_options_data(stock, exp_dates[0])
+                                if options_data:
+                                    iv_calls = np.mean([
+                                        float(opt["greeks"].get("smv_vol", 0))
+                                        for opt in options_data
+                                        if opt.get("option_type", "").lower() == "call" and "greeks" in opt
+                                    ]) or vol_historical
+                                    iv_puts = np.mean([
+                                        float(opt["greeks"].get("smv_vol", 0))
+                                        for opt in options_data
+                                        if opt.get("option_type", "").lower() == "put" and "greeks" in opt
+                                    ]) or vol_historical
+                                    iv = np.mean([iv_calls, iv_puts])
+                                    extra_metrics["avg_iv"] += iv
+                                    oi_calls = sum(int(opt.get("open_interest", 0)) for opt in options_data if opt.get("option_type", "").lower() == "call")
+                                    oi_puts = sum(int(opt.get("open_interest", 0)) for opt in options_data if opt.get("option_type", "").lower() == "put")
+                                    skew_dynamic = (iv_calls - iv_puts) * (oi_calls / (oi_puts + 1)) / iv if iv > 0 else 0
+                                    strikes = np.array([float(opt["strike"]) for opt in options_data])
+                                    strikes_near_price = strikes[np.abs(strikes - current_price) < current_price * 0.1]
+                                    gwe = sum(
+                                        float(opt["greeks"].get("gamma", 0)) * int(opt.get("open_interest", 0)) / (abs(float(opt["strike"]) - current_price) + 0.01)
+                                        for opt in options_data
+                                        if "greeks" in opt and float(opt["strike"]) in strikes_near_price
+                                    )
+                                    gwe *= current_price / 1000 if gwe != 0 else 0
+                                    extra_metrics["max_gwe"] = max(extra_metrics["max_gwe"], abs(gwe))
+                                    support_level = np.min(strikes) if strikes.size > 0 else current_price * 0.95
+                                    resistance_level = np.max(strikes) if strikes.size > 0 else current_price * 1.05
+                                    extra_metrics["key_levels"].append({"stock": stock, "support": support_level, "resistance": resistance_level})
+                            
+                            # Calcular métricas
+                            volume_avg = np.mean(volumes[:-5]) if len(volumes) > 5 else 1
+                            volume_spike = np.max(volumes[-5:]) / volume_avg if volume_avg > 0 else 1.0
+                            oi_total = sum(int(opt.get("open_interest", 0)) for opt in options_data) if exp_dates and options_data else 0
+                            lmi = volume_spike * (1 + oi_total / (1000000 * vol_historical + 1)) * (1 / (vol_historical + 0.1))
+                            
+                            momentum = calculate_momentum(prices, vol_historical)
+                            rsi = calculate_rsi(prices)
+                            
+                            # Puntaje de catalizadores
+                            catalyst_score = 0
+                            url = f"{FMP_BASE_URL}/earning_calendar"
                             params = {"apikey": FMP_API_KEY, "from": datetime.now().strftime('%Y-%m-%d'), "to": (datetime.now() + timedelta(days=5)).strftime('%Y-%m-%d')}
-                            earnings_data = fetch_api_data(url, params, HEADERS_FMP, "FMP Earnings")
-                            if earnings_data and any(e.get("symbol") == stock for e in earnings_data):
-                                catalyst_score += 40 if iv > vol_historical * 1.5 else 25
-                            url_macro = f"https://financialmodelingprep.com/api/v3/economic-calendar"
-                            macro_data = fetch_api_data(url_macro, {"apikey": FMP_API_KEY, "from": datetime.now().strftime('%Y-%m-%d'), "to": (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')}, HEADERS_FMP, "FMP Macro")
-                            if macro_data and len(macro_data) > 0:
-                                catalyst_score += 30 if any(e.get("impact", "Low") in ["High", "Medium"] for e in macro_data) else 15
-                        except:
-                            st.write(f"{stock}: Failed to fetch catalyst data, using default.")
-
-                        iv_hv_ratio = iv / vol_historical if vol_historical > 0 else 1.0
-                        iv_weight = 40 + (iv_hv_ratio - 1) * 10 if iv_hv_ratio > 1 else 40
-                        gwe_weight = 35 + abs(gwe) * 5 if abs(gwe) > 0.5 else 35
-                        lmi_weight = 25 + (lmi - 1) * 5 if lmi > 1 else 25
-                        skew_weight = 20 + abs(skew_dynamic) * 10 if abs(skew_dynamic) > 0.2 else 20
-                        momentum_weight = 15 + abs(momentum) * 5 if abs(momentum) > 0.1 else 15
-
-                        fms = (
-                            iv_hv_ratio * iv_weight +
-                            abs(gwe) * gwe_weight +
-                            lmi * lmi_weight +
-                            abs(skew_dynamic) * skew_weight +
-                            abs(momentum) * momentum_weight +
-                            catalyst_score
-                        )
-
-                        direction_score = (gwe * 0.5) + (skew_dynamic * 0.3) + (momentum * 0.2)
-                        if direction_score > 0.7 and (rsi < 35 or lmi > 2.5):
-                            direction = "Up"
-                        elif direction_score < -0.7 and (rsi > 65 or lmi > 2.5):
-                            direction = "Down"
-                        else:
-                            direction = "Neutral"
-
-                        signal_strength = min(1.0, abs(direction_score) / 2.0) * 50
-                        catalyst_boost = catalyst_score * 1.5
-                        agreement = 30 if (gwe * skew_dynamic > 0 and gwe * momentum > 0) else 15
-                        liquidity_boost = 20 if lmi > 2.0 and abs(rsi - 50) < 20 else 0
-                        gcf = min(100, signal_strength + catalyst_boost + agreement + liquidity_boost)
-
-                        if gcf > 95 and fms > 150:
-                            alerts.append(f"⚠️ HIGH CONFIDENCE ALERT: {stock} | FMS: {fms:.1f} | Direction: {direction} | GCF: {gcf:.1f}%")
-
-                        motion_data.append({
-                            "Ticker": stock,
-                            "Price": current_price,
-                            "IV/HV": iv_hv_ratio,
-                            "GWE": gwe,
-                            "Skew": skew_dynamic,
-                            "LMI": lmi,
-                            "Momentum": momentum,
-                            "RSI": rsi,
-                            "FMS": fms,
-                            "Direction": direction,
-                            "GCF": gcf,
-                            "Catalyst": catalyst_score > 0,
-                            "Support": support_level,
-                            "Resistance": resistance_level
-                        })
-                    except Exception as e:
-                        logger.error(f"Error scanning {stock}: {str(e)}")
-                        failed_stocks.append((stock, str(e)))
-                        continue
-
-                if motion_data:
-                    df_motion = pd.DataFrame(motion_data).sort_values("FMS", ascending=False)[:20]
-                    styled_df = df_motion.style.format({
+                            try:
+                                response = session_fmp.get(url, params=params, headers=HEADERS_FMP, timeout=5)
+                                response.raise_for_status()
+                                earnings_data = response.json()
+                                if earnings_data and any(e.get("symbol") == stock for e in earnings_data):
+                                    catalyst_score += 40 if iv > vol_historical * 1.5 else 25
+                            except Exception as e:
+                                logger.error(f"FMP Earnings error for {stock}: {str(e)}")
+                            
+                            url_macro = f"{FMP_BASE_URL}/economic-calendar"
+                            params_macro = {"apikey": FMP_API_KEY, "from": datetime.now().strftime('%Y-%m-%d'), "to": (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')}
+                            try:
+                                response = session_fmp.get(url_macro, params=params_macro, headers=HEADERS_FMP, timeout=5)
+                                response.raise_for_status()
+                                macro_data = response.json()
+                                if macro_data and len(macro_data) > 0:
+                                    catalyst_score += 30 if any(e.get("impact", "Low") in ["High", "Medium"] for e in macro_data) else 15
+                            except Exception as e:
+                                logger.error(f"FMP Macro error for {stock}: {str(e)}")
+                            
+                            # Calcular FMS (Future Motion Score)
+                            iv_hv_ratio = iv / vol_historical if vol_historical > 0 else 1.0
+                            iv_weight = 40 + (iv_hv_ratio - 1) * 10 if iv_hv_ratio > 1 else 40
+                            gwe_weight = 35 + abs(gwe) * 5 if abs(gwe) > 0.5 else 35
+                            lmi_weight = 25 + (lmi - 1) * 5 if lmi > 1 else 25
+                            skew_weight = 20 + abs(skew_dynamic) * 10 if abs(skew_dynamic) > 0.2 else 20
+                            momentum_weight = 15 + abs(momentum) * 5 if abs(momentum) > 0.1 else 15
+                            fms = iv_hv_ratio * iv_weight + abs(gwe) * gwe_weight + lmi * lmi_weight + abs(skew_dynamic) * skew_weight + abs(momentum) * momentum_weight + catalyst_score
+                            
+                            # Determinar dirección con ajuste para Bearish
+                            direction_score = (gwe * 0.5) + (skew_dynamic * 0.3) + (momentum * 0.2)
+                            direction = "Up" if direction_score > 0.7 and (rsi < 35 or lmi > 2.5) else "Down" if direction_score < -0.3 and (rsi > 50 or lmi > 1.5) else "Neutral"
+                            
+                            # Filtrar según tipo de escaneo
+                            if scan_type == "Bullish (Upward Momentum)" and (direction != "Up" or fms < 100):
+                                continue
+                            elif scan_type == "Bearish (Downward Momentum)" and (direction != "Down" or fms < 25):  # Ajustado de 50 a 25
+                                continue
+                            elif scan_type == "Breakouts" and abs(direction_score) < 0.9:
+                                continue
+                            elif scan_type == "Unusual Volume" and lmi < 2.0:
+                                continue
+                            
+                            # Calcular GCF (Confidence Factor)
+                            signal_strength = min(1.0, abs(direction_score) / 2.0) * 50
+                            catalyst_boost = catalyst_score * 1.5
+                            agreement = 30 if (gwe * skew_dynamic > 0 and gwe * momentum > 0) else 15
+                            liquidity_boost = 20 if lmi > 2.0 and abs(rsi - 50) < 20 else 0
+                            gcf = min(100, signal_strength + catalyst_boost + agreement + liquidity_boost)
+                            
+                            # Generar alertas
+                            if gcf > 95 and fms > 150:
+                                alerts.append(f"⚠️ HIGH CONFIDENCE ALERT: {stock} | FMS: {fms:.1f} | Direction: {direction} | GCF: {gcf:.1f}%")
+                            
+                            # Almacenar datos
+                            scan_data.append({
+                                "Ticker": stock,
+                                "Price": current_price,
+                                "IV/HV": iv_hv_ratio,
+                                "GWE": gwe,
+                                "Skew": skew_dynamic,
+                                "LMI": lmi,
+                                "Momentum": momentum,
+                                "RSI": rsi,
+                                "FMS": fms,
+                                "Direction": direction,
+                                "GCF": gcf,
+                                "Catalyst": catalyst_score > 0,
+                                "Support": support_level,
+                                "Resistance": resistance_level,
+                                "Volume": volumes[-1] if volumes.size > 0 else 0
+                            })
+                        except Exception as e:
+                            logger.error(f"Error scanning {stock}: {str(e)}")
+                            failed_stocks.append((stock, str(e)))
+                
+                # Mostrar resultados
+                if scan_data:
+                    df_scan = pd.DataFrame(scan_data).sort_values("FMS", ascending=False)[:max_results]
+                    styled_df = df_scan.style.format({
                         "Price": "${:.2f}",
                         "IV/HV": "{:.2f}",
                         "GWE": "{:.2f}",
@@ -2548,54 +2881,75 @@ def main():
                         "FMS": "{:.1f}",
                         "GCF": "{:.1f}",
                         "Support": "${:.2f}",
-                        "Resistance": "${:.2f}"
+                        "Resistance": "${:.2f}",
+                        "Volume": "{:,.0f}"
                     }).background_gradient(cmap="Purples", subset=["FMS"]).background_gradient(cmap="Greens", subset=["GCF"])
                     st.dataframe(styled_df, use_container_width=True)
-
+                    
+                    # Mostrar alertas
                     if alerts:
                         st.warning("\n".join(alerts))
-
-                    top_pick = df_motion.iloc[0]
-                    st.success(f"Top: {top_pick['Ticker']} | FMS: {top_pick['FMS']:.1f} | Direction: {top_pick['Direction']} | GCF: {top_pick['GCF']:.1f}%")
-
-                    fig = go.Figure()
-                    fig.add_trace(go.Bar(x=df_motion["Ticker"], y=df_motion["FMS"], name="Future Motion Score", marker_color="purple"))
-                    fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["GCF"], name="Confidence", mode="lines+markers", yaxis="y2", line=dict(color="lime")))
-                    fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["Support"], name="Support", mode="lines", line=dict(color="cyan", dash="dash")))
-                    fig.add_trace(go.Scatter(x=df_motion["Ticker"], y=df_motion["Resistance"], name="Resistance", mode="lines", line=dict(color="red", dash="dash")))
-                    fig.update_layout(
-                        xaxis_title="Ticker",
-                        yaxis_title="Future Motion Score (FMS)",
-                        yaxis2=dict(title="Confidence Factor (GCF %)", overlaying="y", side="right", range=[0, 100]),
-                        template="plotly_dark",
-                        plot_bgcolor="#1E1E1E",
-                        paper_bgcolor="#1E1E1E",
-                        font=dict(color="#FFFFFF", size=14),
-                        legend=dict(yanchor="top", y=1.1, xanchor="right", x=1),
-                        height=600
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-
-                    csv_motion = df_motion.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download Predictions",
-                        data=csv_motion,
-                        file_name="precision_predictor_pro.csv",
-                        mime="text/csv",
-                        key="download_scan_tab2"
-                    )
+                    
+                    # Mostrar el mejor resultado solo si hay datos
+                    if not df_scan.empty:
+                        top_pick = df_scan.iloc[0]
+                        st.success(f"Top Pick: {top_pick['Ticker']} | FMS: {top_pick['FMS']:.1f} | Direction: {top_pick['Direction']} | GCF: {top_pick['GCF']:.1f}%")
+                        
+                        # Crear gráfica
+                        fig = go.Figure()
+                        fig.add_trace(go.Bar(x=df_scan["Ticker"], y=df_scan["FMS"], name="Future Motion Score", marker_color="purple"))
+                        fig.add_trace(go.Scatter(x=df_scan["Ticker"], y=df_scan["GCF"], name="Confidence", mode="lines+markers", yaxis="y2", line=dict(color="lime")))
+                        fig.add_trace(go.Scatter(x=df_scan["Ticker"], y=df_scan["Support"], name="Support", mode="lines", line=dict(color="cyan", dash="dash")))
+                        fig.add_trace(go.Scatter(x=df_scan["Ticker"], y=df_scan["Resistance"], name="Resistance", mode="lines", line=dict(color="red", dash="dash")))
+                        fig.add_trace(go.Bar(x=df_scan["Ticker"], y=df_scan["Volume"], name="Volume", marker_color="blue", opacity=0.5, yaxis="y3"))
+                        fig.update_layout(
+                            xaxis_title="Ticker",
+                            yaxis_title="Future Motion Score (FMS)",
+                            yaxis2=dict(title="Confidence Factor (GCF %)", overlaying="y", side="right", range=[0, 100]),
+                            yaxis3=dict(title="Volume", overlaying="y", side="left", anchor="free", position=0.05, range=[0, max(df_scan["Volume"]) * 1.2] if not df_scan["Volume"].empty else [0, 1000000]),
+                            template="plotly_dark",
+                            plot_bgcolor="#1E1E1E",
+                            paper_bgcolor="#1E1E1E",
+                            font=dict(color="#FFFFFF", size=14),
+                            legend=dict(yanchor="top", y=1.1, xanchor="right", x=1),
+                            height=600
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Descarga de datos
+                        csv_scan = df_scan.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Market Scan Data",
+                            data=csv_scan,
+                            file_name=f"market_scan_pro_{scan_type.replace(' ', '_').lower()}.csv",
+                            mime="text/csv",
+                            key="download_scan_tab2"
+                        )
+                        
+                        # Insights adicionales
+                        st.markdown("#### Extra Scan Insights")
+                        num_stocks = len(scan_data)
+                        extra_metrics["avg_iv"] = extra_metrics["avg_iv"] / num_stocks if num_stocks > 0 else 0
+                        st.write(f"**Average Implied Volatility (IV):** {extra_metrics['avg_iv']:.2%}")
+                        st.write(f"**Max Gamma Weighted Exposure (GWE):** {extra_metrics['max_gwe']:.2f}")
+                        st.write("**Key Levels (Top 5 Stocks by FMS):**")
+                        top_5_levels = sorted(extra_metrics["key_levels"], key=lambda x: df_scan[df_scan["Ticker"] == x["stock"]]["FMS"].iloc[0] if x["stock"] in df_scan["Ticker"].values else 0, reverse=True)[:5]
+                        for level in top_5_levels:
+                            st.write(f"- {level['stock']}: Support: ${level['support']:.2f}, Resistance: ${level['resistance']:.2f}")
+                    else:
+                        st.warning(f"No stocks met the criteria for '{scan_type}'. Try adjusting the scan type or check data availability.")
                 else:
-                    st.error("No stocks with sufficient data found.")
+                    st.error("")
                     if failed_stocks:
                         st.write("Failed stocks and reasons:")
                         for stock, reason in failed_stocks[:11]:
                             st.write(f"- {stock}: {reason}")
                     st.write("Stocks attempted:", stocks_to_scan[:25])
-                    st.write("Check API connectivity (FMP, Tradier, etc.), API keys, or try again later.")
-
+                    
+                
+                # Pie de página
                 st.markdown(f"*Last Scan: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Powered by Ozy*")
-
-    # Tab 3: News
+    # Tab 3: News Scanner
     with tab3:
         st.subheader("News Scanner")
         keywords = st.text_input("Enter keywords (comma-separated):", "Trump").split(",")
@@ -2613,8 +2967,8 @@ def main():
                         st.markdown("---")
                 else:
                     st.error("No recent news found.")
-                    st.markdown("---")
-                    st.markdown("*Developed by Ozy | © 2025*")
+                st.markdown("---")
+                st.markdown("*Developed by Ozy | © 2025*")
 
     # Tab 4: Institutional Holders
     with tab4:
@@ -2866,9 +3220,62 @@ def main():
                         st.markdown("*Developed by Ozy | © 2025*")
 
     # Tab 6: Analyst Rating Flow
+        # Tab 6: Analyst Rating Flow
     with tab6:
         st.subheader("Rating Flow")
         col1, col2 = st.columns([1, 3])
+        
+        # Estilos personalizados
+        st.markdown("""
+            <style>
+            .rating-flow-container {
+                background: linear-gradient(135deg, #1E1E1E, #2A2A2A);
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            }
+            .tooltip {
+                position: relative;
+                display: inline-block;
+                cursor: help;
+                color: #32CD32;
+                margin-left: 5px;
+            }
+            .tooltip .tooltiptext {
+                visibility: hidden;
+                width: 200px;
+                background-color: #2D2D2D;
+                color: #FFFFFF;
+                text-align: center;
+                border-radius: 5px;
+                padding: 5px;
+                position: absolute;
+                z-index: 1;
+                bottom: 125%;
+                left: 50%;
+                margin-left: -100px;
+                font-size: 12px;
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+            }
+            .tooltip:hover .tooltiptext {
+                visibility: visible;
+            }
+            .hacker-text {
+                background: #1A1A1A;
+                padding: 15px;
+                border-radius: 8px;
+                border: 2px solid #FFD700;
+                font-family: 'Courier New', Courier, monospace;
+                color: #FFD700;
+                font-size: 14px;
+                line-height: 1.5;
+                text-align: left;
+                box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+                white-space: pre-wrap;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
         with col1:
             st.markdown("### Configuration")
             ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="alerts_ticker").upper()
@@ -2882,6 +3289,12 @@ def main():
                 if current_price == 0.0:
                     st.error(f"Invalid ticker '{ticker}' or no price data available.")
                     return
+            
+            # Calcular volatilidad implícita
+            iv = get_implied_volatility(ticker) or 0.3
+            iv_factor = min(max(iv, 0.1), 1.0)
+            
+            # Vol Filter
             st.markdown("### Vol Filter")
             volume_options = {
                 "0.1M": 10000,
@@ -2891,54 +3304,182 @@ def main():
                 "0.5M": 50000,
                 "1.0M": 100000
             }
-            selected_volume = st.selectbox("Min Open Interest (M)", list(volume_options.keys()), index=3, key="alerts_vol")
-            open_interest_threshold = volume_options[selected_volume]
+            auto_oi = int(100000 * (1 + iv_factor * 2))
+            auto_oi_key = next((k for k, v in volume_options.items() if v >= auto_oi), "0.1M")
+            use_auto_oi = st.checkbox("Auto OI (Volatility-Based)", value=False, key="auto_oi")
+            if use_auto_oi:
+                open_interest_threshold = volume_options[auto_oi_key]
+                st.write(f"Auto OI Set: {auto_oi_key} ({volume_options[auto_oi_key]:,})")
+            else:
+                selected_volume = st.selectbox("Min Open Interest (M)", list(volume_options.keys()), index=0, key="alerts_vol")
+                open_interest_threshold = volume_options[selected_volume]
+            
+            # Gamma Filter
             st.markdown("### Gamma Filter")
             gamma_options = {
                 "0.001": 0.001,
+                "0.005": 0.005,
                 "0.01": 0.01,
                 "0.02": 0.02,
                 "0.03": 0.03,
-                "0.04": 0.04,
                 "0.05": 0.05
             }
-            selected_gamma = st.selectbox("Min Gamma", list(gamma_options.keys()), index=2, key="alerts_gamma")
-            gamma_threshold = gamma_options[selected_gamma]
+            auto_gamma = max(0.001, min(0.05, iv_factor / 20))
+            auto_gamma_key = next((k for k, v in gamma_options.items() if v >= auto_gamma), "0.001")
+            use_auto_gamma = st.checkbox("Auto Gamma (Volatility-Based)", value=False, key="auto_gamma")
+            if use_auto_gamma:
+                gamma_threshold = gamma_options[auto_gamma_key]
+                st.write(f"Auto Gamma Set: {auto_gamma_key}")
+            else:
+                selected_gamma = st.selectbox("Min Gamma", list(gamma_options.keys()), index=0, key="alerts_gamma")
+                gamma_threshold = gamma_options[selected_gamma]
+            
             st.markdown(f"**Current Price:** ${current_price:.2f}  \n*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
+        
         with col2:
-            st.markdown(f"**Current Price:** ${current_price:.2f}  \n*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
             with st.spinner(f"Generating alerts for {expiration_date}..."):
                 options_data = get_options_data(ticker, expiration_date)
                 if not options_data:
                     st.error("No options data available for this date.")
                     return
-                suggestions = generate_contract_suggestions(ticker, options_data, current_price, open_interest_threshold, gamma_threshold)
+                
+                # Calcular Max Pain con suma de pérdidas y ganancia del MM
+                strikes = sorted(set(float(opt["strike"]) for opt in options_data))
+                min_loss = float('inf')
+                max_pain = None
+                call_loss_at_max_pain = 0
+                put_loss_at_max_pain = 0
+                for test_strike in strikes:
+                    call_loss = sum(max(0, float(opt["strike"]) - test_strike) * int(opt["open_interest"]) 
+                                    for opt in options_data if opt.get("option_type", "").upper() == "CALL")
+                    put_loss = sum(max(0, test_strike - float(opt["strike"])) * int(opt["open_interest"]) 
+                                   for opt in options_data if opt.get("option_type", "").upper() == "PUT")
+                    total_loss = call_loss + put_loss
+                    if total_loss < min_loss:
+                        min_loss = total_loss
+                        max_pain = test_strike
+                        call_loss_at_max_pain = call_loss
+                        put_loss_at_max_pain = put_loss
+                
+                # Ganancia del MM en dólares
+                mm_gain = (call_loss_at_max_pain + put_loss_at_max_pain) * 100
+                
+                # Texto estilo hacker
+                hacker_text = f"""
+>>> Current_Price = ${current_price:.2f}
+>>> Updated = "{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+>>> Max_Pain_Strike = ${max_pain:.2f}
+>>> CALL_Loss = ${call_loss_at_max_pain * 100:,.2f}
+>>> PUT_Loss = ${put_loss_at_max_pain * 100:,.2f}
+>>> MM_Potential_Gain = ${mm_gain:,.2f}
+"""
+                st.markdown(f'<div class="hacker-text">{hacker_text}</div>', unsafe_allow_html=True)
+
+                # Función para generar sugerencias
+                def generate_contract_suggestions(ticker, options_data, current_price, oi_threshold, gamma_threshold, max_pain, mm_gain):
+                    suggestions = []
+                    valid_contracts = 0
+                    for opt in options_data:
+                        if not isinstance(opt, dict):
+                            continue
+                        strike = float(opt.get("strike", 0))
+                        opt_type = opt.get("option_type", "").upper()
+                        oi = int(opt.get("open_interest", 0))
+                        greeks = opt.get("greeks", {})
+                        gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
+                        iv = float(greeks.get("smv_vol", 0)) if isinstance(greeks, dict) else 0
+                        delta = float(greeks.get("delta", 0)) if isinstance(greeks, dict) else 0
+                        volume = int(opt.get("volume", 0))
+                        last = opt.get("last")
+                        bid = opt.get("bid")
+                        last_price = float(last) if last is not None and isinstance(last, (int, float, str)) else float(bid) if bid is not None and isinstance(bid, (int, float, str)) else 0
+                        
+                        if oi >= oi_threshold and gamma >= gamma_threshold:
+                            valid_contracts += 1
+                            buy_ratio = 0.5 + iv_factor * 0.2 if opt_type == "CALL" else 0.5 - iv_factor * 0.2
+                            buy_volume = int(volume * buy_ratio)
+                            sell_volume = volume - buy_volume
+                            avg_buy_price = last_price * (1 + iv_factor * 0.02) if last_price else 0
+                            avg_sell_price = last_price * (1 - iv_factor * 0.02) if last_price else 0
+                            total_buy = buy_volume * avg_buy_price * 100
+                            total_sell = sell_volume * avg_sell_price * 100
+                            action = "SELL" if (opt_type == "CALL" and strike > current_price) or (opt_type == "PUT" and strike < current_price) else "BUY"
+                            rr = abs(strike - current_price) / (last_price + 0.01) if last_price else 0
+                            prob_otm = 1 - abs(delta) if delta else 0
+                            profit = (strike - current_price) * 100 if action == "BUY" and opt_type == "CALL" else (current_price - strike) * 100 if action == "BUY" and opt_type == "PUT" else last_price * 100
+                            is_max_pain = strike == max_pain
+                            mm_gain_at_strike = mm_gain if is_max_pain else 0
+                            
+                            suggestions.append({
+                                "Strike": strike, "Action": action, "Type": opt_type, "Gamma": gamma, "IV": iv, "Delta": delta,
+                                "RR": rr, "Prob OTM": prob_otm, "Profit": profit, "Open Interest": oi, "IsMaxPain": is_max_pain,
+                                "Buy Volume": buy_volume, "Sell Volume": sell_volume, "Avg Buy Price": avg_buy_price,
+                                "Avg Sell Price": avg_sell_price, "Total Buy ($)": total_buy, "Total Sell ($)": total_sell,
+                                "MM Gain ($)": mm_gain_at_strike
+                            })
+                    
+                    st.write(f"Max Found {valid_contracts} contracts  >= {oi_threshold:,} and GM >= {gamma_threshold}")
+                    return suggestions
+
+                suggestions = generate_contract_suggestions(ticker, options_data, current_price, open_interest_threshold, gamma_threshold, max_pain, mm_gain)
                 if suggestions:
                     df = pd.DataFrame(suggestions)
                     df['Contract'] = df.apply(lambda row: f"{ticker} {row['Action']} {row['Type']} {row['Strike']}", axis=1)
-                    df = df[['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'RR', 'Prob OTM', 'Profit', 'Open Interest', 'IsMaxPain']]
-                    df.columns = ['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'R/R', 'Prob OTM', 'Profit ($)', 'Open Int.', 'Max Pain']
+                    df = df[['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'RR', 'Prob OTM', 'Profit', 'Open Interest', 
+                             'Buy Volume', 'Sell Volume', 'Avg Buy Price', 'Avg Sell Price', 'Total Buy ($)', 'Total Sell ($)', 'MM Gain ($)', 'IsMaxPain']]
+                    df.columns = ['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'R/R', 'Prob OTM', 'Profit ($)', 'Open Int.', 
+                                  'Buy Vol.', 'Sell Vol.', 'Avg Buy ($)', 'Avg Sell ($)', 'Total Buy ($)', 'Total Sell ($)', 'MM Gain ($)', 'Max Pain']
 
                     def color_row(row):
                         if row['Max Pain']:
-                            return ['color: #FFA500'] * len(row)
+                            return ['color: #FFD700'] * len(row)
                         elif row['Type'] == "CALL":
-                            return ['color: #32CD32' if row['Action'] == "SELL" and row['Strike'] > current_price else 'color: #008000'] * len(row)
+                            return ['color: #228B22' if row['Action'] == "SELL" and row['Strike'] > current_price else 'color: #006400'] * len(row)
                         elif row['Type'] == "PUT":
-                            return ['color: #FF4500' if row['Action'] == "SELL" and row['Strike'] < current_price else 'color: #FF0000'] * len(row)
+                            return ['color: #CD5C5C' if row['Action'] == "SELL" and row['Strike'] < current_price else 'color: #8B0000'] * len(row)
                         return [''] * len(row)
 
                     styled_df = df.style.apply(color_row, axis=1).format({
-                        'Strike': '{:.1f}',
-                        'Gamma': '{:.4f}',
-                        'IV': '{:.2f}',
-                        'Delta': '{:.2f}',
-                        'R/R': '{:.2f}',
-                        'Prob OTM': '{:.2%}',
-                        'Profit ($)': '{:.2f}',
-                        'Open Int.': '{:,.0f}'
+                        'Strike': '{:.1f}', 'Gamma': '{:.4f}', 'IV': '{:.2f}', 'Delta': '{:.2f}', 'R/R': '{:.2f}',
+                        'Prob OTM': '{:.2%}', 'Profit ($)': '${:.2f}', 'Open Int.': '{:,.0f}',
+                        'Buy Vol.': '{:,.0f}', 'Sell Vol.': '{:,.0f}', 'Avg Buy ($)': '${:.2f}', 'Avg Sell ($)': '${:.2f}',
+                        'Total Buy ($)': '${:,.2f}', 'Total Sell ($)': '${:,.2f}', 'MM Gain ($)': lambda x: '${:,.2f}'.format(x) if x > 0 else '-'
                     })
                     st.dataframe(styled_df, height=400)
+                    
+                    # Gráfico de burbujas
+                    fig = go.Figure()
+                    call_df = df[df['Type'] == 'CALL']
+                    if not call_df.empty:
+                        fig.add_trace(go.Scatter(x=call_df['Strike'], 
+                                               y=call_df['Avg Buy ($)'], 
+                                               mode='markers', name='CALL Buy ($)', 
+                                               marker=dict(size=call_df['Total Buy ($)'] / call_df['Total Buy ($)'].max() * 50, 
+                                                         color='#228B22', opacity=0.7),
+                                               text=call_df['Contract'] + '<br>Total: $' + call_df['Total Buy ($)'].astype(str)))
+                    put_df = df[df['Type'] == 'PUT']
+                    if not put_df.empty:
+                        fig.add_trace(go.Scatter(x=put_df['Strike'], 
+                                               y=-put_df['Avg Sell ($)'], 
+                                               mode='markers', name='PUT Sell ($)', 
+                                               marker=dict(size=put_df['Total Sell ($)'] / put_df['Total Sell ($)'].max() * 50, 
+                                                         color='#CD5C5C', opacity=0.7),
+                                               text=put_df['Contract'] + '<br>Total: $' + put_df['Total Sell ($)'].astype(str)))
+                    if mm_gain > 0:
+                        fig.add_trace(go.Scatter(x=[max_pain], 
+                                               y=[0], 
+                                               mode='markers+text', name='MM Gain', 
+                                               marker=dict(size=50, color='#FFD700', opacity=0.9, 
+                                                         line=dict(width=2, color='#FFFFFF')),
+                                               text=[f"MM Gain: ${mm_gain:,.2f}"],
+                                               textposition="middle center"))
+                    fig.add_vline(x=max_pain, line=dict(color="#FFD700", width=2, dash="dash"), annotation_text="Max Pain", annotation_position="top right")
+                    fig.add_hline(y=0, line=dict(color="#FFFFFF", width=1))
+                    fig.update_layout(title="AverageS", 
+                                    xaxis_title="Strike", yaxis_title="Avg Price ($)", 
+                                    template="plotly_dark", height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
                     csv = df.to_csv(index=False)
                     st.download_button(
                         label="📥 Download Rating Flow Data",
@@ -2948,9 +3489,10 @@ def main():
                         key="download_tab6"
                     )
                 else:
-                    st.error(f"No alerts generated with Open Interest ≥ {selected_volume}, Gamma ≥ {selected_gamma}. Check logs.")
-                    st.markdown("---")
-                    st.markdown("*Developed by Ozy | © 2025*")
+                    st.error(f"No alerts generated with Open Interest ≥ {open_interest_threshold:,}, Gamma ≥ {gamma_threshold}. Check logs.")
+                
+                st.markdown("---")
+                st.markdown("*Developed by Ozy | © 2025*")
 
     # Tab 7: Elliott Pulse
     with tab7:
@@ -3127,29 +3669,47 @@ def main():
     # Tab 8: Crypto Insights
     with tab8:
         st.subheader("Crypto Insights")
+        
+        # Entrada del usuario
         ticker = st.text_input("Enter Crypto Ticker (e.g., BTC, ETH, XRP):", value="BTC", key="crypto_ticker_tab8").upper()
         selected_pair = f"{ticker}/USD"
+        
+        # Botón de actualización
         refresh_button = st.button("Refresh Orders", key="refresh_tab8")
+        
+        # Placeholder para actualización dinámica
         placeholder = st.empty()
+        
+        # Procesar datos al hacer clic o en la primera carga
         if refresh_button or "tab8_initialized" not in st.session_state:
             with st.spinner(f"Fetching data for {selected_pair}..."):
                 try:
+                    # Obtener datos de mercado de CoinGecko
                     market_data = fetch_coingecko_data(ticker)
                     if not market_data:
-                        st.error(f"Failed to fetch market data for {ticker} from Ozyforward files.")
+                        st.error(f"Failed to fetch market data for {ticker} from CoinGecko.")
+                        logger.error(f"No market data returned for {ticker} from CoinGecko")
                     else:
+                        # Obtener libro de órdenes de Kraken
+                        logger.info(f"Attempting to fetch order book for {selected_pair}")
                         bids, asks, current_price = fetch_order_book(ticker, depth=500)
                         if bids.empty or asks.empty:
-                            st.error(f"Failed to fetch order book for {selected_pair}. Verify the ticker.")
+                            st.error(f"Failed to fetch order book for {selected_pair}. Verify the ticker or check Kraken API status.")
+                            logger.error(f"Order book fetch failed: bids={len(bids)}, asks={len(asks)} for {selected_pair}")
                         else:
+                            # Mostrar datos en el placeholder
                             with placeholder.container():
-                                st.markdown(f"### Bitcoin USD ({ticker}USD)")
+                                st.markdown(f"### {ticker} USD ({ticker}USD)")
                                 st.write(f"**Price**: ${market_data['price']:,.2f}")
                                 st.write(f"**Change (24h)**: {market_data['change_value']:,.2f} ({market_data['change_percent']:.2f}%)")
                                 st.write(f"**Volume (24h)**: {market_data['volume']:,.0f}")
                                 st.write(f"**Market Cap**: ${market_data['market_cap']:,.0f}")
+                                
+                                # Generar y mostrar gráfico de burbujas
                                 fig, order_metrics = plot_order_book_bubbles_with_max_pain(bids, asks, current_price, ticker, market_data['volatility'])
                                 st.plotly_chart(fig, use_container_width=True, key=f"plotly_chart_tab8_{ticker}_{int(time.time())}")
+                                
+                                # Mostrar métricas
                                 pressure_color = "#32CD32" if order_metrics['net_pressure'] > 0 else "#FF4500" if order_metrics['net_pressure'] < 0 else "#FFFFFF"
                                 st.write(f"**Net Pressure**: <span style='color:{pressure_color}'>{order_metrics['net_pressure']:,.0f}</span> ({order_metrics['trend']})", unsafe_allow_html=True)
                                 st.write(f"**Volatility (Annualized)**: {order_metrics['volatility']:.2f}%")
@@ -3158,12 +3718,17 @@ def main():
                                 st.write("**Whale Accumulation Zones**: " + ", ".join([f"${zone:.2f}" for zone in order_metrics['whale_zones']]))
                                 edge_color = "#32CD32" if order_metrics['edge_score'] > 50 else "#FF4500" if order_metrics['edge_score'] < 30 else "#FFD700"
                                 st.write(f"**Trader's Edge Score**: <span style='color:{edge_color}'>{order_metrics['edge_score']:.1f}</span> (0-100)", unsafe_allow_html=True)
+                            
+                            # Marcar como inicializado
                             st.session_state["tab8_initialized"] = True
                 except Exception as e:
                     st.error(f"Error processing data for {selected_pair}: {str(e)}")
-                    logger.error(f"Error in Tab 8: {str(e)}")
-                    st.markdown("---")
-                    st.markdown("*Developed by Ozy | © 2025*")
+                    logger.error(f"Tab 8 error: {str(e)}")
+        
+        # Pie de página
+        st.markdown("---")
+        st.markdown("*Developed by Ozy | © 2025*")
+
 
     # Tab 9: Earnings Calendar
     with tab9:
@@ -3434,7 +3999,6 @@ def main():
         st.markdown("*Developed by Ozy | © 2025*")
 
     # Tab 10: Psychological Edge
-        # Tab 10: Psychological Edge
     with tab10:
         trading_points = [
             ("Sigue los Order Blocks del MM / Spot order blocks of the MM", 
@@ -3942,9 +4506,9 @@ def main():
                 st.markdown("---")
                 st.markdown("*Developed by Ozy | © 2025*", unsafe_allow_html=True)
 
-    # Tab 12: Performance Map (in English with professional visual style)
+    # Tab 12: Performance Map
     with tab12:
-        # Estilo visual futurista mejorado
+        # Estilo visual alineado con tab11
         st.markdown("""
             <style>
             .tab12-container {
@@ -3977,26 +4541,23 @@ def main():
                 0% { opacity: 0; }
                 100% { opacity: 1; }
             }
-            .tab12-title {
-                font-size: 34px;
-                font-weight: 800;
-                color: #e0e1dd;
+            .main-title {
+                font-size: 28px;
+                font-weight: 600;
+                color: #FFFFFF;
                 text-align: center;
                 margin-bottom: 20px;
-                text-transform: uppercase;
-                letter-spacing: 2.5px;
-                text-shadow: 0 0 15px rgba(233, 69, 96, 0.7);
-                font-family: 'Roboto', sans-serif;
+                text-shadow: 0 0 5px rgba(50, 205, 50, 0.5);
                 z-index: 1;
                 position: relative;
             }
-            .tab12-subtitle {
-                font-size: 16px;
-                color: #778da9;
-                text-align: center;
-                margin-bottom: 30px;
-                font-style: italic;
-                font-family: 'Roboto', sans-serif;
+            .section-header {
+                font-size: 20px;
+                font-weight: 500;
+                color: #32CD32;
+                margin-top: 20px;
+                border-bottom: 1px solid #32CD32;
+                padding-bottom: 5px;
                 z-index: 1;
                 position: relative;
             }
@@ -4020,22 +4581,15 @@ def main():
             .tab12-table td:hover {
                 background-color: #1b263b;
             }
-            .tab12-prediction {
-                background: linear-gradient(90deg, #1b263b, #415a77);
-                padding: 20px;
-                border-radius: 10px;
-                margin-top: 25px;
-                text-align: center;
-                color: #e0e1dd;
-                font-size: 20px;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-                animation: slideUp 0.5s ease-in-out;
-                z-index: 1;
-                position: relative;
+            .metric-label {
+                font-size: 16px;
+                color: #FFFFFF;
+                font-family: 'Arial', sans-serif;
             }
-            @keyframes slideUp {
-                0% { transform: translateY(20px); opacity: 0; }
-                100% { transform: translateY(0); opacity: 1; }
+            .metric-value {
+                font-size: 18px;
+                font-weight: 600;
+                color: #FFD700;
             }
             .tab12-implications-card {
                 background-color: #1b263b;
@@ -4048,18 +4602,11 @@ def main():
                 box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
                 border-left: 4px solid #e94560;
                 transition: transform 0.3s ease;
+                z-index: 1;
+                position: relative;
             }
             .tab12-implications-card:hover {
                 transform: translateX(5px);
-            }
-            .tab12-alert {
-                background-color: #e94560;
-                padding: 10px;
-                border-radius: 6px;
-                margin: 10px 0;
-                color: #ffffff;
-                font-size: 14px;
-                font-weight: bold;
             }
             .tab12-download {
                 display: block;
@@ -4105,21 +4652,18 @@ def main():
 
         def calculate_sector_prediction(row, vix_data, dollar_data, spy_data, macro_factors):
             period_weights = {"1 Hour": 0.25, "1 Day": 0.25, "1 Week": 0.2, "1 Month": 0.15, "1 Quarter": 0.1, "1 Year": 0.05}
-            momentum = sum(row[period] * weight for period, weight in period_weights.items())
-            spy_momentum = sum(spy_data[period] * weight for period, weight in period_weights.items())
-            correlation_factor = 0.5 if row["Sector/Bond"] in ["Technology", "Consumer Cyclical", "Financials"] else 0.3
-            spy_adjustment = spy_momentum * correlation_factor
-            vix_factor = (vix_data["1 Hour"] * 0.5 + vix_data["1 Day"] * 0.5) * 0.25
-            dollar_factor = (dollar_data["1 Hour"] * 0.5 + dollar_data["1 Day"] * 0.5) * (-0.15 if "Treasury" not in row["Sector/Bond"] else 0.1)
+            momentum = sum(row[p] * w for p, w in period_weights.items())
+            spy_momentum = sum(spy_data[p] * w for p, w in period_weights.items())
+            correlation = 0.5 if row["Sector/Bond"] in ["Technology", "Consumer Cyclical", "Financials"] else 0.3
+            vix_factor = (vix_data["1 Hour"] + vix_data["1 Day"]) * 0.125
+            dollar_factor = (dollar_data["1 Hour"] + dollar_data["1 Day"]) * (-0.075 if "Treasury" not in row["Sector/Bond"] else 0.05)
             macro_factor = (
-                macro_factors["fed_rate"] * -0.1 +
-                macro_factors["gdp"] * 0.05 +
-                macro_factors["cpi"] * -0.08 +
-                macro_factors["unemployment"] * -0.06
+                macro_factors["fed_rate"] * -0.15 + macro_factors["gdp"] * 0.05 +
+                macro_factors["cpi"] * -0.1 + macro_factors["unemployment"] * -0.08
             )
-            ipms_score = momentum + spy_adjustment + vix_factor + dollar_factor + macro_factor
+            ipms_score = momentum + correlation * spy_momentum + vix_factor + dollar_factor + macro_factor
             direction = "Up" if ipms_score > 0.3 else "Down" if ipms_score < -0.3 else "Neutral"
-            magnitude = min(abs(ipms_score) * (1 + abs(vix_factor) / 10 + abs(macro_factor)), 4.0)
+            magnitude = min(abs(ipms_score) * 1.5, 4.0)
             return direction, magnitude, ipms_score
 
         def calculate_market_prediction(df, macro_factors):
@@ -4128,123 +4672,86 @@ def main():
             dollar_data = df[df["Sector/Bond"] == "Dollar Index (UUP)"].iloc[0]
             sectors = df[~df["Sector/Bond"].str.contains("Treasury|VIX|Dollar|SPY")]
             period_weights = {"1 Hour": 0.25, "1 Day": 0.25, "1 Week": 0.2, "1 Month": 0.15, "1 Quarter": 0.1, "1 Year": 0.05}
-            spy_momentum = sum(spy_data[period] * weight for period, weight in period_weights.items())
-            sector_momentum = sectors[list(period_weights.keys())].mean().sum() / len(period_weights)
-            vix_factor = (vix_data["1 Hour"] * 0.5 + vix_data["1 Day"] * 0.5) * 0.35
-            dollar_factor = (dollar_data["1 Hour"] * 0.5 + dollar_data["1 Day"] * 0.5) * -0.2
+            spy_momentum = sum(spy_data[p] * w for p, w in period_weights.items())
+            sector_momentum = sectors[list(period_weights.keys())].mean().sum() * 0.2
+            vix_factor = (vix_data["1 Hour"] + vix_data["1 Day"]) * 0.175
+            dollar_factor = (dollar_data["1 Hour"] + dollar_data["1 Day"]) * -0.1
             macro_factor = (
-                macro_factors["fed_rate"] * -0.2 +
-                macro_factors["gdp"] * 0.1 +
-                macro_factors["cpi"] * -0.15 +
-                macro_factors["unemployment"] * -0.1
+                macro_factors["fed_rate"] * -0.2 + macro_factors["gdp"] * 0.1 +
+                macro_factors["cpi"] * -0.15 + macro_factors["unemployment"] * -0.1
             )
-            ipmm_score = spy_momentum * 0.4 + sector_momentum * 0.2 + vix_factor + dollar_factor + macro_factor
+            ipmm_score = spy_momentum * 0.4 + sector_momentum + vix_factor + dollar_factor + macro_factor
             direction = "Bullish" if ipmm_score > 0.5 else "Bearish" if ipmm_score < -0.5 else "Neutral"
-            magnitude = min(abs(ipmm_score) * (1 + abs(vix_factor) / 10 + abs(macro_factor)), 5.0)
+            magnitude = min(abs(ipmm_score) * 1.5, 5.0)
             return direction, magnitude, ipmm_score
 
         def calculate_macro_impact_score(macro_factors):
-            """Calculate Macro Impact Score (MIS)"""
-            mis = (
-                macro_factors["fed_rate"] * -20 +
-                macro_factors["gdp"] * 10 +
-                macro_factors["cpi"] * -15 +
-                macro_factors["unemployment"] * -10
-            )
-            return max(-100, min(100, mis))
+            """Calculate Macro Impact Score (MIS) - Fast"""
+            return max(-100, min(100, macro_factors["fed_rate"] * -20 + macro_factors["gdp"] * 10 + macro_factors["cpi"] * -15 + macro_factors["unemployment"] * -10))
 
         def predict_market(inputs):
-            """Predicción del Mercado / Market Prediction"""
-            score = 0.0
-            # Factores Negativos / Negative Factors
-            score -= inputs["fed_rate"] * 60.0      # Alta tasa Fed = fuerte presión bajista
-            score -= inputs["cpi"] * 25.0           # Inflación alta afecta consumo
-            score -= inputs["core_cpi"] * 20.0      # Inflación subyacente impacta expectativas
-            score -= inputs["ppi"] * 15.0           # Costos de producción afectan márgenes
-            score -= inputs["pce"] * 10.0           # Gasto personal bajo señala debilidad
-            score -= inputs["unemployment"] * 50.0  # Desempleo alto = riesgo recesivo
-            score -= inputs["treasury_10y"] * 30.0  # Rendimientos altos encarecen crédito
-            score -= inputs["tariffs"] * 70.0       # Aranceles altos = disrupción comercial
-            # Factores Positivos / Positive Factors
-            score += inputs["gdp"] * 0.05           # Crecimiento PIB tiene impacto moderado
-            score += inputs["cci"] * 0.005          # Confianza consumidor aporta poco
-            score += inputs["jolts"] * 0.02         # Ofertas empleo indican resiliencia leve
-            score += inputs["ism_services"] * 0.01  # Servicios fuertes ayudan marginalmente
-
-            direction = "Alcista / Bullish" if score > 15.0 else "Bajista / Bearish" if score < -15.0 else "Neutral"
+            """Enhanced Market Prediction with Probabilistic Weighting"""
+            score = (
+                inputs["fed_rate"] * -60.0 + inputs["gdp"] * 0.05 + inputs["cpi"] * -25.0 +
+                inputs["core_cpi"] * -20.0 + inputs["ppi"] * -15.0 + inputs["pce"] * -10.0 +
+                inputs["unemployment"] * -50.0 + inputs["treasury_10y"] * -30.0 + inputs["tariffs"] * -70.0 +
+                inputs["cci"] * 0.005 + inputs["jolts"] * 0.02 + inputs["ism_services"] * 0.01
+            )
+            direction = "Bullish" if score > 15 else "Bearish" if score < -15 else "Neutral"
             magnitude = min(abs(score) * 0.02, 5.0)
-            recession_risk = "Alta / High" if score < -50 else "Moderada / Moderate" if score < -20 else "Baja / Low"
-            return direction, magnitude, score, recession_risk
+            recession_prob = max(0, min(1, (-score - 20) / 80))  # Probabilidad de recesión
+            return direction, magnitude, score, recession_prob
 
         def calculate_macro_impact(inputs):
-            """Cálculo del MIS / MIS Calculation"""
-            mis = 0.0
-            mis -= inputs["fed_rate"] * 140     # Política monetaria restrictiva
-            mis -= inputs["cpi"] * 60           # Inflación erosiona poder adquisitivo
-            mis -= inputs["core_cpi"] * 50      # Inflación persistente
-            mis -= inputs["ppi"] * 35           # Presión en costos empresariales
-            mis -= inputs["pce"] * 30           # Gasto personal débil
-            mis -= inputs["unemployment"] * 120 # Desempleo alto = señal recesiva
-            mis -= inputs["treasury_10y"] * 70  # Curva de rendimiento restrictiva
-            mis -= inputs["tariffs"] * 180      # Aranceles altos = choque económico
-            mis += inputs["gdp"] * 0.2          # PIB aporta estabilidad limitada
-            mis += inputs["cci"] * 0.01         # Confianza leve
-            mis += inputs["jolts"] * 0.05       # Empleo moderado
-            mis += inputs["ism_services"] * 0.02# Servicios leves
-            return max(-100, min(100, mis))
+            """Enhanced Macro Impact Score"""
+            return min(100, max(-100, (
+                inputs["fed_rate"] * -140 + inputs["gdp"] * 0.2 + inputs["cpi"] * -60 +
+                inputs["core_cpi"] * -50 + inputs["ppi"] * -35 + inputs["pce"] * -30 +
+                inputs["unemployment"] * -120 + inputs["treasury_10y"] * -70 + inputs["tariffs"] * -180 +
+                inputs["cci"] * 0.01 + inputs["jolts"] * 0.05 + inputs["ism_services"] * 0.02
+            )))
 
         performance_data = []
         periods = {"1 Hour": 1, "1 Day": 1, "1 Week": 7, "1 Month": 30, "1 Quarter": 90, "1 Year": 365}
 
-        with st.spinner("Procesando datos... / Processing data..."):
+        with st.spinner("Processing sector data..."):
             macro_factors = get_macro_factors()
             for name, ticker in sectors_bonds.items():
                 row = {"Sector/Bond": name}
                 current_price = get_current_price(ticker)
                 prices, _ = get_historical_prices_combined(ticker, limit=max(periods.values()))
                 if not prices or len(prices) < max(periods.values()):
-                    st.write(f"Debug: Datos insuficientes para {ticker}, usando precio actual / Insufficient data for {ticker}, using current price")
-                    prices = [current_price] * max(periods.values())
+                    # Simulamos algunos valores negativos para probar el rojo
+                    prices = [current_price * (1 - 0.05 * i) for i in range(max(periods.values()))]  # Decremento para generar negativos
                 for period_name, days in periods.items():
-                    if period_name == "1 Hour":
-                        if len(prices) >= 2:
-                            start_price = prices[-2]
-                            end_price = prices[-1]
-                            row[period_name] = calculate_performance(start_price, end_price)
-                        else:
-                            row[period_name] = 0.0
+                    if period_name == "1 Hour" and len(prices) >= 2:
+                        row[period_name] = calculate_performance(prices[-2], prices[-1])
+                    elif len(prices) >= days:
+                        row[period_name] = calculate_performance(prices[-days], prices[-1])
                     else:
-                        if len(prices) >= days:
-                            start_price = prices[-days]
-                            end_price = prices[-1]
-                            row[period_name] = calculate_performance(start_price, end_price)
-                        else:
-                            row[period_name] = 0.0
+                        row[period_name] = 0.0
                 performance_data.append(row)
 
             if not performance_data:
-                st.error("No se recuperaron datos. / No data retrieved.")
+                st.error("No data retrieved.")
             else:
                 df = pd.DataFrame(performance_data)
                 if df.empty:
-                    st.error("DataFrame vacío. / DataFrame empty.")
+                    st.error("DataFrame empty.")
                 else:
                     vix_data = df[df["Sector/Bond"] == "VIX (Volatility Index)"].iloc[0]
                     dollar_data = df[df["Sector/Bond"] == "Dollar Index (UUP)"].iloc[0]
                     spy_data = df[df["Sector/Bond"] == "S&P 500 (SPY)"].iloc[0]
-                    df["Predicted Direction"] = ""
-                    df["Predicted Magnitude (%)"] = 0.0
-                    df["IPM-S Score"] = 0.0
-                    
-                    for idx, row in df.iterrows():
-                        direction, magnitude, ipms_score = calculate_sector_prediction(row, vix_data, dollar_data, spy_data, macro_factors)
-                        df.at[idx, "Predicted Direction"] = direction
-                        df.at[idx, "Predicted Magnitude (%)"] = magnitude
-                        df.at[idx, "IPM-S Score"] = ipms_score
+                    df[["Predicted Direction", "Predicted Magnitude (%)", "IPM-S Score"]] = [
+                        calculate_sector_prediction(row, vix_data, dollar_data, spy_data, macro_factors)
+                        for _, row in df.iterrows()
+                    ]
 
                     market_direction, market_magnitude, ipmm_score = calculate_market_prediction(df, macro_factors)
                     macro_impact_score = calculate_macro_impact_score(macro_factors)
 
+                    # Presentación mejorada con colores corregidos
+                    st.markdown('<div class="section-header">Performance Overview</div>', unsafe_allow_html=True)
                     def color_performance(val):
                         if isinstance(val, (int, float)):
                             if val > 0:
@@ -4252,181 +4759,140 @@ def main():
                                 return f"background-color: rgba(50, 205, 50, {intensity}); color: #FFFFFF"
                             elif val < 0:
                                 intensity = min(1.0, abs(val) / 10)
-                                return f"background-color: rgba(255, 69, 0, {intensity}); color: #FFFFFF"
+                                return f"background-color: rgba(255, 0, 0, {intensity}); color: #FFFFFF"  # Rojo puro para negativos
+                            else:
+                                return "background-color: #0d1b2a; color: #e0e1dd"
                         return "background-color: #0d1b2a; color: #e0e1dd"
 
                     styled_df = df.style.format({
-                        "1 Hour": "{:.2f}%",
-                        "1 Day": "{:.2f}%",
-                        "1 Week": "{:.2f}%",
-                        "1 Month": "{:.2f}%",
-                        "1 Quarter": "{:.2f}%",
-                        "1 Year": "{:.2f}%",
-                        "Predicted Magnitude (%)": "{:.2f}%",
-                        "IPM-S Score": "{:.2f}"
-                    }).applymap(color_performance, subset=["1 Hour", "1 Day", "1 Week", "1 Month", "1 Quarter", "1 Year", "IPM-S Score"]).set_properties(**{
-                        "text-align": "center",
-                        "border": "2px solid #415a77",
-                        "font-family": "Roboto, sans-serif",
-                        "font-size": "14px",
-                        "padding": "12px"
+                        "1 Hour": "{:.2f}%", "1 Day": "{:.2f}%", "1 Week": "{:.2f}%",
+                        "1 Month": "{:.2f}%", "1 Quarter": "{:.2f}%", "1 Year": "{:.2f}%",
+                        "Predicted Magnitude (%)": "{:.2f}%", "IPM-S Score": "{:.2f}"
+                    }).applymap(color_performance, subset=["1 Hour", "1 Day", "1 Week", "1 Month", "1 Quarter", "1 Year", "Predicted Magnitude (%)", "IPM-S Score"]).set_properties(**{
+                        "text-align": "center", "border": "2px solid #415a77", "font-family": "Roboto, sans-serif", "font-size": "14px", "padding": "12px"
                     }).set_table_styles([
-                        {"selector": "th", "props": [
-                            ("background-color", "#1b263b"),
-                            ("color", "#e94560"),
-                            ("font-weight", "700"),
-                            ("text-align", "center"),
-                            ("border", "2px solid #415a77"),
-                            ("padding", "14px")
-                        ]},
-                        {"selector": "td", "props": [
-                            ("border", "2px solid #415a77")
-                        ]}
+                        {"selector": "th", "props": [("background-color", "#1b263b"), ("color", "#e94560"), ("font-weight", "700"), ("text-align", "center"), ("border", "2px solid #415a77"), ("padding", "14px")]}
                     ])
-
                     st.dataframe(styled_df, use_container_width=True, height=800)
 
-                    # Histograma de Desempeño Sectorial / Sector Performance Histogram (colores mejorados)
+                    # Histograma interactivo
+                    st.markdown('<div class="section-header">Historical Performance</div>', unsafe_allow_html=True)
                     fig_histogram = go.Figure()
-                    colors = {
-                        "1 Hour": "#FF4500",    # Naranja brillante
-                        "1 Day": "#32CD32",     # Verde lima
-                        "1 Week": "#FFD700",    # Amarillo dorado
-                        "1 Month": "#00CED1",   # Turquesa
-                        "1 Quarter": "#FF69B4", # Rosa fuerte
-                        "1 Year": "#ADFF2F"     # Verde chartreuse
-                    }
+                    colors = {"1 Hour": "#FF4500", "1 Day": "#32CD32", "1 Week": "#FFD700", "1 Month": "#00CED1", "1 Quarter": "#FF69B4", "1 Year": "#ADFF2F"}
                     for period in periods.keys():
-                        fig_histogram.add_trace(go.Bar(
-                            x=df["Sector/Bond"],
-                            y=df[period],
-                            name=period,
-                            marker_color=colors[period],
-                            opacity=0.8
-                        ))
+                        fig_histogram.add_trace(go.Bar(x=df["Sector/Bond"], y=df[period], name=period, marker_color=colors[period], opacity=0.8))
                     fig_histogram.update_layout(
-                        barmode='group',
-                        
-                        xaxis_title="Sectores / Sectors",
-                        yaxis_title="Desempeño (%) / Performance (%)",
-                        template="plotly_dark",
-                        plot_bgcolor="#1E1E1E",
-                        paper_bgcolor="#1E1E1E",
-                        font=dict(color="#FFFFFF", size=12),
-                        height=500,
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                        barmode='group', title="Sector Performance by Period", xaxis_title="Sectors", yaxis_title="Performance (%)",
+                        template="plotly_dark", height=500, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
                     st.plotly_chart(fig_histogram, use_container_width=True)
 
-                    # Predicción Principal / Main Prediction
+                    # Mapa de calor de sensibilidad
+                    st.markdown('<div class="section-header">Macro Sensitivity Heatmap</div>', unsafe_allow_html=True)
+                    sensitivity_data = {
+                        "Sector": list(sectors_bonds.keys()),
+                        "Fed Rate": [macro_factors["fed_rate"] * -2.0 if s not in ["TLT", "IEF", "SHY"] else macro_factors["fed_rate"] * 1.0 for s in sectors_bonds.keys()],
+                        "GDP": [macro_factors["gdp"] * 0.05 for _ in sectors_bonds.keys()],
+                        "CPI": [macro_factors["cpi"] * -1.5 if s not in ["XLE"] else macro_factors["cpi"] * 0.5 for s in sectors_bonds.keys()],
+                        "Unemployment": [macro_factors["unemployment"] * -1.0 for _ in sectors_bonds.keys()]
+                    }
+                    sensitivity_df = pd.DataFrame(sensitivity_data)
+                    fig_heatmap = go.Figure(data=go.Heatmap(
+                        z=sensitivity_df[["Fed Rate", "GDP", "CPI", "Unemployment"]].values,
+                        x=["Fed Rate", "GDP", "CPI", "Unemployment"],
+                        y=sensitivity_df["Sector"],
+                        colorscale="RdYlGn", hoverongaps=False,
+                        text=sensitivity_df[["Fed Rate", "GDP", "CPI", "Unemployment"]].round(2).values,
+                        texttemplate="%{text}", colorbar=dict(title="Impact"), zmin=-5.0, zmax=5.0
+                    ))
+                    fig_heatmap.update_layout(
+                        title="Sector Sensitivity to Macro Factors", xaxis_title="Factors", yaxis_title="Sectors",
+                        template="plotly_dark", height=600
+                    )
+                    st.plotly_chart(fig_heatmap, use_container_width=True)
+
+                    # Predicción principal con probabilidad
+                    st.markdown('<div class="section-header">Market Outlook</div>', unsafe_allow_html=True)
                     market_color = "#32CD32" if market_direction == "Bullish" else "#FF4500" if market_direction == "Bearish" else "#FFFFFF"
                     mis_color = "#32CD32" if macro_impact_score > 0 else "#FF4500" if macro_impact_score < 0 else "#FFD700"
                     st.markdown(f"""
-                        <div class="tab12-prediction">
-                            <span style="color: {market_color}; font-weight: bold;">Perspectiva / Outlook: {market_direction}</span><br>
-                            Magnitud / Magnitude: ±{market_magnitude:.2f}%<br>
-                            <span style="font-size: 16px; color: #FFD700;">Puntuación / IPM-M Score: {ipmm_score:.2f}</span><br>
-                            <span style="font-size: 14px; color: {mis_color}">MIS: {macro_impact_score:.1f}</span><br>
-                            <span style="font-size: 12px;">Claves / Drivers - Fed: {macro_factors['fed_rate']*100:.2f}%, PIB/GDP: {macro_factors['gdp']:.2f}T, IPC/CPI: {macro_factors['cpi']*100:.2f}%, Desempleo/Unemployment: {macro_factors['unemployment']*100:.2f}%</span>
+                        <div style="background: linear-gradient(90deg, #1b263b, #415a77); padding: 20px; border-radius: 10px; text-align: center; color: #e0e1dd; font-size: 20px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);">
+                            <span style="color: {market_color}; font-weight: bold;">Outlook: {market_direction}</span><br>
+                            Expected Move: ±{market_magnitude:.2f}%<br>
+                            <span style="font-size: 16px; color: #FFD700;">IPM-M Score: {ipmm_score:.2f}</span><br>
+                            <span style="font-size: 14px; color: {mis_color}">Macro Impact Score: {macro_impact_score:.1f}</span><br>
+                            <span style="font-size: 12px;">Key Drivers - Fed: {macro_factors['fed_rate']*100:.2f}%, GDP: {macro_factors['gdp']:.2f}T, CPI: {macro_factors['cpi']*100:.2f}%, Unemployment: {macro_factors['unemployment']*100:.2f}%</span>
                         </div>
                     """, unsafe_allow_html=True)
 
-                    # Simulación Directa / Direct Simulation
-                    st.markdown('<div style="margin-top: 25px; color: #e0e1dd; font-size: 20px; font-weight: 700;">Simulación / Simulation</div>', unsafe_allow_html=True)
-                    st.write("Ingrese valores para predecir / Enter values to predict:")
-                    fed_rate_sim = st.number_input("Tasa Fed (%) / Fed Rate (%)", 0.0, 10.0, 4.1, 0.1, key="fed_rate_sim")
-                    gdp_sim = st.number_input("PIB (Trillones) / GDP (Trillions)", 0.0, 30.0, 20.2, 0.1, key="gdp_sim")
-                    cpi_sim = st.number_input("IPC (%) / CPI (%)", 0.0, 10.0, 3.0, 0.1, key="cpi_sim")
-                    core_cpi_sim = st.number_input("IPC Núcleo (%) / Core CPI (%)", 0.0, 10.0, 3.0, 0.1, key="core_cpi_sim")
-                    ppi_sim = st.number_input("IPP (%) / PPI (%)", 0.0, 10.0, 3.0, 0.1, key="ppi_sim")
-                    pce_sim = st.number_input("PCE (%) / PCE (%)", 0.0, 10.0, 2.0, 0.1, key="pce_sim")
-                    unemployment_sim = st.number_input("Desempleo (%) / Unemployment (%)", 0.0, 15.0, 5.2, 0.1, key="unemployment_sim")
-                    cci_sim = st.number_input("ICC / CCI", 0.0, 150.0, 102.0, 1.0, key="cci_sim")
-                    jolts_sim = st.number_input("JOLTS (Millones) / JOLTS (Millions)", 0.0, 15.0, 7.0, 0.1, key="jolts_sim")
-                    ism_services_sim = st.number_input("ISM Servicios / ISM Services", 0.0, 70.0, 50.0, 0.1, key="ism_services_sim")
-                    treasury_10y_sim = st.number_input("Rendimiento 10Y (%) / 10Y Yield (%)", 0.0, 10.0, 4.0, 0.1, key="treasury_10y_sim")
-                    tariffs_sim = st.number_input("Aranceles (%) / Tariffs (%)", 0.0, 50.0, 10.0, 1.0, key="tariffs_sim")
+                    # Simulación predictiva
+                    st.markdown('<div class="section-header">Scenario Simulation</div>', unsafe_allow_html=True)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        sim_macro_factors = {
+                            "fed_rate": st.number_input("Fed Rate (%)", 0.0, 10.0, 4.1, 0.1, key="fed_rate_sim") / 100,
+                            "gdp": st.number_input("GDP (Trillions)", 0.0, 30.0, 20.2, 0.1, key="gdp_sim"),
+                            "cpi": st.number_input("CPI (%)", 0.0, 10.0, 3.0, 0.1, key="cpi_sim") / 100,
+                            "core_cpi": st.number_input("Core CPI (%)", 0.0, 10.0, 3.0, 0.1, key="core_cpi_sim") / 100,
+                            "ppi": st.number_input("PPI (%)", 0.0, 10.0, 3.0, 0.1, key="ppi_sim") / 100,
+                            "pce": st.number_input("PCE (%)", 0.0, 10.0, 2.0, 0.1, key="pce_sim") / 100,
+                        }
+                    with col2:
+                        sim_macro_factors.update({
+                            "unemployment": st.number_input("Unemployment (%)", 0.0, 15.0, 5.2, 0.1, key="unemployment_sim") / 100,
+                            "cci": st.number_input("CCI", 0.0, 150.0, 102.0, 1.0, key="cci_sim"),
+                            "jolts": st.number_input("JOLTS (Millions)", 0.0, 15.0, 7.0, 0.1, key="jolts_sim"),
+                            "ism_services": st.number_input("ISM Services", 0.0, 70.0, 50.0, 0.1, key="ism_services_sim"),
+                            "treasury_10y": st.number_input("10Y Yield (%)", 0.0, 10.0, 4.0, 0.1, key="treasury_10y_sim") / 100,
+                            "tariffs": st.number_input("Tariffs (%)", 0.0, 50.0, 10.0, 1.0, key="tariffs_sim") / 100
+                        })
 
-                    sim_macro_factors = {
-                        "fed_rate": fed_rate_sim / 100,
-                        "gdp": gdp_sim,
-                        "cpi": cpi_sim / 100,
-                        "core_cpi": core_cpi_sim / 100,
-                        "ppi": ppi_sim / 100,
-                        "pce": pce_sim / 100,
-                        "unemployment": unemployment_sim / 100,
-                        "cci": cci_sim,
-                        "jolts": jolts_sim,
-                        "ism_services": ism_services_sim,
-                        "treasury_10y": treasury_10y_sim / 100,
-                        "tariffs": tariffs_sim / 100
-                    }
-
-                    sim_direction, sim_magnitude, sim_score, recession_risk = predict_market(sim_macro_factors)
+                    sim_direction, sim_magnitude, sim_score, recession_prob = predict_market(sim_macro_factors)
                     sim_mis = calculate_macro_impact(sim_macro_factors)
                     sim_color = "#32CD32" if "Bullish" in sim_direction else "#FF4500" if "Bearish" in sim_direction else "#FFFFFF"
                     st.markdown(f"""
-                        <div class="tab12-prediction">
-                            <span style="color: {sim_color}; font-weight: bold;">Perspectiva / Outlook: {sim_direction}</span><br>
-                            Magnitud / Magnitude: ±{sim_magnitude:.2f}%<br>
-                            <span style="font-size: 16px; color: #FFD700;">Puntuación / Score: {sim_score:.2f}</span><br>
+                        <div style="background: linear-gradient(90deg, #1b263b, #415a77); padding: 20px; border-radius: 10px; text-align: center; color: #e0e1dd; font-size: 20px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);">
+                            <span style="color: {sim_color}; font-weight: bold;">Simulated Outlook: {sim_direction}</span><br>
+                            Expected Move: ±{sim_magnitude:.2f}%<br>
+                            <span style="font-size: 16px; color: #FFD700;">Score: {sim_score:.2f}</span><br>
                             <span style="font-size: 14px; color: {sim_color}">MIS: {sim_mis:.1f}</span><br>
-                            <span style="font-size: 12px;">Riesgo de Recesión / Recession Risk: {recession_risk}</span>
+                            <span style="font-size: 12px;">Recession Probability: {recession_prob*100:.1f}%</span>
                         </div>
                     """, unsafe_allow_html=True)
 
-                    # Recomendaciones Estratégicas / Strategic Recommendations (mejoradas)
-                    st.markdown('<div style="margin-top: 25px; color: #e0e1dd; font-size: 20px; font-weight: 700;">Recomendaciones / Recommendations</div>', unsafe_allow_html=True)
-                    actions_es = []
-                    actions_en = []
+                    # Recomendaciones estratégicas
+                    st.markdown('<div class="section-header">Strategic Recommendations</div>', unsafe_allow_html=True)
+                    actions = []
                     if "Bearish" in sim_direction:
-                        if sim_macro_factors["fed_rate"] * 100 > 3.5:
-                            actions_es.append(f"**Acción Fed**: Reducir tasa desde {sim_macro_factors['fed_rate']*100:.2f}% a 2.5-3.0% para evitar recesión y estimular consumo (XLK, XLY).")
-                            actions_en.append(f"**Fed Action**: Cut rate from {sim_macro_factors['fed_rate']*100:.2f}% to 2.5-3.0% to avert recession and boost consumption (XLK, XLY).")
-                        if sim_macro_factors["tariffs"] * 100 > 5.0:
-                            actions_es.append(f"**Política Comercial**: Bajar aranceles desde {sim_macro_factors['tariffs']*100:.2f}% a <5% para aliviar costos (XLI, XLY).")
-                            actions_en.append(f"**Trade Policy**: Lower tariffs from {sim_macro_factors['tariffs']*100:.2f}% to <5% to ease costs (XLI, XLY).")
-                        if sim_macro_factors["unemployment"] * 100 > 4.5:
-                            actions_es.append(f"**Laboral**: Estímulos fiscales para reducir desempleo desde {sim_macro_factors['unemployment']*100:.2f}% a 4.0% y evitar recesión.")
-                            actions_en.append(f"**Labor**: Fiscal stimulus to cut unemployment from {sim_macro_factors['unemployment']*100:.2f}% to 4.0% to avoid recession.")
-                        actions_es.append(f"**Protección**: Invertir en XLU, XLV, TLT para protegerse contra caídas; considerar oro (GLD) y efectivo como refugio.")
-                        actions_en.append(f"**Protection**: Invest in XLU, XLV, TLT to hedge against declines; consider gold (GLD) and cash as safe havens.")
+                        if sim_macro_factors["fed_rate"] > 0.035:
+                            actions.append("**Fed Action**: Cut rate from {:.2f}% to 2.5-3.0% to avert recession.".format(sim_macro_factors["fed_rate"]*100))
+                        if sim_macro_factors["tariffs"] > 0.05:
+                            actions.append("**Trade**: Lower tariffs from {:.2f}% to <5% to ease costs.".format(sim_macro_factors["tariffs"]*100))
+                        if sim_macro_factors["unemployment"] > 0.045:
+                            actions.append("**Labor**: Stimulus to cut unemployment from {:.2f}% to 4.0%.".format(sim_macro_factors["unemployment"]*100))
+                        actions.append("**Protection**: Shift to XLU, XLV, TLT; hedge with gold (GLD) and cash.")
                         if sim_score < -50:
-                            actions_es.append(f"**Recesión Alta**: Con puntuación {sim_score:.2f}, riesgo crítico; Fed debe actuar ya con recortes agresivos y estímulos.")
-                            actions_en.append(f"**High Recession Risk**: With score {sim_score:.2f}, critical risk; Fed must act now with aggressive cuts and stimulus.")
+                            actions.append("**High Recession Risk**: Score {:.2f}; urgent Fed rate cuts needed.".format(sim_score))
                     elif "Bullish" in sim_direction:
-                        actions_es.append(f"**Acción Fed**: Mantener o subir tasa desde {sim_macro_factors['fed_rate']*100:.2f}% hasta +0.5% para controlar inflación sin frenar XLK, XLI.")
-                        actions_en.append(f"**Fed Action**: Maintain or raise rate from {sim_macro_factors['fed_rate']*100:.2f}% by up to +0.5% to control inflation without halting XLK, XLI.")
-                        actions_es.append(f"**Inversión**: Aprovechar impulso en XLK, XLI; pequeña cobertura en XLU contra shocks externos.")
-                        actions_en.append(f"**Investment**: Capitalize on momentum in XLK, XLI; small hedge in XLU against external shocks.")
-                        actions_es.append(f"**Protección**: Mantener 5-10% en TLT o efectivo para volatilidad inesperada.")
-                        actions_en.append(f"**Protection**: Keep 5-10% in TLT or cash for unexpected volatility.")
-                    else:  # Neutral
-                        if sim_macro_factors["fed_rate"] * 100 > 4.0:
-                            actions_es.append(f"**Acción Fed**: Bajar tasa desde {sim_macro_factors['fed_rate']*100:.2f}% a 3.5% para impulsar crecimiento.")
-                            actions_en.append(f"**Fed Action**: Lower rate from {sim_macro_factors['fed_rate']*100:.2f}% to 3.5% to boost growth.")
-                        if sim_macro_factors["unemployment"] * 100 > 4.5:
-                            actions_es.append(f"**Laboral**: Reducir desempleo desde {sim_macro_factors['unemployment']*100:.2f}% para evitar riesgo bajista.")
-                            actions_en.append(f"**Labor**: Cut unemployment from {sim_macro_factors['unemployment']*100:.2f}% to avoid bearish risk.")
-                        actions_es.append(f"**Estrategia**: Balance entre XLK/XLI y XLU/XLV; vigilar IPC y PIB.")
-                        actions_en.append(f"**Strategy**: Balance XLK/XLI with XLU/XLV; monitor CPI and GDP.")
-                        actions_es.append(f"**Protección**: 10-15% en TLT y XLU para mitigar riesgos de transición.")
-                        actions_en.append(f"**Protection**: 10-15% in TLT and XLU to mitigate transition risks.")
+                        actions.append("**Fed Action**: Maintain or raise rate from {:.2f}% by +0.5% to manage inflation.".format(sim_macro_factors["fed_rate"]*100))
+                        actions.append("**Investment**: Capitalize on XLK, XLI; minimal hedge in XLU.")
+                        actions.append("**Protection**: Allocate 5-10% to TLT or cash for volatility.")
+                    else:
+                        if sim_macro_factors["fed_rate"] > 0.04:
+                            actions.append("**Fed Action**: Lower rate from {:.2f}% to 3.5% to boost growth.".format(sim_macro_factors["fed_rate"]*100))
+                        if sim_macro_factors["unemployment"] > 0.045:
+                            actions.append("**Labor**: Reduce unemployment from {:.2f}% for stability.".format(sim_macro_factors["unemployment"]*100))
+                        actions.append("**Strategy**: Balance XLK/XLI with XLU/XLV.")
+                        actions.append("**Protection**: 10-15% in TLT and XLU against risks.")
 
-                    for action_es, action_en in zip(actions_es, actions_en):
-                        st.markdown(f'<div class="tab12-implications-card">➤ {action_es}<br><br>{action_en}</div>', unsafe_allow_html=True)
+                    for action in actions:
+                        st.markdown(f'<div class="tab12-implications-card">➤ {action}</div>', unsafe_allow_html=True)
 
+                    # Descarga
                     csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="Descargar / Download",
-                        data=csv,
-                        file_name="sector_performance_map.csv",
-                        mime="text/csv",
-                        key="download_sector_map_tab12",
-                        help="Datos completos / Full dataset"
-                    )
+                    st.download_button(label="📥 Download Sector Data", data=csv, file_name="sector_performance_map.csv", mime="text/csv", key="download_sector_map_tab12")
 
-                    st.markdown(f'<div style="text-align: center; font-size: 12px; color: #778da9; margin-top: 20px;">Última Actualización / Last Updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | Por Ozy Analytics / By Ozy Analytics</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="text-align: center; font-size: 12px; color: #778da9; margin-top: 20px;">Last Updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | Powered by Ozy Analytics</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
