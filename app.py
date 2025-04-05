@@ -8,39 +8,25 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple  # Añadí Tuple aquí
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import multiprocessing
-import streamlit as st
-import pandas as pd
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 from scipy import stats
 import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import numpy as np
 import csv
 import bcrypt
 import sqlite3
-import os
 from sklearn.linear_model import LinearRegression
 from bs4 import BeautifulSoup
 import socket
 from scipy.stats import norm
 import xml.etree.ElementTree as ET
-from concurrent.futures import ThreadPoolExecutor
-import logging
-import time
-from typing import List, Dict, Optional, Tuple
 import streamlit.components.v1 as components
 import math
 import krakenex
 import base64
-import logging
-
+import threading
 
 logging.getLogger("streamlit").setLevel(logging.ERROR)
 
@@ -54,7 +40,6 @@ session_tradier.mount("https://", adapter)
 num_workers = min(100, multiprocessing.cpu_count() * 2)
 
 # API Keys and Constants
-# Configurar cliente de Kraken con las claves proporcionadas
 API_KEY = "kyFpw+5fbrFIMDuWJmtkbbbr/CgH/MS63wv7dRz3rndamK/XnjNOVkgP"
 PRIVATE_KEY = "7xbaBIp902rSBVdIvtfrUNbRHEHMkfMHPEf4rssz+ZwSwjUZFegjdyyYZzcE5DbBrUbtFdGRRGRjTuTnEblZWA=="
 kraken = krakenex.API(key=API_KEY, secret=PRIVATE_KEY)
@@ -74,7 +59,7 @@ logger = logging.getLogger(__name__)
 
 # --- Configuración inicial de página ---
 st.set_page_config(
-    page_title="𝗢 𝗭 𝗬 |  DATA®",
+    page_title="𝗢 𝗭 𝗬 | DATA®",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -103,36 +88,16 @@ def initialize_passwords_db():
     c.execute('''CREATE TABLE IF NOT EXISTS passwords 
                  (password TEXT PRIMARY KEY, usage_count INTEGER DEFAULT 0, ip1 TEXT DEFAULT '', ip2 TEXT DEFAULT '')''')
     initial_passwords = [
-        ("abc123", 0, "", ""),
-        ("def456", 0, "", ""),
-        ("ghi789", 0, "", ""),
-        ("jkl010", 0, "", ""),
-        ("mno345", 0, "", ""),
-        ("pqr678", 0, "", ""),
-        ("stu901", 0, "", ""),
-        ("vwx234", 0, "", ""),
-        ("yz1234", 0, "", ""),
-        ("abcd56", 0, "", ""),
-        ("efgh78", 0, "", ""),
-        ("ijkl90", 0, "", ""),
-        ("mnop12", 0, "", ""),
-        ("qrst34", 0, "", ""),
-        ("uvwx56", 0, "", ""),
-        ("yzab78", 0, "", ""),
-        ("cdef90", 0, "", ""),
-        ("ghij12", 0, "", ""),
-        ("news34", 0, "", ""),
-        ("opqr56", 0, "", ""),
-        ("xyz789", 0, "", ""),
-        ("kml456", 0, "", ""),
-        ("nop123", 0, "", ""),
-        ("qwe987", 0, "", ""),
-        ("asd654", 0, "", ""),
-        ("zxc321", 0, "", ""),
-        ("bnm098", 0, "", ""),
-        ("vfr765", 0, "", ""),
-        ("tgb432", 0, "", ""),
-        ("hju109", 0, "", "")
+        ("abc234", 0, "", ""), ("def456", 0, "", ""), ("ghi789", 0, "", ""),
+        ("jkl010", 0, "", ""), ("mno345", 0, "", ""), ("pqr678", 0, "", ""),
+        ("stu901", 0, "", ""), ("vwx234", 0, "", ""), ("yz1234", 0, "", ""),
+        ("abcd56", 0, "", ""), ("efgh78", 0, "", ""), ("ijkl90", 0, "", ""),
+        ("mnop12", 0, "", ""), ("qrst34", 0, "", ""), ("uvwx56", 0, "", ""),
+        ("yzab78", 0, "", ""), ("cdef90", 0, "", ""), ("ghij12", 0, "", ""),
+        ("news34", 0, "", ""), ("opqr56", 0, "", ""), ("xyz789", 0, "", ""),
+        ("kml456", 0, "", ""), ("nop123", 0, "", ""), ("qwe987", 0, "", ""),
+        ("asd654", 0, "", ""), ("zxc321", 0, "", ""), ("bnm098", 0, "", ""),
+        ("vfr765", 0, "", ""), ("tgb432", 0, "", ""), ("hju109", 0, "", "")
     ]
     hashed_passwords = [(bcrypt.hashpw(pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'), count, ip1, ip2) 
                         for pwd, count, ip1, ip2 in initial_passwords]
@@ -192,71 +157,188 @@ def authenticate_password(input_password):
                 st.error("❌ This password has already been used by two IPs. To get your own access to OzyTarget, text 'OzyTarget Access' to 678-978-9414.")
                 logger.warning(f"Authentication attempt for {input_password} from IP {local_ip} rejected; already used from {data['ip1']} and {data['ip2']}")
                 return False
-    logger.info(f"Reached error message for {input_password} from IP: {local_ip}")  # Log extra
+    logger.info(f"Reached error message for {input_password} from IP: {local_ip}")
     st.error("❌ Incorrect password. If you don’t have access, text 'OzyTarget Access' to 678-978-9414 to purchase your subscription.")
     logger.warning(f"Authentication failed: Invalid password {input_password}")
     return False
 
-# Pantalla de autenticación sin logo
+# Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con todo alineado
+# Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con efecto hacker dinámico
 initialize_passwords_db()
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    st.title("🔒 VIP ACCESS")
-    
-    # Estilo personalizado para el mensaje de carga
     st.markdown("""
     <style>
-    .loading-container {
-        text-align: center;
-        padding: 25px;
-        background: linear-gradient(145deg, #1A1A1A, #2D2D2D);
-        border-radius: 12px;
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7), inset 0 0 10px rgba(50, 205, 50, 0.1);
-        border: 1px solid rgba(50, 205, 50, 0.3);
+    /* Fondo global negro puro */
+    .stApp {
+        background-color: #000000;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start; /* Ajustado para empezar desde arriba */
+        min-height: 100vh;
+        margin: 0;
+        padding: 0;
     }
-    .loading-text {
-        font-size: 26px;
-        font-weight: 600;
-        color: #32CD32;
-        text-shadow: 0 0 12px rgba(50, 205, 50, 0.8);
+    /* Eliminar cualquier contenedor superior */
+    .st-emotion-cache-1gv3huu {
+        display: none;
+    }
+    .login-container {
+        padding: 20px;
+        text-align: center;
+        margin-top: 25vh; /* Mueve todo más abajo */
+    }
+    .login-logo {
+        font-size: 18px;
+        font-weight: 700;
+        color: #FFFFFF;
+        margin-bottom: 15px;
         letter-spacing: 1px;
     }
-    .spinner-pro {
-        width: 40px;
-        height: 40px;
-        border: 4px solid rgba(255, 255, 255, 0.2);
-        border-top: 4px solid #32CD32;
-        border-radius: 50%;
-        animation: spin-pro 1s ease-in-out infinite;
-        margin: 15px auto 0;
+    .login-input {
+        background-color: #2D2D2D;
+        color: #FFFFFF;
+        border: 1px solid #FFFFFF;
+        border-radius: 5px;
+        padding: 6px;
+        width: 100px !important; /* Ancho fijo */
+        font-size: 12px;
     }
-    @keyframes spin-pro {
-        0% { transform: rotate(0deg); }
-        50% { transform: rotate(180deg); border-top-color: #FFD700; }
-        100% { transform: rotate(360deg); border-top-color: #32CD32; }
+    .login-button {
+        background-color: #FFFFFF;
+        color: #000000;
+        padding: 6px 12px;
+        border: none;
+        border-radius: 5px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        width: 100px !important; /* Ancho fijo */
+    }
+    .login-button:hover {
+        background-color: #E0E0E0;
+    }
+    /* Efecto hacker para bienvenida */
+    .hacker-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8); /* Transparencia al 80% */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+    }
+    .hacker-text {
+        font-size: 24px;
+        font-weight: 700;
+        color: #FFFF00; /* Amarillo neón sólido */
+        text-shadow: 0 0 15px #FFFF00; /* Brillo amarillo sólido */
+        letter-spacing: 2px;
+        position: relative;
+        z-index: 10000;
+    }
+    .hacker-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 9998;
     }
     </style>
     """, unsafe_allow_html=True)
-    
-    password = st.text_input("Enter your password", type="password")
-    if st.button("LogIn"):
-        if not password:
-            st.error("❌ Please enter a password.")
-        elif authenticate_password(password):
-            st.session_state["authenticated"] = True
-            # Mensaje sofisticado con animación profesional
-            with st.empty():
-                st.markdown("""
-                <div class="loading-container">
-                    <div class="loading-text">✅ ACCESS GRANTED</div>
-                    <div class="spinner-pro"></div>
-                </div>
-                """, unsafe_allow_html=True)
-                time.sleep(1)  # Carga rápida de 1 segundo
-            st.rerun()
+
+    # Contenedor sin fondo, centrado y más abajo, con todo alineado
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:  # Columna central para centrado horizontal
+        st.markdown('<div class="login-container">', unsafe_allow_html=True)
+        # Subcolumnas para mantener todo estrecho y alineado
+        subcol1, subcol2, subcol3 = st.columns([1, 2, 1])
+        with subcol2:  # Subcolumna estrecha para alinear todo
+            st.markdown('<div class="login-logo">ℙℝ𝕆 𝔼𝕊ℂ𝔸ℕℕ𝔼ℝ®</div>', unsafe_allow_html=True)
+            password = st.text_input("", type="password", key="login_input", placeholder="Password")
+            if st.button("Log In", key="login_button"):
+                if not password:
+                    st.error("❌ Please enter a password.")
+                elif authenticate_password(password):
+                    st.session_state["authenticated"] = True
+                    # Efecto hacker de bienvenida con JavaScript (amarillo dinámico o verde estático como respaldo)
+                    st.markdown("""
+                    <div class="hacker-overlay" id="hackerOverlay">
+                        <canvas class="hacker-canvas" id="hackerCanvas"></canvas>
+                        <div class="hacker-text">✅ ACCESS GRANTED</div>
+                    </div>
+                    <script>
+                    const canvas = document.getElementById('hackerCanvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+
+                    const numbers = 'A1B2C3D4E5F6G7H8I9J0KLMNOP'; // Letras y números como passwords
+                    const fontSize = 20;
+                    const columns = canvas.width / fontSize;
+                    const drops = [];
+
+                    // Inicializar posiciones de evitas markets
+                    for (let x = 0; x < columns; x++) {
+                        drops[x] = Math.random() * canvas.height;
+                    }
+
+                    // Intentar animación dinámica en amarillo
+                    function drawDynamic() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); // Limpiar para animación
+                        ctx.fillStyle = '#FFFF00'; // Amarillo neón fosforescente sólido
+                        ctx.shadowBlur = 20; // Brillo intenso
+                        ctx.shadowColor = '#FFFF00'; // Sombra amarilla sólida
+                        ctx.font = fontSize + 'px monospace';
+
+                        for (let i = 0; i < drops.length; i++) {
+                            const text = numbers.charAt(Math.floor(Math.random() * numbers.length));
+                            ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                            drops[i] += 5; // Velocidad rápida
+                            if (drops[i] * fontSize > canvas.height && Math.random() > 0.95) {
+                                drops[i] = -fontSize; // Reiniciar desde arriba
+                            }
+                        }
+                        ctx.shadowBlur = 0; // Reseteamos brillo
+                        requestAnimationFrame(drawDynamic); // Animación fluida
+                    }
+
+                    // Respaldo estático en verde si la animación falla
+                    function drawStatic() {
+                        ctx.fillStyle = '#39FF14'; // Verde neón fosforescente sólido
+                        ctx.shadowBlur = 20; // Brillo intenso
+                        ctx.shadowColor = '#39FF14'; // Sombra verde sólida
+                        ctx.font = fontSize + 'px monospace';
+                        for (let i = 0; i < columns; i++) {
+                            const text = numbers.charAt(Math.floor(Math.random() * numbers.length));
+                            ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                        }
+                    }
+
+                    // Iniciar animación dinámica o estática como respaldo
+                    try {
+                        drawDynamic();
+                    } catch (e) {
+                        drawStatic(); // Respaldo si falla
+                    }
+
+                    setTimeout(function() {
+                        document.getElementById('hackerOverlay').style.display = 'none';
+                    }, 2000); // Ocultar después de 2 segundos
+                    </script>
+                    """, unsafe_allow_html=True)
+                    time.sleep(2)  # Duración del efecto (2 segundos)
+                    st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
+# Resto de la app (sin cambios por ahora)
 ########################################################app
 ########################################################app
 
@@ -1188,6 +1270,83 @@ def fetch_instagram_posts(keywords):
                 st.warning(f"Error fetching Instagram posts for {keyword}: {e}")
     return posts
 
+
+# Funciones de análisis de sentimiento (agregadas aquí para evitar NameError)
+def calculate_retail_sentiment(news):
+    """Calcula el sentimiento de mercado de retail basado en titulares de noticias."""
+    if not news:
+        return 0.5, "Neutral"  # Valor por defecto si no hay noticias
+    
+    positive_keywords = ["up", "bullish", "gain", "rise", "surge", "strong", "rally", "positive", "growth"]
+    negative_keywords = ["down", "bearish", "loss", "drop", "fall", "crash", "weak", "decline", "negative"]
+    
+    sentiment_score = 0
+    total_articles = len(news)
+    
+    for article in news:
+        title = article["title"].lower()
+        positive_count = sum(1 for word in positive_keywords if word in title)
+        negative_count = sum(1 for word in negative_keywords if word in title)
+        sentiment_score += (positive_count - negative_count)
+    
+    max_possible_score = max(total_articles, 1)
+    normalized_score = (sentiment_score + max_possible_score) / (2 * max_possible_score)
+    normalized_score = max(0, min(1, normalized_score))
+    
+    if normalized_score > 0.7:
+        sentiment_text = "Very Bullish"
+    elif normalized_score > 0.5:
+        sentiment_text = "Bullish"
+    elif normalized_score < 0.3:
+        sentiment_text = "Very Bearish"
+    elif normalized_score < 0.5:
+        sentiment_text = "Bearish"
+    else:
+        sentiment_text = "Neutral"
+    
+    return normalized_score, sentiment_text
+
+def calculate_volatility_sentiment(news):
+    """Calcula el sentimiento de volatilidad basado en titulares de noticias."""
+    if not news:
+        return 0, "Stable"  # Valor por defecto si no hay noticias
+    
+    high_volatility_keywords = ["crash", "surge", "volatile", "plunge", "spike", "wild", "turmoil", "shock", "boom"]
+    low_volatility_keywords = ["steady", "calm", "stable", "flat", "unchanged", "quiet", "consistent"]
+    
+    volatility_score = 0
+    total_articles = len(news)
+    
+    for article in news:
+        title = article["title"].lower()
+        high_vol_count = sum(1 for word in high_volatility_keywords if word in title)
+        low_vol_count = sum(1 for word in low_volatility_keywords if word in title)
+        volatility_score += (high_vol_count - low_vol_count)
+    
+    max_possible_score = max(total_articles, 1)
+    normalized_score = (volatility_score + max_possible_score) / (2 * max_possible_score) * 100
+    normalized_score = max(0, min(100, normalized_score))
+    
+    if normalized_score > 75:
+        volatility_text = "Very High Volatility"
+    elif normalized_score > 50:
+        volatility_text = "High Volatility"
+    elif normalized_score < 25:
+        volatility_text = "Low Volatility"
+    elif normalized_score < 50:
+        volatility_text = "Moderate Volatility"
+    else:
+        volatility_text = "Stable"
+    
+    return normalized_score, volatility_text
+
+
+
+
+
+
+
+
 def fetch_batch_stock_data(tickers):
     tickers_str = ",".join(tickers)
     url = f"{TRADIER_BASE_URL}/markets/quotes"
@@ -1402,6 +1561,13 @@ def fetch_data(endpoint: str, ticker: str = None, additional_params: dict = None
     except Exception as e:
         st.error(f"Error  HTTP: {str(e)}")
         return None
+
+def get_institutional_holders_list(ticker: str):
+    endpoint = f"institutional-holder/{ticker}"
+    data = fetch_data(endpoint, ticker)
+    if data:
+        return pd.DataFrame(data)
+    return None
 
 def get_institutional_holders_list(ticker: str):
     endpoint = f"institutional-holder/{ticker}"
@@ -2411,48 +2577,120 @@ def calculate_momentum(prices: List[float], vol_historical: float) -> float:
 # --- Main App ---
 # --- Main App ---
 def main():
-    # ... (código anterior, como el encabezado sin logo)
-    
     # Pantalla de autenticación sin logo
     initialize_passwords_db()
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
 
     if not st.session_state["authenticated"]:
-        st.title("🔒 VIP ACCESS")
+        # Estilo profesional y centrado para el login
         st.markdown("""
         <style>
+        /* Fondo global negro puro */
+        .stApp {
+            background-color: #000000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Centra verticalmente en toda la pantalla */
+        }
+        .login-container {
+            background: #1E1E1E; /* Gris oscuro para contraste sutil */
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3); /* Sombra azul neón */
+            width: 100%;
+            max-width: 400px; /* Ancho fijo para consistencia */
+            text-align: center;
+            border: 1px solid rgba(0, 255, 255, 0.2); /* Borde azul sutil */
+        }
+        .login-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #00FFFF; /* Azul neón para el título */
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+            margin-bottom: 20px;
+            letter-spacing: 1px;
+        }
+        .login-input {
+            background-color: #2D2D2D;
+            color: #FFFFFF;
+            border: 1px solid rgba(57, 255, 20, 0.3); /* Borde verde lima sutil */
+            border-radius: 5px;
+            padding: 10px;
+            width: 100%;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .login-button {
+            background: linear-gradient(90deg, #39FF14, #00FFFF); /* Degradado verde a azul */
+            color: #1E1E1E;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+        .login-button:hover {
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
+            transform: scale(1.05);
+        }
         .loading-container {
             text-align: center;
             padding: 25px;
-            background: linear-gradient(145deg, #1A1A1A, #2D2D2D);
+            background: #1E1E1E;
             border-radius: 12px;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7), inset 0 0 10px rgba(50, 205, 50, 0.1);
-            border: 1px solid rgba(50, 205, 50, 0.3);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            margin-top: 20px;
         }
         .loading-text {
-            font-size: 26px;
+            font-size: 24px;
             font-weight: 600;
-            color: #32CD32;
-            text-shadow: 0 0 12px rgba(50, 205, 50, 0.8);
+            color: #39FF14; /* Verde lima */
+            text-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
             letter-spacing: 1px;
         }
         .spinner-pro {
             width: 40px;
             height: 40px;
             border: 4px solid rgba(255, 255, 255, 0.2);
-            border-top: 4px solid #32CD32;
+            border-top: 4px solid #00FFFF; /* Azul neón */
             border-radius: 50%;
             animation: spin-pro 1s ease-in-out infinite;
             margin: 15px auto 0;
         }
         @keyframes spin-pro {
             0% { transform: rotate(0deg); }
-            50% { transform: rotate(180deg); border-top-color: #FFD700; }
-            100% { transform: rotate(360deg); border-top-color: #32CD32; }
+            50% { transform: rotate(180deg); border-top-color: #39FF14; }
+            100% { transform: rotate(360deg); border-top-color: #00FFFF; }
         }
         </style>
         """, unsafe_allow_html=True)
+
+        # Contenedor centrado para el login
+        st.markdown('<div class="login-container">', unsafe_allow_html=True)
+        st.markdown('<div class="login-title">🔒 VIP ACCESS</div>', unsafe_allow_html=True)
+        password = st.text_input("Enter your password", type="password", key="login_input", help="Enter your VIP password")
+        if st.button("LogIn", key="login_button"):
+            if not password:
+                st.error("❌ Please enter a password.")
+            elif authenticate_password(password):
+                st.session_state["authenticated"] = True
+                with st.empty():
+                    st.markdown("""
+                    <div class="loading-container">
+                        <div class="loading-text">✅ ACCESS GRANTED</div>
+                        <div class="spinner-pro"></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    time.sleep(1)
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.stop()
 
     # Solo una columna para el título, sin logo
     st.markdown("""
@@ -2464,8 +2702,9 @@ def main():
     # Estilos personalizados con tabs ultra compactos y futuristas en dos líneas
     st.markdown("""
         <style>
+        /* Fondo global negro puro como las gráficas */
         .stApp {
-            background-color: #1E1E1E;
+            background-color: #000000;
         }
         .stTextInput, .stSelectbox {
             background-color: #2D2D2D;
@@ -2474,41 +2713,43 @@ def main():
         .stSpinner > div > div {
             border-color: #32CD32 !important;
         }
+        /* Menú sin rectángulo */
         .stTabs [data-baseweb="tab-list"] {
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
-            background: linear-gradient(90deg, #1B263B 0%, #2D2D2D 100%);
+            background: none; /* Sin fondo rectangular */
             padding: 5px;
             gap: 2px;
-            border-radius: 8px;
-            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.7);
             margin-top: 10px;
         }
         .stTabs [data-baseweb="tab"] {
             padding: 5px 10px;
             margin: 2px;
-            color: #E0E1DD;
-            background: #2D2D2D;
+            color: rgba(57, 255, 20, 0.7); /* Verde lima apagado como base */
+            background: #000000; /* Negro puro para combinar con el fondo */
+            border: 1px solid rgba(57, 255, 20, 0.3); /* Borde sutil de neón */
             border-radius: 5px;
             font-size: 10px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 1px;
             transition: all 0.3s ease;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 0 5px rgba(57, 255, 20, 0.2);
         }
         .stTabs [data-baseweb="tab"]:hover {
-            background: #32CD32;
+            background: #39FF14; /* Verde lima brillante al pasar el ratón */
             color: #1E1E1E;
             transform: translateY(-2px);
-            box-shadow: 0 4px 10px rgba(50, 205, 50, 0.5);
+            box-shadow: 0 4px 10px rgba(57, 255, 20, 0.8);
         }
         .stTabs [data-baseweb="tab"][aria-selected="true"] {
-            background: #32CD32;
+            background: #00FFFF; /* Azul neón para tab activo */
             color: #1E1E1E;
             font-weight: 700;
-            box-shadow: 0 0 15px rgba(50, 205, 50, 0.7);
+            transform: scale(1.1); /* Se "infla" un poco más */
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
+            border: 1px solid #00FFFF;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -2952,55 +3193,169 @@ def main():
     # Tab 3: News Scanner
     with tab3:
         st.subheader("News Scanner")
-        keywords = st.text_input("Enter keywords (comma-separated):", "Trump").split(",")
+        
+        # Inicializar st.session_state para latest_news si no existe
+        if "latest_news" not in st.session_state:
+            with st.spinner("Fetching initial market news..."):
+                google_news = fetch_google_news(["SPY"])  # SPY como default para mercado general
+                bing_news = fetch_bing_news(["SPY"])
+                st.session_state["latest_news"] = google_news + bing_news if google_news or bing_news else None
+        
+        # Sección de noticias
+        st.markdown("#### Search News")
+        keywords = st.text_input("Enter keywords (comma-separated):", "Trump", key="news_keywords").split(",")
         keywords = [k.strip() for k in keywords if k.strip()]
-        if st.button("Fetch News"):
+        
+        if st.button("Fetch News", key="fetch_news"):
             with st.spinner("Fetching news..."):
                 google_news = fetch_google_news(keywords)
                 bing_news = fetch_bing_news(keywords)
-                instagram_posts = fetch_instagram_posts(keywords)
-                latest_news = google_news + bing_news + instagram_posts
+                latest_news = google_news + bing_news
+                
                 if latest_news:
+                    st.session_state["latest_news"] = latest_news
                     for idx, article in enumerate(latest_news[:10], 1):
                         st.markdown(f"### {idx}. [{article['title']}]({article['link']})")
                         st.markdown(f"**Published:** {article['time']}\n")
                         st.markdown("---")
                 else:
                     st.error("No recent news found.")
-                st.markdown("---")
-                st.markdown("*Developed by Ozy | © 2025*")
+                    st.session_state["latest_news"] = None
+        
+        # Separador
+        st.markdown("---")
+        
+        # Sección de sentimientos (siempre visible)
+        st.markdown("#### Market Sentiment (Based on Latest News)")
+        if st.session_state["latest_news"]:
+            sentiment_score, sentiment_text = calculate_retail_sentiment(st.session_state["latest_news"])
+            volatility_score, volatility_text = calculate_volatility_sentiment(st.session_state["latest_news"])
+            
+            # Dividir en columnas para Retail y Volatility Sentiment
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("##### Retail Sentiment")
+                fig_sentiment = go.Figure(go.Indicator(
+                    mode="gauge+number+delta",
+                    value=sentiment_score * 100,
+                    delta={'reference': 50, 'relative': True, 'valueformat': '.2%'},
+                    title={'text': "Retail Sentiment Score", 'font': {'size': 16, 'color': '#FFFFFF'}},
+                    gauge={
+                        'axis': {'range': [0, 100], 'tickcolor': "#FFFFFF", 'tickfont': {'color': "#FFFFFF"}},
+                        'bar': {'color': "#32CD32" if sentiment_score > 0.5 else "#FF4500", 'thickness': 0.2},
+                        'bgcolor': "rgba(0, 0, 0, 0.1)",
+                        'steps': [
+                            {'range': [0, 30], 'color': "#FF4500"},
+                            {'range': [30, 70], 'color': "#FFD700"},
+                            {'range': [70, 100], 'color': "#32CD32"}
+                        ],
+                        'threshold': {
+                            'line': {'color': "#FFFFFF", 'width': 4},
+                            'thickness': 0.75,
+                            'value': 50
+                        }
+                    }
+                ))
+                fig_sentiment.update_layout(
+                    height=250,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font={'color': "#FFFFFF"}
+                )
+                st.plotly_chart(fig_sentiment, use_container_width=True)
+                st.markdown(f"**Sentiment:** {sentiment_text} ({sentiment_score:.2%})", unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown("##### Volatility Sentiment")
+                fig_volatility = go.Figure(go.Bar(
+                    x=["Volatility Sentiment"],
+                    y=[volatility_score],
+                    text=[f"{volatility_score:.1f}"],
+                    textposition="auto",
+                    marker_color="#FFD700" if volatility_score < 50 else "#FF4500",
+                    hovertemplate="Volatility Score: %{y:.1f}<br>%{text}",
+                    marker=dict(
+                        line=dict(color="#FFFFFF", width=2)
+                    )
+                ))
+                fig_volatility.update_layout(
+                    yaxis_range=[0, 100],
+                    height=250,
+                    showlegend=False,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font={'color': "#FFFFFF"},
+                    yaxis={'gridcolor': "rgba(255,255,255,0.2)"}
+                )
+                st.plotly_chart(fig_volatility, use_container_width=True)
+                st.markdown(f"**Volatility Perception:** {volatility_text} ({volatility_score:.1f}/100)", unsafe_allow_html=True)
+        else:
+            st.warning("No news data available to analyze sentiment. Try fetching news.")
+        
+        st.markdown("---")
+        st.markdown("*Developed by Ozy | © 2025*")
 
     # Tab 4: Institutional Holders
+
     with tab4:
         st.subheader("Institutional Holders")
         ticker = st.text_input("Ticker for Holders (e.g., AAPL):", "AAPL", key="holders_ticker").upper()
         if ticker:
-            holders = get_institutional_holders_list(ticker)
-            if holders is not None and not holders.empty:
-                def color_negative(row):
-                    if 'Change' in row and row['Change'] < 0:
-                        return ['color: #FF4500'] * len(row)
-                    elif 'Shares' in row and row['Shares'] < 0:
-                        return ['color: #FF4500'] * len(row)
-                    return [''] * len(row)
-                styled_holders = holders.style.apply(color_negative, axis=1).format({
-                    'Shares': '{:,.0f}',
-                    'Change': '{:,.0f}' if 'Change' in holders.columns else None,
-                    'Value': '${:,.0f}' if 'Value' in holders.columns else None
-                })
-                st.dataframe(styled_holders, use_container_width=True)
-                holders_csv = holders.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Holders Data",
-                    data=holders_csv,
-                    file_name=f"{ticker}_institutional_holders.csv",
-                    mime="text/csv",
-                    key="download_tab4"
-                )
-            else:
-                st.warning("No institutional holders data available.")
-                st.markdown("---")
-                st.markdown("*Developed by Ozy | © 2025*")
+            with st.spinner(f"Fetching institutional holders for {ticker}..."):
+                # Usamos una solicitud directa para evitar caché y asegurar datos frescos
+                url = f"{FMP_BASE_URL}/institutional-holder/{ticker}?apikey={FMP_API_KEY}"
+                try:
+                    response = session_fmp.get(url, headers=HEADERS_FMP, timeout=10)
+                    response.raise_for_status()
+                    data = response.json()
+                    if not data or not isinstance(data, list):
+                        st.error(f"No institutional holders data returned for {ticker}. Check ticker.")
+                        logger.error(f"No data from FMP for {ticker}: {data}")
+                    else:
+                        holders = pd.DataFrame(data)
+                        if holders.empty:
+                            st.warning(f"No institutional holders data available for {ticker}.")
+                        else:
+                            # Verificar la fecha más reciente
+                            if 'date' in holders.columns:
+                                latest_date = pd.to_datetime(holders['date']).max().date()
+                                st.write(f"**Latest Data Date:** {latest_date}")
+                                if latest_date < datetime(2025, 3, 1).date():
+                                    st.warning(f"Data is outdated (latest: {latest_date}). Expected updates beyond Dec 2024.")
+                            else:
+                                st.warning("")
+
+                            # Estilizar la tabla
+                            def color_negative(row):
+                                if 'change' in row and row['change'] < 0:
+                                    return ['color: #FF4500'] * len(row)
+                                elif 'shares' in row and row['shares'] < 0:
+                                    return ['color: #FF4500'] * len(row)
+                                return [''] * len(row)
+
+                            styled_holders = holders.style.apply(color_negative, axis=1).format({
+                                'shares': '{:,.0f}',
+                                'change': '{:,.0f}' if 'change' in holders.columns else None,
+                                'value': '${:,.0f}' if 'value' in holders.columns else None,
+                                'date': lambda x: x if pd.isna(x) else pd.to_datetime(x).strftime('%Y-%m-%d')
+                            })
+                            st.dataframe(styled_holders, use_container_width=True)
+
+                            # Botón de descarga
+                            holders_csv = holders.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Download Holders Data",
+                                data=holders_csv,
+                                file_name=f"{ticker}_institutional_holders.csv",
+                                mime="text/csv",
+                                key="download_tab4"
+                            )
+                except requests.RequestException as e:
+                    st.error(f"Error fetching data for {ticker}: {str(e)}")
+                    logger.error(f"HTTP error for {ticker}: {str(e)}")
+            st.markdown("---")
+            st.markdown("*Developed by Ozy | © 2025*")
 
     # Tab 5: Options Order Flow
     with tab5:
