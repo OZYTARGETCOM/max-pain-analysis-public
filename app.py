@@ -4890,71 +4890,92 @@ def main():
         # Tab 12: Performance Map
         # Tab 12: Performance Map
     with tab12:
-        # Estilo visual profesional para la tabla
+        
         st.markdown("""
             <style>
+            /* Fondo oscuro estilo terminal para toda la app */
+            .stApp {
+                background-color: #0A0A0A;
+            }
+            /* Título principal con vibe de código */
             .main-title { 
                 font-size: 28px; 
-                font-weight: 600; 
-                color: #FFFFFF; 
+                font-weight: 700; 
+                color: #FFD700; /* Amarillo mostaza */
                 text-align: center; 
                 margin-bottom: 20px; 
-                text-shadow: 0 0 5px rgba(50, 205, 50, 0.5); 
+                text-shadow: 0 0 10px rgba(255, 215, 0, 0.8), 0 0 20px rgba(0, 255, 0, 0.5); 
+                font-family: 'Courier New', Courier, monospace;
+                letter-spacing: 2px;
             }
+            /* Subtítulo con verde neón */
             .section-header { 
                 font-size: 20px; 
-                font-weight: 500; 
-                color: #32CD32; 
+                font-weight: 600; 
+                color: #39FF14; /* Verde neón */
                 margin-top: 20px; 
-                border-bottom: 1px solid #32CD32; 
+                border-bottom: 1px dashed #00FFFF; /* Borde azul eléctrico */
                 padding-bottom: 5px; 
+                text-shadow: 0 0 5px rgba(57, 255, 20, 0.8); 
+                font-family: 'Courier New', Courier, monospace;
             }
-            .tab12-table th {
-                background-color: #1b263b;
-                color: #e94560;
-                font-weight: 700;
-                padding: 14px;
-                border: 2px solid #415a77;
+            /* Estilos para la tabla con mayor especificidad */
+            div[data-testid="stTable"] table.tab12-table th {
+                background-color: #1A1F2B !important;
+                color: #00FFFF !important; /* Azul eléctrico */
+                font-weight: 700 !important;
+                padding: 14px !important;
+                border: 2px solid #39FF14 !important; /* Verde neón */
+                text-transform: uppercase !important;
+                font-size: 14px !important;
+                font-family: 'Courier New', Courier, monospace !important;
+                text-shadow: 0 0 3px rgba(0, 255, 255, 0.5) !important;
+            }
+            div[data-testid="stTable"] table.tab12-table td {
+                background-color: #0F1419 !important;
+                color: #E0E0E0 !important; /* Blanco grisáceo */
+                padding: 12px !important;
+                border: 2px solid #39FF14 !important; /* Verde neón */
+                text-align: center !important;
+                font-family: 'Courier New', Courier, monospace !important;
+                font-size: 14px !important;
+            }
+            /* Botón de descarga con estilo hacker */
+            .stDownloadButton button {
+                background: linear-gradient(90deg, #FFD700, #39FF14); /* Amarillo mostaza a verde neón */
+                color: #0A0A0A !important;
+                border: 2px solid #00FFFF; /* Azul eléctrico */
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-family: 'Courier New', Courier, monospace !important;
+                font-weight: 600;
                 text-transform: uppercase;
-                font-size: 14px;
+                transition: all 0.3s ease;
             }
-            .tab12-table td {
-                background-color: #0d1b2a;
-                color: #e0e1dd;
-                padding: 12px;
-                border: 2px solid #415a77;
+            .stDownloadButton button:hover {
+                background: linear-gradient(90deg, #39FF14, #FFD700); /* Invertido al hover */
+                box-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
+            }
+            /* Pie de página con texto gris apagado */
+            .footer-text {
+                color: #778DA9;
+                font-size: 12px;
                 text-align: center;
+                font-family: 'Courier New', Courier, monospace;
+                text-shadow: 0 0 2px rgba(255, 215, 0, 0.3);
             }
             </style>
         """, unsafe_allow_html=True)
 
         # Índices, sectores y bonos
         assets = {
-            "SPY": "SPY",               # S&P 500
-            "Nasdaq 100": "QQQ",
-            "Dow Jones": "DIA",
-            "Russell 2000": "IWM",
-            "Basic Materials": "XLB",
-            "Consumer Cyclical": "XLY",
-            "Financials": "XLF",
-            "Real Estate": "XLRE",
-            "Utilities": "XLU",
-            "Communication": "XLC",
-            "Healthcare": "XLV",
-            "Energy": "XLE",
-            "Industrials": "XLI",
-            "Technology": "XLK",
-            "Consumer Defensive": "XLP",
-            "20+ Yr Treasury": "TLT",
-            "7-10 Yr Treasury": "IEF",
-            "1-3 Yr Treasury": "SHY",
-            "VIX": "^VIX",
-            "Dollar Index": "UUP",
-            "FTSE 100": "EZU",
-            "DAX": "DAX",
-            "CAC 40": "EWQ",
-            "Shanghai Comp": "ASHR",
-            "Hang Seng": "EWH"
+            "SPY": "SPY", "Nasdaq 100": "QQQ", "Dow Jones": "DIA", "Russell 2000": "IWM",
+            "Basic Materials": "XLB", "Consumer Cyclical": "XLY", "Financials": "XLF",
+            "Real Estate": "XLRE", "Utilities": "XLU", "Communication": "XLC",
+            "Healthcare": "XLV", "Energy": "XLE", "Industrials": "XLI", "Technology": "XLK",
+            "Consumer Defensive": "XLP", "20+ Yr Treasury": "TLT", "7-10 Yr Treasury": "IEF",
+            "1-3 Yr Treasury": "SHY", "VIX": "^VIX", "Dollar Index": "UUP", "FTSE 100": "EZU",
+            "DAX": "DAX", "CAC 40": "EWQ", "Shanghai Comp": "ASHR", "Hang Seng": "EWH"
         }
 
         # Obtener datos y calcular métricas
@@ -4962,15 +4983,22 @@ def main():
         periods = ["1 Day", "1 Week", "1 Month", "1 Quarter", "1 Year"]
         period_days = {"1 Day": 1, "1 Week": 5, "1 Month": 21, "1 Quarter": 63, "1 Year": 252}
 
-        with st.spinner("Fetching performance data for table..."):
+        with st.spinner("Fetching performance data..."):
+            # Obtener datos del VIX para correlación
+            vix_prices, _ = get_historical_prices_combined("^VIX", limit=21)
+            if len(vix_prices) < 21 or not vix_prices:
+                vix_prices = [20.0] * 21  # Fallback
+                st.warning("Using fallback VIX data (20.0) due to insufficient historical data.")
+
             for name, ticker in assets.items():
                 row = {"Asset": name}
-                
+
                 # Precio actual desde Tradier
                 current_price = get_current_price(ticker)
                 if not isinstance(current_price, (int, float)) or current_price <= 0:
-                    st.warning(f"Invalid current price for {ticker}: {current_price}. Skipping.")
-                    continue
+                    st.warning(f"Invalid current price for {ticker}: {current_price}. Using fallback price 100.0.")
+                    current_price = 100.0
+                row["Current_Price"] = current_price
 
                 # Precios históricos desde FMP
                 url = f"{FMP_BASE_URL}/historical-price-full/{ticker}"
@@ -4980,29 +5008,32 @@ def main():
                     response.raise_for_status()
                     data = response.json()
                     if not data or "historical" not in data:
-                        st.warning(f"No historical data for {ticker}. Skipping.")
-                        continue
-                    historical = sorted(data["historical"], key=lambda x: x["date"])  # Orden ascendente
-                    prices = [float(day["close"]) for day in historical]
-                    volumes = [int(day["volume"]) for day in historical]
+                        st.warning(f"No historical data for {ticker}. Using fallback data.")
+                        prices = [current_price] * 260
+                        volumes = [1000000] * 260
+                    else:
+                        historical = sorted(data["historical"], key=lambda x: x["date"])
+                        prices = [float(day["close"]) for day in historical]
+                        volumes = [int(day["volume"]) for day in historical]
+                        if len(prices) < 260:
+                            st.warning(f"Only {len(prices)} days of data for {ticker}. Padding with current price.")
+                            prices = ([current_price] * (260 - len(prices))) + prices
+                            volumes = ([1000000] * (260 - len(volumes))) + volumes
                 except Exception as e:
-                    st.warning(f"Error fetching historical data for {ticker}: {str(e)}. Skipping.")
-                    continue
-
-                if len(prices) < max(period_days.values()) + 1:
-                    st.warning(f"Insufficient historical data for {ticker} ({len(prices)} days). Skipping.")
-                    continue
+                    st.warning(f"Error fetching historical data for {ticker}: {str(e)}. Using fallback data.")
+                    prices = [current_price] * 260
+                    volumes = [1000000] * 260
 
                 # Calcular rendimientos
                 for period_name, days in period_days.items():
                     if len(prices) > days:
                         initial_price = prices[-(days + 1)]
                         if initial_price <= 0:
-                            row[period_name] = np.nan
+                            row[f"Return_{period_name}"] = np.nan
                         else:
-                            row[period_name] = calculate_performance(initial_price, current_price)
+                            row[f"Return_{period_name}"] = calculate_performance(initial_price, current_price)
                     else:
-                        row[period_name] = np.nan
+                        row[f"Return_{period_name}"] = np.nan
 
                 # Métricas institucionales
                 returns = np.diff(prices) / prices[:-1]
@@ -5012,96 +5043,164 @@ def main():
                 volume_relative = volume_current / volume_avg if volume_avg > 0 else 1.0
                 iv = get_implied_volatility(ticker) or vol_historical
 
-                # Institutional Score (IS)
-                momentum = row.get("1 Month", 0) / vol_historical if vol_historical > 0 else 0
+                # Metric_IS (Institutional Score)
+                momentum = row.get("Return_1 Month", 0) / vol_historical if vol_historical > 0 else 0
                 flow_factor = volume_relative * (iv / vol_historical if vol_historical > 0 else 1)
-                year_return = row.get("1 Year", 0)
+                year_return = row.get("Return_1 Year", 0)
                 is_score = min(100, max(0, (momentum * 30 + flow_factor * 40 + (year_return / vol_historical if vol_historical > 0 else 0) * 30)))
-                row["IS"] = is_score
+                row["Metric_IS"] = is_score
 
-                # Sentimiento (Bullish/Bearish)
-                day_return = row.get("1 Day", 0)
-                week_trend = row.get("1 Week", 0)
+                # Sentiment_Label
+                day_return = row.get("Return_1 Day", 0)
+                week_trend = row.get("Return_1 Week", 0)
                 sentiment_score = (day_return * 0.4 + week_trend * 0.6) * volume_relative
-                row["Sentiment"] = (
+                row["Sentiment_Label"] = (
                     "Bullish" if sentiment_score > 1.0 else
                     "Bearish" if sentiment_score < -1.0 else
                     "Neutral"
                 )
 
-                # Posible Movimiento Diario (Day Move %)
-                vix = get_vix() / 100 if get_vix() is not None else 0.2
+                # Metric_Day_Move (%)
+                vix_val = get_vix()
+                vix = vix_val / 100 if vix_val is not None else 0.2
                 move_factor = iv * (1 + volume_relative * 0.2) * (1 + vix * 0.5)
                 day_move = move_factor * current_price * 0.15
-                row["Day Move (%)"] = round(day_move / current_price * 100, 2) if current_price > 0 else 0.0
+                row["Metric_Day_Move (%)"] = round(day_move / current_price * 100, 2) if current_price > 0 else 0.0
+
+                # Metric_VIX_Correlation
+                if len(prices) >= 21 and len(vix_prices) >= 21:
+                    asset_returns_21d = np.diff(prices[-21:]) / prices[-21:-1]
+                    vix_returns_21d = np.diff(vix_prices[-21:]) / vix_prices[-21:-1]
+                    min_len = min(len(asset_returns_21d), len(vix_returns_21d))
+                    vix_corr = np.corrcoef(asset_returns_21d[:min_len], vix_returns_21d[:min_len])[0, 1] if min_len > 0 else 0.0
+                else:
+                    vix_corr = 0.0
+                row["Metric_VIX_Correlation"] = round(vix_corr, 2)
+
+                # Metric_Risk_Adjusted_Return
+                month_return = row.get("Return_1 Month", 0)
+                risk_adjusted = month_return / vol_historical if vol_historical > 0 else 0.0
+                row["Metric_Risk_Adjusted_Return"] = round(risk_adjusted, 2)
+
+                # Metric_Option_Volume_Spike
+                try:
+                    url_expirations = f"{TRADIER_BASE_URL}/markets/options/expirations"
+                    params_expirations = {"symbol": ticker}
+                    response_exp = session_tradier.get(url_expirations, params=params_expirations, headers=HEADERS_TRADIER, timeout=5)
+                    expirations = response_exp.json().get("expirations", {}).get("date", [])
+                    if not expirations:
+                        raise ValueError("No expirations available")
+                    nearest_expiration = sorted(expirations)[0]
+
+                    url_options = f"{TRADIER_BASE_URL}/markets/options/chains"
+                    params_options = {"symbol": ticker, "expiration": nearest_expiration}
+                    response_options = session_tradier.get(url_options, params=params_options, headers=HEADERS_TRADIER, timeout=5)
+                    options_data = response_options.json()
+                    option_list = options_data.get("options", {}).get("option", [])
+                    current_option_volume = sum(opt.get("volume", 0) for opt in option_list)
+                    avg_option_volume = volume_avg * 0.1  # Proxy
+                    option_spike = current_option_volume / avg_option_volume if avg_option_volume > 0 else volume_relative
+                except Exception as e:
+                    option_spike = volume_relative
+                row["Metric_Option_Volume_Spike"] = round(option_spike, 1)
 
                 performance_data.append(row)
 
             if not performance_data:
-                st.error("No valid data retrieved for table.")
+                st.error("No valid data retrieved for table after processing all assets.")
                 st.stop()
 
             # Crear DataFrame
             df = pd.DataFrame(performance_data)
 
             # Tabla interactiva
-            st.markdown('<div class="main-title">Performance Table Map</div>', unsafe_allow_html=True)
-            st.markdown('<div class="section-header">Returns & Institutional Metrics</div>', unsafe_allow_html=True)
+            st.markdown('<div class="main-title">> PERFORMANCE_MAP_</div>', unsafe_allow_html=True)
+            
 
             def color_performance(val):
                 if pd.isna(val):
-                    return "background-color: #0d1b2a; color: #e0e1dd"
+                    return "background-color: #0F1419; color: #E0E0E0"  # Fondo oscuro, texto blanco grisáceo
                 if val > 1.0:
                     intensity = min(1.0, abs(val) / 10)
-                    return f"background-color: rgba(50, 205, 50, {intensity}); color: #FFFFFF"
+                    return f"background-color: rgba(57, 255, 20, {intensity}); color: #FFFFFF"  # Verde neón
                 elif val < -1.0:
                     intensity = min(1.0, abs(val) / 10)
-                    return f"background-color: rgba(255, 0, 0, {intensity}); color: #FFFFFF"
+                    return f"background-color: rgba(255, 69, 0, {intensity}); color: #FFFFFF"  # Rojo neón
                 else:
-                    return "background-color: rgba(255, 215, 0, 0.6); color: #000000"
+                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"  # Amarillo mostaza
 
             def color_is(val):
                 if pd.isna(val):
-                    return "background-color: #0d1b2a; color: #e0e1dd"
+                    return "background-color: #0F1419; color: #E0E0E0"
                 if val > 80:
-                    return "background-color: rgba(50, 205, 50, 0.8); color: #FFFFFF"
+                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"  # Verde neón
                 elif val > 60:
-                    return "background-color: rgba(255, 215, 0, 0.6); color: #000000"
+                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"  # Amarillo mostaza
                 else:
-                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"
+                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"  # Rojo neón
 
             def color_sentiment(val):
                 if val == "Bullish":
-                    return "background-color: rgba(50, 205, 50, 0.8); color: #FFFFFF"
+                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"  # Verde neón
                 elif val == "Bearish":
-                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"
+                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"  # Rojo neón
                 else:
-                    return "background-color: rgba(255, 215, 0, 0.6); color: #000000"
+                    return "background-color: rgba(0, 255, 255, 0.6); color: #0A0A0A"  # Azul eléctrico
+
+            def color_vix_corr(val):
+                if pd.isna(val):
+                    return "background-color: #0F1419; color: #E0E0E0"
+                if val < -0.5:
+                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"  # Verde neón
+                elif val > 0.5:
+                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"  # Rojo neón
+                else:
+                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"  # Amarillo mostaza
+
+            def color_risk_adj(val):
+                if pd.isna(val):
+                    return "background-color: #0F1419; color: #E0E0E0"
+                if val > 0.2:
+                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"  # Verde neón
+                elif val < -0.2:
+                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"  # Rojo neón
+                else:
+                    return "background-color: rgba(0, 255, 255, 0.6); color: #0A0A0A"  # Azul eléctrico
+
+            def color_option_spike(val):
+                if pd.isna(val):
+                    return "background-color: #0F1419; color: #E0E0E0"
+                if val > 2.0:
+                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"  # Verde neón
+                elif val < 1.0:
+                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"  # Rojo neón
+                else:
+                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"  # Amarillo mostaza
 
             styled_df = df.style.format({
-                "1 Day": "{:.2f}%", "1 Week": "{:.2f}%", "1 Month": "{:.2f}%",
-                "1 Quarter": "{:.2f}%", "1 Year": "{:.2f}%", "IS": "{:.1f}",
-                "Day Move (%)": "{:.2f}%"
-            }, na_rep="N/A").applymap(color_performance, subset=periods + ["Day Move (%)"]).applymap(color_is, subset=["IS"]).applymap(color_sentiment, subset=["Sentiment"]).set_properties(**{
-                "text-align": "center", "border": "2px solid #415a77", "font-family": "Arial, sans-serif", "font-size": "14px", "padding": "12px"
+                "Return_1 Day": "{:.2f}%", "Return_1 Week": "{:.2f}%", "Return_1 Month": "{:.2f}%",
+                "Return_1 Quarter": "{:.2f}%", "Return_1 Year": "{:.2f}%", "Metric_IS": "{:.1f}",
+                "Metric_Day_Move (%)": "{:.2f}%", "Metric_VIX_Correlation": "{:.2f}",
+                "Metric_Risk_Adjusted_Return": "{:.2f}", "Metric_Option_Volume_Spike": "{:.1f}",
+                "Current_Price": "{:.2f}"
+            }, na_rep="N/A").applymap(color_performance, subset=[f"Return_{p}" for p in periods] + ["Metric_Day_Move (%)"]).applymap(color_is, subset=["Metric_IS"]).applymap(color_sentiment, subset=["Sentiment_Label"]).applymap(color_vix_corr, subset=["Metric_VIX_Correlation"]).applymap(color_risk_adj, subset=["Metric_Risk_Adjusted_Return"]).applymap(color_option_spike, subset=["Metric_Option_Volume_Spike"]).set_properties(**{
+                "text-align": "center", "border": "2px solid #39FF14", "font-family": "'Courier New', Courier, monospace", "font-size": "14px", "padding": "12px"
             }).set_table_styles([
-                {"selector": "th", "props": [("background-color", "#1b263b"), ("color", "#e94560"), ("font-weight", "700"), ("text-align", "center"), ("border", "2px solid #415a77"), ("padding", "14px")]}
+                {"selector": "th", "props": [("background-color", "#1A1F2B"), ("color", "#00FFFF"), ("font-weight", "700"), ("text-align", "center"), ("border", "2px solid #39FF14"), ("padding", "14px"), ("font-family", "'Courier New', Courier, monospace")]}
             ])
 
-            # Tabla larga sin scroll
             st.dataframe(styled_df, use_container_width=True, height=1000)
 
-            # Descarga
             csv = df.to_csv(index=False)
             st.download_button(
-                label="📥 Download Table Data",
+                label="> DOWNLOAD_DATA_",
                 data=csv,
                 file_name="performance_table_map.csv",
                 mime="text/csv",
                 key="download_tab12"
             )
 
-            st.markdown("---")
-            st.markdown(f'<div style="text-align: center; font-size: 12px; color: #778da9;">Last Updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | Powered by Ozy Analytics</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="footer-text">> LAST_UPDATED: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | POWERED_BY_OZY_ANALYTICS_</div>', unsafe_allow_html=True)
+
 if __name__ == "__main__":
     main()
