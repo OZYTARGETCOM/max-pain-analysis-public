@@ -3805,7 +3805,7 @@ def main():
                         gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
                         iv = float(greeks.get("smv_vol", 0)) if isinstance(greeks, dict) else 0
                         delta = float(greeks.get("delta", 0)) if isinstance(greeks, dict) else 0
-                        volume = int(opt.get("volume", 0))
+                        volume = int(opt.get("volume", 0) or 0)
                         last = opt.get("last")
                         bid = opt.get("bid")
                         last_price = float(last) if last is not None and isinstance(last, (int, float, str)) else float(bid) if bid is not None and isinstance(bid, (int, float, str)) else 0
@@ -3867,20 +3867,42 @@ def main():
                     fig = go.Figure()
                     call_df = df[df['Type'] == 'CALL']
                     if not call_df.empty:
-                        fig.add_trace(go.Scatter(x=call_df['Strike'], 
-                                               y=call_df['Avg Buy ($)'], 
-                                               mode='markers', name='CALL Buy ($)', 
-                                               marker=dict(size=call_df['Total Buy ($)'] / call_df['Total Buy ($)'].max() * 50, 
-                                                         color='#228B22', opacity=0.7),
-                                               text=call_df['Contract'] + '<br>Total: $' + call_df['Total Buy ($)'].astype(str)))
+                        # Reemplazar NaN con 0 y manejar división por cero
+                        total_buy = call_df['Total Buy ($)'].fillna(0)
+                        max_total_buy = total_buy.max() if total_buy.max() > 0 else 1  # Evitar división por cero
+                        sizes = np.nan_to_num(total_buy / max_total_buy * 50, nan=0, posinf=0, neginf=0)
+                        sizes = np.maximum(sizes, 5)  # Asegurar un tamaño mínimo para visibilidad
+                        fig.add_trace(go.Scatter(
+                            x=call_df['Strike'], 
+                            y=call_df['Avg Buy ($)'], 
+                            mode='markers', 
+                            name='CALL Buy ($)', 
+                            marker=dict(
+                                size=sizes, 
+                                color='#228B22', 
+                                opacity=0.7
+                            ),
+                            text=call_df['Contract'] + '<br>Total: $' + call_df['Total Buy ($)'].astype(str)
+                        ))
                     put_df = df[df['Type'] == 'PUT']
                     if not put_df.empty:
-                        fig.add_trace(go.Scatter(x=put_df['Strike'], 
-                                               y=-put_df['Avg Sell ($)'], 
-                                               mode='markers', name='PUT Sell ($)', 
-                                               marker=dict(size=put_df['Total Sell ($)'] / put_df['Total Sell ($)'].max() * 50, 
-                                                         color='#CD5C5C', opacity=0.7),
-                                               text=put_df['Contract'] + '<br>Total: $' + put_df['Total Sell ($)'].astype(str)))
+                        # Reemplazar NaN con 0 y manejar división por cero
+                        total_sell = put_df['Total Sell ($)'].fillna(0)
+                        max_total_sell = total_sell.max() if total_sell.max() > 0 else 1  # Evitar división por cero
+                        sizes = np.nan_to_num(total_sell / max_total_sell * 50, nan=0, posinf=0, neginf=0)
+                        sizes = np.maximum(sizes, 5)  # Asegurar un tamaño mínimo para visibilidad
+                        fig.add_trace(go.Scatter(
+                            x=put_df['Strike'], 
+                            y=-put_df['Avg Sell ($)'], 
+                            mode='markers', 
+                            name='PUT Sell ($)', 
+                            marker=dict(
+                                size=sizes, 
+                                color='#CD5C5C', 
+                                opacity=0.7
+                            ),
+                            text=put_df['Contract'] + '<br>Total: $' + put_df['Total Sell ($)'].astype(str)
+                        ))
                     if mm_gain > 0:
                         fig.add_trace(go.Scatter(x=[max_pain], 
                                                y=[0], 
