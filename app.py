@@ -179,7 +179,7 @@ if not st.session_state["authenticated"]:
         background-color: #000000;
         display: flex;
         justify-content: center;
-        align-items: flex-start; /* Ajustado para empezar desde arriba */
+        align-items: flex-start;
         min-height: 100vh;
         margin: 0;
         padding: 0;
@@ -191,9 +191,9 @@ if not st.session_state["authenticated"]:
     .login-container {
         padding: 20px;
         text-align: center;
-        margin-top: 25vh; /* Mueve todo más abajo */
-        position: relative; /* Para referencia */
-        z-index: 10; /* Contenedor en primer plano */
+        margin-top: 25vh;
+        position: relative;
+        z-index: 10;
     }
     .login-logo {
         font-size: 18px;
@@ -202,46 +202,52 @@ if not st.session_state["authenticated"]:
         margin-bottom: 15px;
         letter-spacing: 1px;
         position: relative;
-        z-index: 10; /* Texto en primer plano */
+        z-index: 10;
+    }
+    /* Estilo del formulario (el recuadro que rodea el input y botón) */
+    div.stForm {
+        border: 2px solid #39FF14 !important; /* Borde neón verde */
+        border-radius: 5px !important;
+        box-shadow: 0 0 15px rgba(57, 255, 20, 0.5) !important; /* Sombra neón */
+        background: rgba(0, 0, 0, 0.1) !important; /* Fondo ligeramente transparente */
     }
     .login-input {
         background-color: #2D2D2D;
         color: #FFFFFF;
-        border: 2px solid #39FF14 !important; /* Borde neón verde */
+        border: 2px solid #39FF14 !important;
         border-radius: 5px;
-        padding: 3px; /* 50% del original */
-        width: 50px !important; /* 50% del original */
-        font-size: 6px; /* 50% del original */
-        box-shadow: 0 0 15px rgba(57, 255, 20, 0.5); /* Sombra neón */
+        padding: 3px;
+        width: 50px !important;
+        font-size: 6px;
+        box-shadow: 0 0 15px rgba(57, 255, 20, 0.5);
         position: relative;
-        z-index: 10; /* Input en primer plano */
+        z-index: 10;
     }
     .login-button {
         background-color: #FFFFFF;
         color: #000000;
-        padding: 3px 6px; /* 50% del original */
-        border: 2px solid #39FF14 !important; /* Borde neón verde */
+        padding: 3px 6px;
+        border: 2px solid #39FF14 !important;
         border-radius: 5px;
-        font-size: 6px; /* 50% del original */
+        font-size: 6px;
         font-weight: 600;
         cursor: pointer;
         transition: all 0.3s ease;
-        width: 50px !important; /* 50% del original */
-        box-shadow: 0 0 15px rgba(57, 255, 20, 0.5); /* Sombra neón */
+        width: 50px !important;
+        box-shadow: 0 0 15px rgba(57, 255, 20, 0.5);
         position: relative;
-        z-index: 10; /* Botón en primer plano */
+        z-index: 10;
     }
     .login-button:hover {
         background-color: #E0E0E0;
     }
-    /* Efecto hacker para bienvenida */
     .hacker-overlay {
         position: fixed;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.8); /* Transparencia al 80% */
+        background: rgba(0, 0, 0, 0.8);
         display: flex;
         justify-content: center;
         align-items: center;
@@ -250,8 +256,8 @@ if not st.session_state["authenticated"]:
     .hacker-text {
         font-size: 24px;
         font-weight: 700;
-        color: #FFFF00; /* Amarillo neón sólido */
-        text-shadow: 0 0 15px #FFFF00; /* Brillo amarillo sólido */
+        color: #FFFF00;
+        text-shadow: 0 0 15px #FFFF00;
         letter-spacing: 2px;
         position: relative;
         z-index: 10000;
@@ -267,25 +273,20 @@ if not st.session_state["authenticated"]:
     </style>
     """, unsafe_allow_html=True)
 
-    # Contenedor centrado con todo alineado
     col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:  # Columna central para centrado horizontal
+    with col2:
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        # Cuadro neón grande eliminado
         st.markdown('<div class="login-logo">ℙℝ𝕆 𝔼𝕊ℂ𝔸ℕℕ𝔼ℝ®</div>', unsafe_allow_html=True)
 
-        # Formulario para permitir "Enter"
         with st.form(key="login_form"):
             password = st.text_input("", type="password", key="login_input", placeholder="Password")
-            submit_button = st.form_submit_button(label="Log In")  # Sin 'key'
+            submit_button = st.form_submit_button(label="Log In")
 
-            # Autenticación al presionar "Enter" o clic en el botón
             if submit_button:
                 if not password:
                     st.error("❌ Please enter a password.")
                 elif authenticate_password(password):
                     st.session_state["authenticated"] = True
-                    # Efecto hacker de bienvenida
                     st.markdown("""
                     <div class="hacker-overlay" id="hackerOverlay">
                         <canvas class="hacker-canvas" id="hackerCanvas"></canvas>
@@ -297,41 +298,38 @@ if not st.session_state["authenticated"]:
                     canvas.width = window.innerWidth;
                     canvas.height = window.innerHeight;
 
-                    const numbers = 'A1B2C3D4E5F6G7H8I9J0KLMNOP'; // Letras y números como passwords
+                    const numbers = 'A1B2C3D4E5F6G7H8I9J0KLMNOP';
                     const fontSize = 20;
                     const columns = canvas.width / fontSize;
                     const drops = [];
 
-                    // Inicializar posiciones
                     for (let x = 0; x < columns; x++) {
                         drops[x] = Math.random() * canvas.height;
                     }
 
-                    // Animación dinámica en amarillo
                     function drawDynamic() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); // Limpiar para animación
-                        ctx.fillStyle = '#FFFF00'; // Amarillo neón sólido
-                        ctx.shadowBlur = 20; // Brillo intenso
-                        ctx.shadowColor = '#FFFF00'; // Sombra amarilla sólida
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.fillStyle = '#FFFF00';
+                        ctx.shadowBlur = 20;
+                        ctx.shadowColor = '#FFFF00';
                         ctx.font = fontSize + 'px monospace';
 
                         for (let i = 0; i < drops.length; i++) {
                             const text = numbers.charAt(Math.floor(Math.random() * numbers.length));
                             ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-                            drops[i] += 5; // Velocidad rápida
+                            drops[i] += 5;
                             if (drops[i] * fontSize > canvas.height && Math.random() > 0.95) {
-                                drops[i] = -fontSize; // Reiniciar desde arriba
+                                drops[i] = -fontSize;
                             }
                         }
-                        ctx.shadowBlur = 0; // Reseteamos brillo
-                        requestAnimationFrame(drawDynamic); // Animación fluida
+                        ctx.shadowBlur = 0;
+                        requestAnimationFrame(drawDynamic);
                     }
 
-                    // Respaldo estático en verde
                     function drawStatic() {
-                        ctx.fillStyle = '#39FF14'; // Verde neón sólido
-                        ctx.shadowBlur = 20; // Brillo intenso
-                        ctx.shadowColor = '#39FF14'; // Sombra verde sólida
+                        ctx.fillStyle = '#39FF14';
+                        ctx.shadowBlur = 20;
+                        ctx.shadowColor = '#39FF14';
                         ctx.font = fontSize + 'px monospace';
                         for (let i = 0; i < columns; i++) {
                             const text = numbers.charAt(Math.floor(Math.random() * numbers.length));
@@ -339,19 +337,18 @@ if not st.session_state["authenticated"]:
                         }
                     }
 
-                    // Iniciar animación
                     try {
                         drawDynamic();
                     } catch (e) {
-                        drawStatic(); // Respaldo si falla
+                        drawStatic();
                     }
 
                     setTimeout(function() {
                         document.getElementById('hackerOverlay').style.display = 'none';
-                    }, 2000); // Ocultar después de 2 segundos
+                    }, 2000);
                     </script>
                     """, unsafe_allow_html=True)
-                    time.sleep(2)  # Duración del efecto (2 segundos)
+                    time.sleep(2)
                     st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
