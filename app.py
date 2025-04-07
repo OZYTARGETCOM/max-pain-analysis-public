@@ -189,6 +189,8 @@ if not st.session_state["authenticated"]:
         padding: 20px;
         text-align: center;
         margin-top: 25vh; /* Mueve todo más abajo */
+        position: relative; /* Para referencia */
+        z-index: 10; /* Contenedor en primer plano */
     }
     .login-logo {
         font-size: 18px;
@@ -196,6 +198,8 @@ if not st.session_state["authenticated"]:
         color: #FFFFFF;
         margin-bottom: 15px;
         letter-spacing: 1px;
+        position: relative;
+        z-index: 10; /* Texto en primer plano */
     }
     .login-input {
         background-color: #2D2D2D;
@@ -205,6 +209,8 @@ if not st.session_state["authenticated"]:
         padding: 6px;
         width: 100px !important; /* Ancho fijo */
         font-size: 12px;
+        position: relative;
+        z-index: 10; /* Input en primer plano */
     }
     .login-button {
         background-color: #FFFFFF;
@@ -217,9 +223,25 @@ if not st.session_state["authenticated"]:
         cursor: pointer;
         transition: all 0.3s ease;
         width: 100px !important; /* Ancho fijo */
+        position: relative;
+        z-index: 10; /* Botón en primer plano */
     }
     .login-button:hover {
         background-color: #E0E0E0;
+    }
+    /* Cuadro neón como fondo */
+    .neon-box {
+        position: absolute;
+        top: -15px; /* Empieza arriba del título */
+        left: 50%;
+        transform: translateX(-50%);
+        width: 350px; /* Más ancho */
+        height: calc(100% + 260px); /* Altura del contenido + 260px hacia abajo */
+        border: 2px solid #39FF14; /* Verde neón */
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.1); /* 90% transparente */
+        box-shadow: 0 0 15px rgba(57, 255, 20, 0.5); /* Sombra neón */
+        z-index: 0; /* Explícitamente detrás de todo */
     }
     /* Efecto hacker para bienvenida */
     .hacker-overlay {
@@ -258,6 +280,8 @@ if not st.session_state["authenticated"]:
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:  # Columna central para centrado horizontal
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
+        # Cuadro neón como fondo detrás de todo
+        st.markdown('<div class="neon-box"></div>', unsafe_allow_html=True)
         # Subcolumnas para mantener todo estrecho y alineado
         subcol1, subcol2, subcol3 = st.columns([1, 2, 1])
         with subcol2:  # Subcolumna estrecha para alinear todo
@@ -280,14 +304,14 @@ if not st.session_state["authenticated"]:
                     canvas.width = window.innerWidth;
                     canvas.height = window.innerHeight;
 
-                    const numbers = 'A1B2C3D4E5F6G7H8I9J0KLMNOP'; // Letras y números como passwords
+                    const numbers = 'A1B2C3D4E5F6G7H8I9J0KLMNOP'; // ebitas>nasdaq
                     const fontSize = 20;
                     const columns = canvas.width / fontSize;
                     const drops = [];
 
-                    // Inicializar posiciones de evitas markets
+                    // Inicializar posiciones de Ebitas>>Nasdaq
                     for (let x = 0; x < columns; x++) {
-                        drops[x] = Math.random() * canvas.height;
+                        drops[x] nyse= Math.random() * canvas.height;
                     }
 
                     // Intentar animación dinámica en amarillo
@@ -339,6 +363,7 @@ if not st.session_state["authenticated"]:
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 # Resto de la app (sin cambios por ahora)
+########################################################app
 ########################################################app
 ########################################################app
 
@@ -2601,6 +2626,7 @@ def get_intraday_prices(ticker: str, interval: str, hours_back: int) -> Tuple[Li
 # --- Main App ---
 # --- Main App ---
 # --- Main App ---
+# --- Main App ---
 def main():
     # Pantalla de autenticación sin logo
     initialize_passwords_db()
@@ -2724,7 +2750,7 @@ def main():
         </div>
     """, unsafe_allow_html=True)
 
-    # Estilos personalizados con tabs ultra compactos y futuristas en dos líneas
+    # Estilos personalizados con tabs y botones de descarga ultra compactos y futuristas
     st.markdown("""
         <style>
         /* Fondo global negro puro como las gráficas */
@@ -2753,28 +2779,49 @@ def main():
             margin: 2px;
             color: rgba(57, 255, 20, 0.7); /* Verde lima apagado como base */
             background: #000000; /* Negro puro para combinar con el fondo */
-            border: 1px solid rgba(57, 255, 20, 0.3); /* Borde sutil de neón */
+            border: 1px solid rgba(57, 255, 20, 0.15); /* Borde sutil de neón, 50% menos brillante */
             border-radius: 5px;
             font-size: 10px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 1px;
             transition: all 0.3s ease;
-            box-shadow: 0 0 5px rgba(57, 255, 20, 0.2);
+            box-shadow: 0 0 2.5px rgba(57, 255, 20, 0.1); /* Brillo reducido al 50% */
         }
         .stTabs [data-baseweb="tab"]:hover {
             background: #39FF14; /* Verde lima brillante al pasar el ratón */
             color: #1E1E1E;
             transform: translateY(-2px);
-            box-shadow: 0 4px 10px rgba(57, 255, 20, 0.8);
+            box-shadow: 0 4px 5px rgba(57, 255, 20, 0.4); /* Brillo reducido al 50% */
         }
         .stTabs [data-baseweb="tab"][aria-selected="true"] {
             background: #00FFFF; /* Azul neón para tab activo */
             color: #1E1E1E;
             font-weight: 700;
             transform: scale(1.1); /* Se "infla" un poco más */
-            box-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
-            border: 1px solid #00FFFF;
+            box-shadow: 0 0 7.5px rgba(0, 255, 255, 0.4); /* Brillo reducido al 50% */
+            border: 1px solid rgba(0, 255, 255, 0.5); /* Borde menos brillante */
+        }
+        /* Estilo para botones de descarga */
+        .stDownloadButton > button {
+            padding: 5px 10px;
+            margin: 2px;
+            color: rgba(57, 255, 20, 0.7); /* Verde lima apagado como base */
+            background: #000000; /* Negro puro para combinar con el fondo */
+            border: 1px solid rgba(57, 255, 20, 0.15); /* Borde sutil de neón, 50% menos brillante */
+            border-radius: 5px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 2.5px rgba(57, 255, 20, 0.1); /* Brillo reducido al 50% */
+        }
+        .stDownloadButton > button:hover {
+            background: #39FF14; /* Verde lima brillante al pasar el ratón */
+            color: #1E1E1E;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 5px rgba(57, 255, 20, 0.4); /* Brillo reducido al 50% */
         }
         </style>
     """, unsafe_allow_html=True)
@@ -4047,6 +4094,7 @@ def main():
             st.markdown("*Developed by Ozy | © 2025*")
 
     # Tab 8: Crypto Insights
+        # Tab 8: Crypto Insights
     with tab8:
         st.subheader("Crypto Insights")
         
@@ -4064,6 +4112,9 @@ def main():
         if refresh_button or "tab8_initialized" not in st.session_state:
             with st.spinner(f"Fetching data for {selected_pair}..."):
                 try:
+                    # Importar time explícitamente para evitar el error
+                    import time
+                    
                     # Obtener datos de mercado de CoinGecko
                     market_data = fetch_coingecko_data(ticker)
                     if not market_data:
@@ -4110,8 +4161,11 @@ def main():
         st.markdown("*Developed by Ozy | © 2025*")
 
 
-    # Tab 9: Earnings Calendar
+        # Tab 9: Earnings Calendar (Tarjetas HTML con sentimiento mejorado)
     with tab9:
+        st.subheader("Earnings Calendar")
+
+        # Configuración de fechas
         today = datetime.now().date()
         days_to_next_sunday = (6 - today.weekday() + 7) % 7
         if days_to_next_sunday == 0:
@@ -4120,263 +4174,365 @@ def main():
         start_date = today
         end_date = end_of_next_week
 
-        sort_by = st.selectbox("Sort By", ["Date", "Symbol", "Possible Movement", "EPS", "Revenue", "Time"], index=0)
-
-        @st.cache_data
-        def fetch_api_data(url, params, headers, source):
-            try:
-                response = requests.get(url, params=params, headers=headers, timeout=5)
-                response.raise_for_status()
-                logger.info(f"{source} API call successful: {len(response.json())} items")
-                return response.json()
-            except Exception as e:
-                logger.error(f"Error fetching {source} data: {e}")
-                return []
-
-        def get_earnings_calendar(start_date: datetime, end_date: datetime) -> List[Dict]:
+        # Función para obtener datos de la API con caché
+        @st.cache_data(ttl=3600)
+        def fetch_earnings_data(start_date_str: str, end_date_str: str) -> List[Dict]:
             url = f"{FMP_BASE_URL}/earning_calendar"
             params = {
                 "apikey": FMP_API_KEY,
-                "from": start_date.strftime("%Y-%m-%d"),
-                "to": end_date.strftime("%Y-%m-%d")
+                "from": start_date_str,
+                "to": end_date_str
             }
-            data = fetch_api_data(url, params, HEADERS_FMP, "FMP Earnings")
-            if not data or not isinstance(data, list):
-                logger.error(f"No earnings data from FMP: {data}")
-                st.error(f"No earnings data received from FMP: {data}")
+            try:
+                response = session_fmp.get(url, params=params, headers=HEADERS_FMP, timeout=5)
+                response.raise_for_status()
+                data = response.json()
+                logger.info(f"Fetched {len(data)} earnings events from FMP")
+                return data if isinstance(data, list) else []
+            except Exception as e:
+                logger.error(f"Error fetching earnings data: {e}")
                 return []
-            top_stocks = get_top_traded_stocks()
-            earnings = []
-            for item in data:
-                symbol = item.get("symbol", "")
-                event_date = item.get("date", "")
+
+        # Función para obtener VIX
+        @st.cache_data(ttl=3600)
+        def get_vix() -> float:
+            url = f"{FMP_BASE_URL}/quote/^VIX"
+            params = {"apikey": FMP_API_KEY}
+            data = fetch_api_data(url, params, HEADERS_FMP, "VIX")
+            return float(data[0]["price"]) if data and isinstance(data, list) and "price" in data[0] else 20.0
+
+        # Función para calcular Possible Movement como Earnings Whispers
+        def calculate_possible_movement_batch(event_batch: List[Dict]) -> List[Dict]:
+            vix = get_vix()
+            for event in event_batch:
+                symbol = event.get("symbol", "")
+                eps_est = event.get("epsEstimated", 0)
+                revenue_est = event.get("revenueEstimated", 0)
+                time = event.get("time", "N/A").lower()
+
+                # Inicializar con valores por defecto
+                event["Possible Movement (%)"] = 1.0
+                event["Direction"] = "N/A"
+
+                if eps_est is None or revenue_est is None:
+                    continue
+
+                try:
+                    revenue_est = float(revenue_est)
+                except (ValueError, TypeError):
+                    revenue_est = 0
+
+                # Precio actual
+                current_price = get_current_price(symbol) or 100.0
+
+                # Straddle ATM (método Earnings Whispers)
+                expiration_dates = get_expiration_dates(symbol)
+                straddle_price = 0.0
+                if expiration_dates:
+                    options_data = get_options_data(symbol, expiration_dates[0])
+                    if options_data:
+                        strikes = [float(opt["strike"]) for opt in options_data]
+                        atm_strike = min(strikes, key=lambda x: abs(x - current_price))
+                        call = next((opt for opt in options_data if float(opt["strike"]) == atm_strike and opt["option_type"].lower() == "call"), None)
+                        put = next((opt for opt in options_data if float(opt["strike"]) == atm_strike and opt["option_type"].lower() == "put"), None)
+                        if call and put:
+                            call_price = (float(call.get("bid", 0)) + float(call.get("ask", 0))) / 2
+                            put_price = (float(put.get("bid", 0)) + float(put.get("ask", 0))) / 2
+                            straddle_price = call_price + put_price
+                        else:
+                            iv = get_implied_volatility(symbol) or 0.3
+                            straddle_price = current_price * iv * math.sqrt(1/252) * 2
+                    else:
+                        iv = get_implied_volatility(symbol) or 0.3
+                        straddle_price = current_price * iv * math.sqrt(1/252) * 2
+                else:
+                    iv = get_implied_volatility(symbol) or 0.3
+                    straddle_price = current_price * iv * math.sqrt(1/252) * 2
+
+                # Implied Move puro de Earnings Whispers
+                implied_move = (straddle_price / current_price) * 100
+                event["Possible Movement (%)"] = round(max(1.0, implied_move), 2)
+
+                # Dirección simplificada basada en EPS y VIX
+                if eps_est > 0:
+                    direction = "Up"
+                elif eps_est < 0:
+                    direction = "Down"
+                else:
+                    direction = "Neutral"
+                
+                if vix > 30 and direction != "Up":
+                    direction = "Down" if direction == "Neutral" else direction
+                
+                event["Direction"] = direction
+
+            return event_batch
+
+        # Función mejorada para obtener el sentimiento de noticias
+        @st.cache_data(ttl=300)
+        def get_news_sentiment(ticker: str) -> str:
+            keywords = [ticker]
+            news = fetch_google_news(keywords)
+            if not news:
+                logger.warning(f"No news found for {ticker}")
+                return "Neutral"
+            
+            # Lista de palabras clave para sentimiento
+            positive_words = ["up", "rise", "gain", "bullish", "strong", "profit", "growth", "beat", "positive"]
+            negative_words = ["down", "fall", "drop", "bearish", "weak", "loss", "decline", "miss", "negative"]
+            
+            sentiment_score = 0
+            total_articles = len(news)
+            for article in news:
+                title = article["title"].lower()
+                positive_count = sum(1 for word in positive_words if word in title)
+                negative_count = sum(1 for word in negative_words if word in title)
+                article_sentiment = positive_count - negative_count
+                sentiment_score += article_sentiment
+            
+            # Normalizar el puntaje (de -1 a 1)
+            if total_articles > 0:
+                normalized_score = sentiment_score / total_articles
+                sentiment = max(0, min(1, 0.5 + normalized_score / 5))  # Escala ajustada para mayor sensibilidad
+                if sentiment > 0.6:
+                    return "Alcista"
+                elif sentiment < 0.4:
+                    return "Bajista"
+                else:
+                    return "Neutral"
+            return "Neutral"
+
+        # Lista extendida de acciones
+        additional_stocks = {
+            "CL", "CALM", "MAMA", "LEVY", "PLAY", "GBX", "TLRY", "WBA", "RPM", "WDFC", 
+            "AEHR", "KRUS", "KRMN", "DAL", "SMPL", "STZ", "LAKE", "JPM", "KMX", "LOVE", 
+            "BLK", "WFC", "BK", "MS", "FAST"
+        }
+
+        # Obtener y procesar datos
+        with st.spinner(f"Fetching earnings from {start_date} to {end_date}..."):
+            earnings_data = fetch_earnings_data(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
+            if not earnings_data:
+                st.info("No earnings data available for the selected period.")
+                st.stop()
+
+            # Filtrar por acciones más comunes + las proporcionadas
+            top_stocks = get_top_traded_stocks().union(additional_stocks)
+            logger.info(f"Filtering for top stocks plus extras: {len(top_stocks)} symbols")
+            earnings_events = [event for event in earnings_data if event.get("symbol", "") in top_stocks]
+
+            # Procesar eventos en paralelo
+            batch_size = 10
+            event_batches = [earnings_events[i:i + batch_size] for i in range(0, len(earnings_events), batch_size)]
+            processed_events = []
+
+            with ThreadPoolExecutor(max_workers=min(8, len(event_batches))) as executor:
+                futures = [executor.submit(calculate_possible_movement_batch, batch) for batch in event_batches]
+                for future in futures:
+                    processed_events.extend(future.result())
+
+            # Formatear eventos con sentimiento
+            formatted_events = []
+            for event in processed_events:
+                symbol = event.get("symbol", "")
+                event_date = event.get("date", "")
                 try:
                     event_date_obj = datetime.strptime(event_date, "%Y-%m-%d").date()
                     if not (start_date <= event_date_obj <= end_date):
                         continue
                 except ValueError:
                     continue
-                eps_est = item.get("epsEstimated")
-                revenue_est = item.get("revenueEstimated")
-                time = item.get("time", "N/A").lower()
-                try:
-                    revenue_est = float(revenue_est) if revenue_est is not None else 0
-                except (ValueError, TypeError):
-                    revenue_est = 0
+
+                eps_est = event.get("epsEstimated", 0)
+                revenue_est = event.get("revenueEstimated", 0)
+                time = event.get("time", "N/A").lower()
+
                 if eps_est is None or revenue_est < 1_000_000:
                     continue
-                
-                if time == "bmo":
-                    time_display = "Pre-Market"
-                    time_factor = 1.0
-                    time_sort_value = 0
-                elif time == "amc":
-                    time_display = "After-Market"
-                    time_factor = 1.3
-                    time_sort_value = 1
-                else:
-                    time_display = "N/A"
-                    time_factor = 0.7
-                    time_sort_value = 2
 
-                base_volatility = 6.5
-                volatility_factor = 12 * (1 + math.tanh(abs(eps_est) - 1))
-                eps_relevance = abs(eps_est) / (revenue_est / 1_000_000_000 + 0.1)
-                eps_impact = abs(eps_est) * volatility_factor * eps_relevance
-                size_adjustment = 1 / (math.log10(revenue_est / 1_000_000 + 1) / 4 if revenue_est > 0 else 1)
-                market_sensitivity = 0.9 + 0.2 * (1 - math.exp(-abs(eps_est)))
-                movement = (base_volatility + eps_impact) * size_adjustment * time_factor * market_sensitivity
-                movement = max(5.0, min(40.0, movement))
+                time_display = "Pre-Market" if time == "bmo" else "After-Market" if time == "amc" else "N/A"
+                sentiment = get_news_sentiment(symbol)
 
-                earnings.append({
+                formatted_events.append({
                     "Date": event_date,
                     "Time": time_display,
-                    "TimeSortValue": time_sort_value,
                     "Symbol": symbol,
-                    "Details": f"EPS: {eps_est:.2f} | Rev: ${revenue_est / 1_000_000:,.1f}M",
+                    "Details": f"EPS: {eps_est:.2f} | Rev: ${revenue_est / 1_000_000:,.1f}M | Dir: {event.get('Direction', 'N/A')} | Sent: {sentiment}",
                     "Logo": fetch_logo_url(symbol),
-                    "Possible Movement (%)": round(movement, 2),
+                    "Possible Movement (%)": event["Possible Movement (%)"],
                     "EPS": eps_est,
                     "Revenue": revenue_est,
-                    "IsTopStock": symbol in top_stocks
+                    "Sentiment": sentiment,
+                    "IsTopStock": True
                 })
-            logger.info(f"Processed {len(earnings)} earnings events")
-            if not earnings:
-                logger.warning("No earnings events after filtering")
-            
-            if sort_by == "Possible Movement":
-                earnings.sort(key=lambda x: x["Possible Movement (%)"], reverse=True)
-            elif sort_by == "EPS":
-                earnings.sort(key=lambda x: x["EPS"], reverse=True)
-            elif sort_by == "Revenue":
-                earnings.sort(key=lambda x: x["Revenue"], reverse=True)
-            elif sort_by == "Symbol":
-                earnings.sort(key=lambda x: x["Symbol"])
-            elif sort_by == "Time":
-                earnings.sort(key=lambda x: (x["TimeSortValue"], x["Date"]))
-            else:
-                earnings.sort(key=lambda x: x["Date"])
-            return earnings
 
-        with st.spinner(f"Fetching earnings from {start_date} to {end_date}..."):
-            earnings_events = get_earnings_calendar(start_date, end_date)
-            logger.info(f"Finished fetching: {len(earnings_events)} events retrieved")
+            # Ordenar eventos solo por Date
+            if formatted_events:
+                formatted_events.sort(key=lambda x: x["Date"])
 
-        if earnings_events:
-            grouped_events = group_by_day_of_week(earnings_events, start_date, end_date)
-            earnings_html = """
-            <style>
-                .earnings-container {
-                    width: 100%;
-                    background: linear-gradient(135deg, #1E1E1E, #2A2A2A);
-                    padding: 20px;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-                    overflow-y: auto;
-                    max-height: 600px;
-                }
-                .date-section {
-                    margin-bottom: 20px;
-                }
-                .date-header {
-                    background-color: #2D2D2D;
-                    color: #32CD32;
-                    padding: 10px;
-                    font-size: 18px;
-                    font-weight: 600;
-                    text-align: center;
-                    border-radius: 5px;
-                    cursor: default;
-                }
-                .cards-container {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 20px;
-                    padding: 10px;
-                }
-                .earning-card {
-                    width: 300px;
-                    background: linear-gradient(145deg, #252525, #303030);
-                    border: 1px solid #555555;
-                    border-radius: 10px;
-                    padding: 15px;
-                    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-                    transition: transform 0.3s ease, box-shadow 0.3s ease;
-                    position: relative;
-                    overflow: hidden;
-                }
-                .earning-card.top-stock {
-                    border: 2px solid #FFD700;
-                    background: linear-gradient(145deg, #303030, #404040);
-                }
-                .earning-card:hover {
-                    transform: translateY(-5px) scale(1.05);
-                    box-shadow: 0 10px 25px rgba(50, 205, 50, 0.2);
-                }
-                .earning-card img {
-                    width: 80px;
-                    height: 80px;
-                    object-fit: contain;
-                    border-radius: 50%;
-                    margin: 0 auto;
-                    display: block;
-                }
-                .earning-card .info {
-                    color: #FFFFFF;
-                    font-size: 14px;
-                    text-align: center;
-                    margin-top: 10px;
-                }
-                .earning-card .info .symbol {
-                    font-size: 18px;
-                    font-weight: 600;
-                    color: #32CD32;
-                }
-                .earning-card .info .highlight {
-                    color: #FFD700;
-                }
-                .tooltip {
-                    visibility: hidden;
-                    width: 250px;
-                    background: #2D2D2D;
-                    color: #FFFFFF;
-                    text-align: left;
-                    border-radius: 6px;
-                    padding: 10px;
-                    position: absolute;
-                    z-index: 1;
-                    top: 100%;
-                    left: 50%;
-                    margin-left: -125px;
-                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-                    font-size: 12px;
-                }
-                .earning-card:hover .tooltip {
-                    visibility: visible;
-                }
-            </style>
-            <div class="earnings-container">
-            """
+                # Agrupar por día
+                grouped_events = group_by_day_of_week(formatted_events, start_date, end_date)
+                logger.info(f"Grouped {len(formatted_events)} events into {len(grouped_events)} days")
 
-            if not grouped_events:
-                earnings_html += "<p style='color: #FFFFFF; text-align: center;'>No events to display for the selected period.</p>"
-            else:
-                for day, events in grouped_events.items():
-                    earnings_html += f"""
-                    <div class="date-section">
-                        <div class="date-header">{day}</div>
-                        <div class="cards-container">
-                    """
-                    for event in events:
-                        class_name = "earning-card top-stock" if event["IsTopStock"] else "earning-card"
-                        logo = f'<img src="{event.get("Logo", "")}" alt="{event.get("Symbol", "N/A")}">'
-                        tooltip = f"""
-                            <div class="tooltip">
-                                <b>Date:</b> {event["Date"]}<br>
-                                <b>Time:</b> {event["Time"]}<br>
-                                <b>Symbol:</b> {event["Symbol"]}<br>
-                                <b>EPS:</b> {event["EPS"]:.2f}<br>
-                                <b>Revenue:</b> ${event["Revenue"] / 1_000_000:,.1f}M<br>
-                                <b>Possible Movement:</b> {event["Possible Movement (%)"]}%
-                            </div>
-                        """
+                # Renderizar HTML sin subsecciones
+                earnings_html = """
+                <style>
+                    .earnings-container {
+                        width: 100%;
+                        background: linear-gradient(135deg, #1E1E1E, #2A2A2A);
+                        padding: 20px;
+                        border-radius: 10px;
+                        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+                        overflow-y: auto;
+                        max-height: 600px;
+                    }
+                    .date-section {
+                        margin-bottom: 20px;
+                    }
+                    .date-header {
+                        background-color: #2D2D2D;
+                        color: #32CD32;
+                        padding: 10px;
+                        font-size: 18px;
+                        font-weight: 600;
+                        text-align: center;
+                        border-radius: 5px;
+                        cursor: default;
+                    }
+                    .cards-container {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 20px;
+                        padding: 10px;
+                    }
+                    .earning-card {
+                        width: 300px;
+                        border-radius: 10px;
+                        padding: 15px;
+                        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+                        transition: transform 0.3s ease, box-shadow 0.3s ease;
+                        position: relative;
+                        overflow: hidden;
+                    }
+                    .earning-card.pre-market {
+                        background: linear-gradient(145deg, #3C1A1A, #5C2A2A);
+                        border: 2px solid #FF4500;
+                    }
+                    .earning-card.after-market {
+                        background: linear-gradient(145deg, #1A2A3C, #2A3C5C);
+                        border: 2px solid #1E90FF;
+                    }
+                    .earning-card:hover {
+                        transform: translateY(-5px) scale(1.05);
+                        box-shadow: 0 10px 25px rgba(50, 205, 50, 0.2);
+                    }
+                    .earning-card img {
+                        width: 80px;
+                        height: 80px;
+                        object-fit: contain;
+                        border-radius: 50%;
+                        margin: 0 auto;
+                        display: block;
+                    }
+                    .earning-card .info {
+                        color: #FFFFFF;
+                        font-size: 14px;
+                        text-align: center;
+                        margin-top: 10px;
+                    }
+                    .earning-card .info .symbol {
+                        font-size: 18px;
+                        font-weight: 600;
+                        color: #32CD32;
+                    }
+                    .earning-card .info .highlight {
+                        color: #FFD700;
+                    }
+                    .tooltip {
+                        visibility: hidden;
+                        width: 250px;
+                        background: #2D2D2D;
+                        color: #FFFFFF;
+                        text-align: left;
+                        border-radius: 6px;
+                        padding: 10px;
+                        position: absolute;
+                        z-index: 1;
+                        top: 100%;
+                        left: 50%;
+                        margin-left: -125px;
+                        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+                        font-size: 12px;
+                    }
+                    .earning-card:hover .tooltip {
+                        visibility: visible;
+                    }
+                </style>
+                <div class="earnings-container">
+                """
+
+                if not grouped_events:
+                    earnings_html += "<p style='color: #FFFFFF; text-align: center;'>No events to display for the selected period.</p>"
+                else:
+                    for day, events in grouped_events.items():
                         earnings_html += f"""
-                            <div class="{class_name}">
-                                {logo}
-                                <div class="info">
-                                    <div class="symbol">{event["Symbol"]}</div>
-                                    <div>{event["Time"]}</div>
-                                    <div>{event["Details"]}</div>
-                                    <div class="highlight">Move: {event["Possible Movement (%)"]}%</div>
-                                    {tooltip}
-                                </div>
-                            </div>
+                        <div class="date-section">
+                            <div class="date-header">{day}</div>
+                            <div class="cards-container">
                         """
-                    earnings_html += """
+                        for event in events:
+                            class_name = "earning-card pre-market" if event["Time"] == "Pre-Market" else "earning-card after-market" if event["Time"] == "After-Market" else "earning-card"
+                            logo = f'<img src="{event.get("Logo", "")}" alt="{event.get("Symbol", "N/A")}">'
+                            tooltip = f"""
+                                <div class="tooltip">
+                                    <b>Date:</b> {event["Date"]}<br>
+                                    <b>Time:</b> {event["Time"]}<br>
+                                    <b>Symbol:</b> {event["Symbol"]}<br>
+                                    <b>EPS:</b> {event["EPS"]:.2f}<br>
+                                    <b>Revenue:</b> ${event["Revenue"] / 1_000_000:,.1f}M<br>
+                                    <b>Possible Movement:</b> {event["Possible Movement (%)"]}%<br>
+                                    <b>Direction:</b> {event.get("Direction", "N/A")}<br>
+                                    <b>Sentiment:</b> {event["Sentiment"]}
+                                </div>
+                            """
+                            earnings_html += f"""
+                                <div class="{class_name}">
+                                    {logo}
+                                    <div class="info">
+                                        <div class="symbol">{event["Symbol"]}</div>
+                                        <div>{event["Time"]}</div>
+                                        <div>{event["Details"]}</div>
+                                        <div class="highlight">Move: {event["Possible Movement (%)"]}%</div>
+                                        {tooltip}
+                                    </div>
+                                </div>
+                            """
+                        earnings_html += """
+                            </div>
                         </div>
-                    </div>
-                    """
+                        """
 
-            earnings_html += """
-            </div>
-            """
+                earnings_html += """
+                </div>
+                """
 
-            components.html(earnings_html, height=600, scrolling=True)
+                components.html(earnings_html, height=600, scrolling=True)
 
-            earnings_csv = pd.DataFrame(earnings_events).drop(columns=["Logo", "EPS", "Revenue", "TimeSortValue", "IsTopStock"], errors="ignore").to_csv(index=False)
-            st.download_button(
-                label="📥 Download Earnings Calendar",
-                data=earnings_csv,
-                file_name=f"earnings_calendar_{start_date}_to_{end_date}.csv",
-                mime="text/csv",
-                key="download_earnings_tab9"
-            )
-        else:
-            st.info(f"No earnings events found from {start_date} to {end_date}. Check logs for details.")
-            logger.warning("No earnings events retrieved or processed")
-        
-        st.markdown("---")
-        st.markdown("*Developed by Ozy | © 2025*")
+                # Descarga de datos
+                earnings_csv = pd.DataFrame(formatted_events).drop(columns=["Logo", "EPS", "Revenue", "IsTopStock"], errors="ignore").to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Earnings Calendar",
+                    data=earnings_csv,
+                    file_name=f"earnings_calendar_{start_date}_to_{end_date}.csv",
+                    mime="text/csv",
+                    key="download_earnings_tab9"
+                )
+            else:
+                st.info(f"No earnings events found from {start_date} to {end_date} for top traded stocks.")
+                logger.warning("No earnings events retrieved or processed for top stocks")
+
+            st.markdown("---")
+            st.markdown("*Developed by Ozy | © 2025*")
 
     # Tab 10: Psychological Edge
     with tab10:
@@ -4679,7 +4835,8 @@ def main():
                 lti = (oi_below / oi_above if oi_above > 0 else 1.0) * (current_price - vwap_daily) / (iv * beta) if (iv * beta) != 0 else 0
 
                 event_factor = 1.5 if fetch_api_data(f"{FMP_BASE_URL}/economic-calendar", {"apikey": FMP_API_KEY, "from": datetime.now().strftime("%Y-%m-%d"), "to": (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")}, HEADERS_FMP, "Events") else 1.0
-                earnings_data = get_earnings_calendar(datetime.now().date(), datetime.now().date() + timedelta(days=5))
+                # Usar fetch_earnings_data en lugar de get_earnings_calendar
+                earnings_data = fetch_earnings_data(datetime.now().strftime("%Y-%m-%d"), (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d"))
                 earnings_factor = 1.8 if any(e.get("date") and datetime.strptime(e["date"], "%Y-%m-%d").date() <= (datetime.now().date() + timedelta(days=5)) for e in earnings_data) else 1.0
                 skew_impact = skew + 0.1
                 eaem = iv * current_price * (1 + abs(gamma_exposure)) * event_factor * skew_impact * earnings_factor * 0.15
