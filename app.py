@@ -164,6 +164,9 @@ def authenticate_password(input_password):
 
 # Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con todo alineado
 # Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con efecto hacker dinámico
+# Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con efecto hacker dinámico
+# Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con efecto hacker dinámico
+# Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con efecto hacker dinámico
 initialize_passwords_db()
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -204,44 +207,32 @@ if not st.session_state["authenticated"]:
     .login-input {
         background-color: #2D2D2D;
         color: #FFFFFF;
-        border: 1px solid #FFFFFF;
+        border: 2px solid #39FF14 !important; /* Borde neón verde */
         border-radius: 5px;
-        padding: 6px;
-        width: 100px !important; /* Ancho fijo */
-        font-size: 12px;
+        padding: 3px; /* 50% del original */
+        width: 50px !important; /* 50% del original */
+        font-size: 6px; /* 50% del original */
+        box-shadow: 0 0 15px rgba(57, 255, 20, 0.5); /* Sombra neón */
         position: relative;
         z-index: 10; /* Input en primer plano */
     }
     .login-button {
         background-color: #FFFFFF;
         color: #000000;
-        padding: 6px 12px;
-        border: none;
+        padding: 3px 6px; /* 50% del original */
+        border: 2px solid #39FF14 !important; /* Borde neón verde */
         border-radius: 5px;
-        font-size: 12px;
+        font-size: 6px; /* 50% del original */
         font-weight: 600;
         cursor: pointer;
         transition: all 0.3s ease;
-        width: 100px !important; /* Ancho fijo */
+        width: 50px !important; /* 50% del original */
+        box-shadow: 0 0 15px rgba(57, 255, 20, 0.5); /* Sombra neón */
         position: relative;
         z-index: 10; /* Botón en primer plano */
     }
     .login-button:hover {
         background-color: #E0E0E0;
-    }
-    /* Cuadro neón como fondo */
-    .neon-box {
-        position: absolute;
-        top: -15px; /* Empieza arriba del título */
-        left: 50%;
-        transform: translateX(-50%);
-        width: 350px; /* Más ancho */
-        height: calc(100% + 260px); /* Altura del contenido + 260px hacia abajo */
-        border: 2px solid #39FF14; /* Verde neón */
-        border-radius: 10px;
-        background: rgba(0, 0, 0, 0.1); /* 90% transparente */
-        box-shadow: 0 0 15px rgba(57, 255, 20, 0.5); /* Sombra neón */
-        z-index: 0; /* Explícitamente detrás de todo */
     }
     /* Efecto hacker para bienvenida */
     .hacker-overlay {
@@ -276,23 +267,25 @@ if not st.session_state["authenticated"]:
     </style>
     """, unsafe_allow_html=True)
 
-    # Contenedor sin fondo, centrado y más abajo, con todo alineado
+    # Contenedor centrado con todo alineado
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:  # Columna central para centrado horizontal
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        # Cuadro neón como fondo detrás de todo
-        st.markdown('<div class="neon-box"></div>', unsafe_allow_html=True)
-        # Subcolumnas para mantener todo estrecho y alineado
-        subcol1, subcol2, subcol3 = st.columns([1, 2, 1])
-        with subcol2:  # Subcolumna estrecha para alinear todo
-            st.markdown('<div class="login-logo">ℙℝ𝕆 𝔼𝕊ℂ𝔸ℕℕ𝔼ℝ®</div>', unsafe_allow_html=True)
+        # Cuadro neón grande eliminado
+        st.markdown('<div class="login-logo">ℙℝ𝕆 𝔼𝕊ℂ𝔸ℕℕ𝔼ℝ®</div>', unsafe_allow_html=True)
+
+        # Formulario para permitir "Enter"
+        with st.form(key="login_form"):
             password = st.text_input("", type="password", key="login_input", placeholder="Password")
-            if st.button("Log In", key="login_button"):
+            submit_button = st.form_submit_button(label="Log In")  # Sin 'key'
+
+            # Autenticación al presionar "Enter" o clic en el botón
+            if submit_button:
                 if not password:
                     st.error("❌ Please enter a password.")
                 elif authenticate_password(password):
                     st.session_state["authenticated"] = True
-                    # Efecto hacker de bienvenida con JavaScript (amarillo dinámico o verde estático como respaldo)
+                    # Efecto hacker de bienvenida
                     st.markdown("""
                     <div class="hacker-overlay" id="hackerOverlay">
                         <canvas class="hacker-canvas" id="hackerCanvas"></canvas>
@@ -304,20 +297,20 @@ if not st.session_state["authenticated"]:
                     canvas.width = window.innerWidth;
                     canvas.height = window.innerHeight;
 
-                    const numbers = 'A1B2C3D4E5F6G7H8I9J0KLMNOP'; // ebitas>nasdaq
+                    const numbers = 'A1B2C3D4E5F6G7H8I9J0KLMNOP'; // Letras y números como passwords
                     const fontSize = 20;
                     const columns = canvas.width / fontSize;
                     const drops = [];
 
-                    // Inicializar posiciones de Ebitas>>Nasdaq
+                    // Inicializar posiciones
                     for (let x = 0; x < columns; x++) {
-                        drops[x] nyse= Math.random() * canvas.height;
+                        drops[x] = Math.random() * canvas.height;
                     }
 
-                    // Intentar animación dinámica en amarillo
+                    // Animación dinámica en amarillo
                     function drawDynamic() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height); // Limpiar para animación
-                        ctx.fillStyle = '#FFFF00'; // Amarillo neón fosforescente sólido
+                        ctx.fillStyle = '#FFFF00'; // Amarillo neón sólido
                         ctx.shadowBlur = 20; // Brillo intenso
                         ctx.shadowColor = '#FFFF00'; // Sombra amarilla sólida
                         ctx.font = fontSize + 'px monospace';
@@ -334,9 +327,9 @@ if not st.session_state["authenticated"]:
                         requestAnimationFrame(drawDynamic); // Animación fluida
                     }
 
-                    // Respaldo estático en verde si la animación falla
+                    // Respaldo estático en verde
                     function drawStatic() {
-                        ctx.fillStyle = '#39FF14'; // Verde neón fosforescente sólido
+                        ctx.fillStyle = '#39FF14'; // Verde neón sólido
                         ctx.shadowBlur = 20; // Brillo intenso
                         ctx.shadowColor = '#39FF14'; // Sombra verde sólida
                         ctx.font = fontSize + 'px monospace';
@@ -346,7 +339,7 @@ if not st.session_state["authenticated"]:
                         }
                     }
 
-                    // Iniciar animación dinámica o estática como respaldo
+                    // Iniciar animación
                     try {
                         drawDynamic();
                     } catch (e) {
@@ -360,10 +353,9 @@ if not st.session_state["authenticated"]:
                     """, unsafe_allow_html=True)
                     time.sleep(2)  # Duración del efecto (2 segundos)
                     st.rerun()
+
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
-# Resto de la app (sin cambios por ahora)
-########################################################app
 ########################################################app
 ########################################################app
 
