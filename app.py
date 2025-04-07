@@ -5065,26 +5065,44 @@ def main():
                 text-shadow: 0 0 5px rgba(57, 255, 20, 0.8); 
                 font-family: 'Courier New', Courier, monospace;
             }
+            /* Estilos para el contenedor de la tabla */
+            div[data-testid="stTable"] {
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow-x: auto !important;
+            }
             /* Estilos para la tabla con mayor especificidad */
+            div[data-testid="stTable"] table.tab12-table {
+                width: 100% !important;
+                max-width: 100% !important;
+                table-layout: fixed !important; /* Forzar el ancho de las columnas */
+                border-collapse: collapse !important;
+            }
             div[data-testid="stTable"] table.tab12-table th {
                 background-color: #1A1F2B !important;
                 color: #00FFFF !important; /* Azul eléctrico */
                 font-weight: 700 !important;
-                padding: 14px !important;
+                padding: 6px !important; /* Reducido para compactar */
                 border: 2px solid #39FF14 !important; /* Verde neón */
                 text-transform: uppercase !important;
-                font-size: 14px !important;
+                font-size: 10px !important; /* Reducido para compactar */
                 font-family: 'Courier New', Courier, monospace !important;
                 text-shadow: 0 0 3px rgba(0, 255, 255, 0.5) !important;
+                line-height: 1 !important; /* Reducir espaciado vertical */
+                overflow-wrap: break-word !important; /* Permitir división de texto */
+                word-wrap: break-word !important;
             }
             div[data-testid="stTable"] table.tab12-table td {
                 background-color: #0F1419 !important;
                 color: #E0E0E0 !important; /* Blanco grisáceo */
-                padding: 12px !important;
+                padding: 4px !important; /* Reducido para compactar */
                 border: 2px solid #39FF14 !important; /* Verde neón */
                 text-align: center !important;
                 font-family: 'Courier New', Courier, monospace !important;
-                font-size: 14px !important;
+                font-size: 10px !important; /* Reducido para compactar */
+                line-height: 1 !important; /* Reducir espaciado vertical */
+                overflow-wrap: break-word !important; /* Permitir división de texto */
+                word-wrap: break-word !important;
             }
             /* Botón de descarga con estilo hacker */
             .stDownloadButton button {
@@ -5126,8 +5144,8 @@ def main():
 
         # Obtener datos y calcular métricas
         performance_data = []
-        periods = ["1 Day", "1 Week", "1 Month", "1 Quarter", "1 Year"]
-        period_days = {"1 Day": 1, "1 Week": 5, "1 Month": 21, "1 Quarter": 63, "1 Year": 252}
+        periods = ["1D", "1W", "1M", "1Q", "1Y"]  # Abreviados para las claves
+        period_days = {"1D": 1, "1W": 5, "1M": 21, "1Q": 63, "1Y": 252}
 
         with st.spinner("Fetching performance data..."):
             # Obtener datos del VIX para correlación
@@ -5144,7 +5162,7 @@ def main():
                 if not isinstance(current_price, (int, float)) or current_price <= 0:
                     st.warning(f"Invalid current price for {ticker}: {current_price}. Using fallback price 100.0.")
                     current_price = 100.0
-                row["Current_Price"] = current_price
+                row["Price"] = current_price  # Abreviado de Current_Price a Price
 
                 # Precios históricos desde FMP
                 url = f"{FMP_BASE_URL}/historical-price-full/{ticker}"
@@ -5175,11 +5193,11 @@ def main():
                     if len(prices) > days:
                         initial_price = prices[-(days + 1)]
                         if initial_price <= 0:
-                            row[f"Return_{period_name}"] = np.nan
+                            row[f"{period_name}_Ret"] = np.nan
                         else:
-                            row[f"Return_{period_name}"] = calculate_performance(initial_price, current_price)
+                            row[f"{period_name}_Ret"] = calculate_performance(initial_price, current_price)
                     else:
-                        row[f"Return_{period_name}"] = np.nan
+                        row[f"{period_name}_Ret"] = np.nan
 
                 # Métricas institucionales
                 returns = np.diff(prices) / prices[:-1]
@@ -5190,28 +5208,28 @@ def main():
                 iv = get_implied_volatility(ticker) or vol_historical
 
                 # Metric_IS (Institutional Score)
-                momentum = row.get("Return_1 Month", 0) / vol_historical if vol_historical > 0 else 0
+                momentum = row.get("1M_Ret", 0) / vol_historical if vol_historical > 0 else 0
                 flow_factor = volume_relative * (iv / vol_historical if vol_historical > 0 else 1)
-                year_return = row.get("Return_1 Year", 0)
+                year_return = row.get("1Y_Ret", 0)
                 is_score = min(100, max(0, (momentum * 30 + flow_factor * 40 + (year_return / vol_historical if vol_historical > 0 else 0) * 30)))
-                row["Metric_IS"] = is_score
+                row["Inst_Score"] = is_score  # Abreviado de Metric_IS a Inst_Score
 
                 # Sentiment_Label
-                day_return = row.get("Return_1 Day", 0)
-                week_trend = row.get("Return_1 Week", 0)
+                day_return = row.get("1D_Ret", 0)
+                week_trend = row.get("1W_Ret", 0)
                 sentiment_score = (day_return * 0.4 + week_trend * 0.6) * volume_relative
-                row["Sentiment_Label"] = (
+                row["Sentiment"] = (
                     "Bullish" if sentiment_score > 1.0 else
                     "Bearish" if sentiment_score < -1.0 else
                     "Neutral"
-                )
+                )  # Abreviado de Sentiment_Label a Sentiment
 
                 # Metric_Day_Move (%)
                 vix_val = get_vix()
                 vix = vix_val / 100 if vix_val is not None else 0.2
                 move_factor = iv * (1 + volume_relative * 0.2) * (1 + vix * 0.5)
                 day_move = move_factor * current_price * 0.15
-                row["Metric_Day_Move (%)"] = round(day_move / current_price * 100, 2) if current_price > 0 else 0.0
+                row["Day_Move%"] = round(day_move / current_price * 100, 2) if current_price > 0 else 0.0  # Abreviado de Metric_Day_Move (%) a Day_Move%
 
                 # Metric_VIX_Correlation
                 if len(prices) >= 21 and len(vix_prices) >= 21:
@@ -5221,12 +5239,12 @@ def main():
                     vix_corr = np.corrcoef(asset_returns_21d[:min_len], vix_returns_21d[:min_len])[0, 1] if min_len > 0 else 0.0
                 else:
                     vix_corr = 0.0
-                row["Metric_VIX_Correlation"] = round(vix_corr, 2)
+                row["VIX_Corr"] = round(vix_corr, 2)  # Abreviado de Metric_VIX_Correlation a VIX_Corr
 
                 # Metric_Risk_Adjusted_Return
-                month_return = row.get("Return_1 Month", 0)
+                month_return = row.get("1M_Ret", 0)
                 risk_adjusted = month_return / vol_historical if vol_historical > 0 else 0.0
-                row["Metric_Risk_Adjusted_Return"] = round(risk_adjusted, 2)
+                row["Risk_Adj_Ret"] = round(risk_adjusted, 2)  # Abreviado de Metric_Risk_Adjusted_Return a Risk_Adj_Ret
 
                 # Metric_Option_Volume_Spike
                 try:
@@ -5248,7 +5266,7 @@ def main():
                     option_spike = current_option_volume / avg_option_volume if avg_option_volume > 0 else volume_relative
                 except Exception as e:
                     option_spike = volume_relative
-                row["Metric_Option_Volume_Spike"] = round(option_spike, 1)
+                row["Opt_Vol_Spike"] = round(option_spike, 1)  # Abreviado de Metric_Option_Volume_Spike a Opt_Vol_Spike
 
                 performance_data.append(row)
 
@@ -5261,7 +5279,6 @@ def main():
 
             # Tabla interactiva
             st.markdown('<div class="main-title">> PERFORMANCE_MAP_</div>', unsafe_allow_html=True)
-            
 
             def color_performance(val):
                 if pd.isna(val):
@@ -5324,15 +5341,15 @@ def main():
                     return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"  # Amarillo mostaza
 
             styled_df = df.style.format({
-                "Return_1 Day": "{:.2f}%", "Return_1 Week": "{:.2f}%", "Return_1 Month": "{:.2f}%",
-                "Return_1 Quarter": "{:.2f}%", "Return_1 Year": "{:.2f}%", "Metric_IS": "{:.1f}",
-                "Metric_Day_Move (%)": "{:.2f}%", "Metric_VIX_Correlation": "{:.2f}",
-                "Metric_Risk_Adjusted_Return": "{:.2f}", "Metric_Option_Volume_Spike": "{:.1f}",
-                "Current_Price": "{:.2f}"
-            }, na_rep="N/A").applymap(color_performance, subset=[f"Return_{p}" for p in periods] + ["Metric_Day_Move (%)"]).applymap(color_is, subset=["Metric_IS"]).applymap(color_sentiment, subset=["Sentiment_Label"]).applymap(color_vix_corr, subset=["Metric_VIX_Correlation"]).applymap(color_risk_adj, subset=["Metric_Risk_Adjusted_Return"]).applymap(color_option_spike, subset=["Metric_Option_Volume_Spike"]).set_properties(**{
-                "text-align": "center", "border": "2px solid #39FF14", "font-family": "'Courier New', Courier, monospace", "font-size": "14px", "padding": "12px"
+                "1D_Ret": "{:.2f}%", "1W_Ret": "{:.2f}%", "1M_Ret": "{:.2f}%",
+                "1Q_Ret": "{:.2f}%", "1Y_Ret": "{:.2f}%", "Inst_Score": "{:.1f}",
+                "Day_Move%": "{:.2f}%", "VIX_Corr": "{:.2f}",
+                "Risk_Adj_Ret": "{:.2f}", "Opt_Vol_Spike": "{:.1f}",
+                "Price": "{:.2f}"
+            }, na_rep="N/A").applymap(color_performance, subset=[f"{p}_Ret" for p in periods] + ["Day_Move%"]).applymap(color_is, subset=["Inst_Score"]).applymap(color_sentiment, subset=["Sentiment"]).applymap(color_vix_corr, subset=["VIX_Corr"]).applymap(color_risk_adj, subset=["Risk_Adj_Ret"]).applymap(color_option_spike, subset=["Opt_Vol_Spike"]).set_properties(**{
+                "text-align": "center", "border": "2px solid #39FF14", "font-family": "'Courier New', Courier, monospace", "font-size": "10px", "padding": "4px"
             }).set_table_styles([
-                {"selector": "th", "props": [("background-color", "#1A1F2B"), ("color", "#00FFFF"), ("font-weight", "700"), ("text-align", "center"), ("border", "2px solid #39FF14"), ("padding", "14px"), ("font-family", "'Courier New', Courier, monospace")]}
+                {"selector": "th", "props": [("background-color", "#1A1F2B"), ("color", "#00FFFF"), ("font-weight", "700"), ("text-align", "center"), ("border", "2px solid #39FF14"), ("padding", "6px"), ("font-family", "'Courier New', Courier, monospace")]}
             ])
 
             st.dataframe(styled_df, use_container_width=True, height=1000)
