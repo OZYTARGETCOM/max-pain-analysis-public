@@ -1542,18 +1542,41 @@ def speculate_next_day_movement(metrics: Dict[str, float], prices: List[float], 
 def get_option_data(symbol: str, expiration_date: str) -> pd.DataFrame:
     url = f"{TRADIER_BASE_URL}/markets/options/chains"
     params = {"symbol": symbol, "expiration": expiration_date, "greeks": "true"}
-    response = requests.get(url, headers=HEADERS_TRADIER, params=params)
-    if response.status_code != 200:
-        st.error(f"Error al obtener los datos de opciones. Código de estado: {response.status_code}")
+    try:
+        response = requests.get(url, headers=HEADERS_TRADIER, params=params, timeout=10)
+        if response.status_code != 200:
+            st.error(f"Error al obtener los datos de opciones. Código de estado: {response.status_code}")
+            logger.error(f"API request failed for {symbol} with expiration {expiration_date}: Status {response.status_code}")
+            return pd.DataFrame()
+        
+        data = response.json()
+        if data is None or not isinstance(data, dict):
+            st.error(f"Datos de opciones inválidos para {symbol}. Respuesta vacía o no JSON.")
+            logger.error(f"Invalid JSON response for {symbol}: {response.text}")
+            return pd.DataFrame()
+        
+        if 'options' in data and isinstance(data['options'], dict) and 'option' in data['options']:
+            options = data['options']['option']
+            if not options:
+                st.warning(f"No se encontraron contratos de opciones para {symbol} en {expiration_date}.")
+                logger.info(f"No option contracts found for {symbol} on {expiration_date}")
+                return pd.DataFrame()
+            df = pd.DataFrame(options)
+            df['action'] = df.apply(lambda row: "buy" if (row.get("bid", 0) > 0 and row.get("ask", 0) > 0) else "sell", axis=1)
+            return df
+        
+        st.error(f"No se encontraron datos de opciones válidos en la respuesta para {symbol}.")
+        logger.error(f"Options data missing or malformed for {symbol}: {data}")
         return pd.DataFrame()
-    data = response.json()
-    if 'options' in data and 'option' in data['options']:
-        options = data['options']['option']
-        df = pd.DataFrame(options)
-        df['action'] = df.apply(lambda row: "buy" if (row.get("bid", 0) > 0 and row.get("ask", 0) > 0) else "sell", axis=1)
-        return df
-    st.error("No se encontraron datos de opciones en la respuesta de la API.")
-    return pd.DataFrame()
+    
+    except requests.RequestException as e:
+        st.error(f"Error de red al obtener datos de opciones para {symbol}: {str(e)}")
+        logger.error(f"Network error fetching options for {symbol}: {str(e)}")
+        return pd.DataFrame()
+    except ValueError as e:
+        st.error(f"Error al procesar la respuesta JSON para {symbol}: {str(e)}")
+        logger.error(f"JSON parsing error for {symbol}: {str(e)}")
+        return pd.DataFrame()
 
 def fetch_data(endpoint: str, ticker: str = None, additional_params: dict = None):
     url = f"{FMP_BASE_URL}/{endpoint}"
