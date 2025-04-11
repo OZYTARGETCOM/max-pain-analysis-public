@@ -8,7 +8,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
-from typing import List, Dict, Optional, Tuple  # Añadí Tuple aquí
+from typing import List, Dict, Optional, Tuple
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import multiprocessing
@@ -53,32 +53,23 @@ HEADERS_TRADIER = {"Authorization": f"Bearer {TRADIER_API_KEY}", "Accept": "appl
 PASSWORDS_DB = "auth_data/passwords.db"
 CACHE_TTL = 300
 
-# Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# --- Configuración inicial de página ---
-st.set_page_config(
-    page_title="𝗢 𝗭 𝗬 | DATA®",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# --- Configuración de APIs ---
-FMP_API_KEY = "bQ025fPNVrYcBN4KaExd1N3Xczyk44wM"
-FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
-TRADIER_API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
-TRADIER_BASE_URL = "https://api.tradier.com/v1"
-
-HEADERS_FMP = {"Accept": "application/json"}
-HEADERS_TRADIER = {"Authorization": f"Bearer {TRADIER_API_KEY}", "Accept": "application/json"}
-
-# --- Constantes ---
+# Constantes
 PASSWORDS_DB = "auth_data/passwords.db"
 CACHE_TTL = 300
 MAX_RETRIES = 5
 INITIAL_DELAY = 1
-RISK_FREE_RATE = 0.045
+RISK_FREE_RATE = 0.045  # Definimos RISK_FREE_RATE aquí
+
+# Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Configuración inicial de página (DEBE SER LA PRIMERA LLAMADA DE STREAMLIT)
+st.set_page_config(
+    page_title="Pro Scanner",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # --- Autenticación con SQLite ---
 def initialize_passwords_db():
@@ -154,23 +145,103 @@ def authenticate_password(input_password):
                 logger.info(f"Repeat authentication successful for {input_password} from IP: {local_ip}")
                 return True
             else:
-                st.error("❌ This password has already been used by two IPs. To get your own access to OzyTarget, text 'OzyTarget Access' to 678-978-9414.")
+                st.error("❌ This password has already been used by two IPs. To get your own access to Pro Scanner, text 'Pro Scanner Access' to 678-978-9414.")
                 logger.warning(f"Authentication attempt for {input_password} from IP {local_ip} rejected; already used from {data['ip1']} and {data['ip2']}")
                 return False
-    logger.info(f"Reached error message for {input_password} from IP: {local_ip}")
-    st.error("❌ Incorrect password. If you don’t have access, text 'OzyTarget Access' to 678-978-9414 to purchase your subscription.")
+    st.error("❌ Incorrect password. If you don’t have access, text 'Pro Scanner Access' to 678-978-9414 to purchase your subscription.")
     logger.warning(f"Authentication failed: Invalid password {input_password}")
     return False
 
-# Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con todo alineado
-# Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con efecto hacker dinámico
-# Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con efecto hacker dinámico
-# Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con efecto hacker dinámico
-# Pantalla de autenticación minimalista y centrada, sin recuadro, más abajo, con efecto hacker dinámico
+# Inicializar la base de datos
 initialize_passwords_db()
+
+
+# Estado de la sesión
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
+if "intro_shown" not in st.session_state:
+    st.session_state["intro_shown"] = False
+
+# Animación introductoria estilo CMD con hackeo
+if not st.session_state["intro_shown"]:
+    st.markdown("""
+    <style>
+    /* Fondo negro para la intro */
+    .stApp {
+        background-color: #000000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+    }
+    .intro-container {
+        width: 100vw; /* Ancho completo */
+        height: 100vh; /* Alto completo */
+        background: #000000;
+        border: 2px solid #FFFF00; /* Amarillo */
+        padding: 40px;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 20px; /* Tamaño de fuente aumentado */
+        line-height: 1.5;
+        white-space: pre-wrap;
+        overflow-y: auto;
+        box-shadow: 0 0 20px rgba(255, 255, 0, 0.5); /* Sombra amarilla */
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 9999;
+    }
+    .intro-text {
+        animation: typing 4s steps(40, end); /* Reducido de 7s a 4s para mayor velocidad */
+        display: inline-block;
+    }
+    .yellow { color: #FFFF00; } /* Amarillo */
+    .green { color: #39FF14; } /* Verde neón */
+    .red { color: #FF0000; } /* Rojo */
+    @keyframes typing {
+        from { width: 0; }
+        to { width: 100%; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="intro-container" id="introContainer">
+        <div class="intro-text">
+<span class="yellow">> INITIALIZING PRO SCANNER v3.0.0...</span>
+<span class="green">> LOADING HACKING MODULES...</span>
+[OK] Bypassing Market Maker (MM) Firewalls...
+[OK] Accessing MM Liquidity Pools...
+<span class="red">[ALERT] MM Defense Systems Detected - Countermeasures Deployed</span>
+[OK] Extracting EBITDA Data from Corporate Servers...
+<span class="yellow">[PROGRESS] 25%... 50%... 75%... 100%</span>
+[OK] EBITDA Data Compromised
+<span class="green">> INFILTRATING BROKER NETWORKS...</span>
+[OK] Nasdq API Breached Bypassing
+[OK] NYSE API Breached  Bypassing
+<span class="red">[ALERT] Broker Counter-Hack Attempt - Neutralized</span>
+[OK] Financial Data Streams Intercepted
+<span class="yellow">> SYSTEM CHECK COMPLETE</span>
+<span class="green">> STATUS: READY FOR DEPLOYMENT</span>
+<span class="red">> WARNING: Unauthorized Access Detected - Enter Credentials to Proceed...</span>
+        </div>
+    </div>
+    <script>
+    setTimeout(function() {
+        document.getElementById('introContainer').style.display = 'none';
+    }, 4000); /* Reducido de 7000ms a 4000ms */
+    </script>
+    """, unsafe_allow_html=True)
+
+    time.sleep(4)  # Duración de la animación introductoria (reducida de 7s a 4s)
+    st.session_state["intro_shown"] = True
+    st.rerun()
+
+# Pantalla de login original
 if not st.session_state["authenticated"]:
     st.markdown("""
     <style>
@@ -256,7 +327,7 @@ if not st.session_state["authenticated"]:
     .hacker-text {
         font-size: 24px;
         font-weight: 700;
-        color: #FFFF00;
+        color: #FFFF00; /* Amarillo */
         text-shadow: 0 0 15px #FFFF00;
         letter-spacing: 2px;
         position: relative;
@@ -288,28 +359,28 @@ if not st.session_state["authenticated"]:
                 elif authenticate_password(password):
                     st.session_state["authenticated"] = True
                     st.markdown("""
-                    <div class="hacker-overlay" id="hackerOverlay">
+                    <div class="-overlay" id="hackerOverlay">
                         <canvas class="hacker-canvas" id="hackerCanvas"></canvas>
                         <div class="hacker-text">✅ ACCESS GRANTED</div>
                     </div>
                     <script>
-                    const canvas = document.getElementById('hackerCanvas');
+                    const [OK] Nasdq API Breached Bypassing = document.getElementById('hackerCanvas');
                     const ctx = canvas.getContext('2d');
                     canvas.width = window.innerWidth;
-                    canvas.height = window.innerHeight;
+                    canvas.height = [OK] Nasdq API Breached Bypassing;
 
-                    const numbers = 'A1B2C3D4E5F6G7H8I9J0KLMNOP';
+                    const numbers = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789{}[]()+-*/=<>;,.#$%&@!'; /*  RISK_FREE_RATE */
                     const fontSize = 20;
-                    const columns = canvas.width / fontSize;
+                    const columns = can.width / fontSize;
                     const drops = [];
 
                     for (let x = 0; x < columns; x++) {
-                        drops[x] = Math.random() * canvas.height;
+                        drops[x] = Math.random() *  RISK_FREE_RATE;
                     }
 
                     function drawDynamic() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.fillStyle = '#FFFF00';
+                        ctx.fillStyle = '#FFFF00'; /* Amarillo */
                         ctx.shadowBlur = 20;
                         ctx.shadowColor = '#FFFF00';
                         ctx.font = fontSize + 'px monospace';
@@ -317,7 +388,7 @@ if not st.session_state["authenticated"]:
                         for (let i = 0; i < drops.length; i++) {
                             const text = numbers.charAt(Math.floor(Math.random() * numbers.length));
                             ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-                            drops[i] += 5;
+                            drops[i] += 8; /* [OK] Nasdq API Breached Bypassing (de 5 a 8) */
                             if (drops[i] * fontSize > canvas.height && Math.random() > 0.95) {
                                 drops[i] = -fontSize;
                             }
@@ -327,7 +398,7 @@ if not st.session_state["authenticated"]:
                     }
 
                     function drawStatic() {
-                        ctx.fillStyle = '#39FF14';
+                        ctx.fillStyle = '#39FF14'; /* Verde */
                         ctx.shadowBlur = 20;
                         ctx.shadowColor = '#39FF14';
                         ctx.font = fontSize + 'px monospace';
@@ -344,15 +415,17 @@ if not st.session_state["authenticated"]:
                     }
 
                     setTimeout(function() {
-                        document.getElementById('hackerOverlay').style.display = 'none';
-                    }, 2000);
+                        document.getElementById('Overlay').style.display = 'none';
+                    }, 1000); /* Reducido de 2000ms a 1000ms */
                     </script>
                     """, unsafe_allow_html=True)
-                    time.sleep(2)
+                    time.sleep(1)  # Reducido de 2s a 1s
                     st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
+
+
 ########################################################app
 ########################################################app
 
