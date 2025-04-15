@@ -23,7 +23,6 @@ import socket
 from scipy.stats import norm
 import xml.etree.ElementTree as ET
 import streamlit.components.v1 as components
-import math
 import krakenex
 import base64
 import threading
@@ -482,21 +481,7 @@ def get_top_traded_stocks() -> set:
         # Fallback básico
         return {"AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META", "JPM", "WMT", "SPY"}
 
-def group_by_day_of_week(events: List[Dict], start_date: datetime, end_date: datetime) -> Dict[str, List[Dict]]:
-    """Agrupa eventos por día de la semana entre start_date y end_date."""
-    grouped = {}
-    for event in events:
-        event_date = datetime.strptime(event["Date"], "%Y-%m-%d").date()
-        if start_date <= event_date <= end_date:
-            day_name = event_date.strftime("%A")
-            date_str = event_date.strftime("%Y-%m-%d")
-            key = f"{day_name} ({date_str})"
-            if key not in grouped:
-                grouped[key] = []
-            grouped[key].append(event)
-    sorted_grouped = dict(sorted(grouped.items(), key=lambda x: datetime.strptime(x[0].split("(")[1].strip(")"), "%Y-%m-%d")))
-    logger.info(f"Grouped {len(events)} events into {len(sorted_grouped)} days")
-    return sorted_grouped
+
 
 @st.cache_data(ttl=86400)
 def get_implied_volatility(symbol: str) -> Optional[float]:
@@ -521,64 +506,6 @@ def get_implied_volatility(symbol: str) -> Optional[float]:
     except Exception as e:
         logger.error(f"Error fetching IV for {symbol}: {e}")
         return None
-
-@st.cache_data(ttl=86400)
-def get_historical_earnings_movement(symbol: str) -> Optional[float]:
-    """Obtiene el movimiento promedio histórico post-earnings desde FMP."""
-    url = f"{FMP_BASE_URL}/historical/earning_calendar/{symbol}"
-    params = {"apikey": FMP_API_KEY, "limit": 4}
-    try:
-        response = requests.get(url, params=params, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-        if not data or not isinstance(data, list):
-            return None
-        price_url = f"{FMP_BASE_URL}/historical-price-full/{symbol}"
-        price_data = requests.get(price_url, params={"apikey": FMP_API_KEY, "timeseries": 10}).json().get("historical", [])
-        movements = []
-        for earning in data:
-            earning_date = earning.get("date")
-            if not earning_date:
-                continue
-            earning_date_obj = datetime.strptime(earning_date, "%Y-%m-%d").date()
-            for i, price in enumerate(price_data):
-                price_date = datetime.strptime(price["date"], "%Y-%m-%d").date()
-                if price_date >= earning_date_obj and i > 0:
-                    prev_close = price_data[i-1]["close"]
-                    post_close = price["close"]
-                    movement = abs((post_close - prev_close) / prev_close * 100)
-                    movements.append(movement)
-                    break
-        if movements:
-            avg_movement = sum(movements) / len(movements)
-            logger.info(f"Historical earnings movement for {symbol}: {avg_movement}%")
-            return avg_movement
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching historical earnings for {symbol}: {e}")
-        return None
-
-def calculate_possible_movement(symbol, eps_est, revenue_est, time):
-    """Calcula el Possible Movement con precisión cercana a cero."""
-    iv = get_implied_volatility(symbol)
-    if iv is None:
-        iv = 0.3  # Fallback
-
-    hist_movement = get_historical_earnings_movement(symbol)
-    if hist_movement is None:
-        hist_movement = 5.0  # Fallback
-
-    eps_impact = abs(eps_est) * iv * 10
-    revenue_impact = (revenue_est / 1_000_000_000) * 0.05
-    time_factor = 1.0 if time == "bmo" else 1.2 if time == "amc" else 0.8
-
-    movement = (hist_movement * 0.5 + iv * 100 * 0.3 + eps_impact * 0.15 + revenue_impact * 0.05) * time_factor
-    return round(max(1.0, min(50.0, movement)), 2)
-
-
-
-
-
 
 
 
@@ -1679,12 +1606,7 @@ def get_institutional_holders_list(ticker: str):
         return pd.DataFrame(data)
     return None
 
-def get_institutional_holders_list(ticker: str):
-    endpoint = f"institutional-holder/{ticker}"
-    data = fetch_data(endpoint, ticker)
-    if data:
-        return pd.DataFrame(data)
-    return None
+
 
 def estimate_greeks(strike: float, current_price: float, days_to_expiration: int, iv: float, option_type: str) -> Dict[str, float]:
     t = days_to_expiration / 365.0
@@ -1952,46 +1874,15 @@ def generate_contract_suggestions(ticker: str, options_data: List[Dict], current
 
 # --- Nust.cache_data(ttl=CACHE_TTL)
 # --- Nuevas funciones para cripto (necesarias para Tab 8) ---
-# --- Nuevas funciones para cripto (necesarias para Tab 8) ---
-# --- Nuevas funciones para cripto (necesarias para Tab 8) ---
-# Línea ~500: Funciones de soporte para el Tab 8
-# Línea ~500: Funciones de soporte para el Tab 8
-# Línea ~500: Funciones de soporte para el Tab 8
-
-
-# Línea ~500: Funciones de soporte
-# Línea ~500: Funciones de soporte
-# Versión original para opciones (usada en Tab 1)
-# Línea ~500: Funciones de soporte
-# Versión original para opciones (usada en Tab 1)
-
-# Funciones para el Tab 8
-# Línea ~500: Funciones de soporte
-
-# Versión original para opciones (usada en Tab 1)
-def calculate_max_pain(df):
-    """Calcula el Max Pain para opciones."""
-    if df.empty:
-        return None, pd.DataFrame()
-    strikes = df['strike'].unique()
-    max_pain_data = []
-    for strike in strikes:
-        call_losses = ((strike - df[df['option_type'] == 'call']['strike']).clip(lower=0) * 
-                       df[df['option_type'] == 'call']['open_interest']).sum()
-        put_losses = ((df[df['option_type'] == 'put']['strike'] - strike).clip(lower=0) * 
-                      df[df['option_type'] == 'put']['open_interest']).sum()
-        total_loss = call_losses + put_losses
-        max_pain_data.append({'strike': strike, 'total_loss': total_loss})
-    max_pain_df = pd.DataFrame(max_pain_data)
-    if max_pain_df.empty:
-        return None, max_pain_df
-    max_pain_strike = max_pain_df.loc[max_pain_df['total_loss'].idxmin()]
-    return max_pain_strike, max_pain_df.sort_values(by='total_loss', ascending=True)
 
 
 
-# Funciones para el Tab 8
-# Funciones para el Tab 8
+
+
+
+
+
+
 # Funciones para el Tab 8
 # Funciones para el Tab 8
 def kraken_pair_to_api_format(ticker: str) -> str:
@@ -2703,7 +2594,21 @@ def get_intraday_prices(ticker: str, interval: str, hours_back: int) -> Tuple[Li
     logger.warning(f"No intraday data for {ticker}, using current price: ${current_price}. Response: {data}")
     return [current_price] * max(2, hours_back), [(end_time - timedelta(hours=i)).strftime("%Y-%m-%d %H:%M:%S") for i in range(max(2, hours_back))]
 
-
+def fetch_earnings_data(start_date: str, end_date: str) -> List[Dict]:
+    """Fetch earnings calendar data from FMP for a date range."""
+    url = f"{FMP_BASE_URL}/earning_calendar"
+    params = {"apikey": FMP_API_KEY, "from": start_date, "to": end_date}
+    try:
+        response = session_fmp.get(url, params=params, headers=HEADERS_FMP, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            logger.info(f"Fetched {len(data)} earnings events from {start_date} to {end_date}")
+            return data
+        logger.error(f"Earnings calendar fetch failed: Status {response.status_code}")
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching earnings data: {str(e)}")
+        return []
 
 
 # --- Main App --
@@ -2912,10 +2817,10 @@ def main():
     """, unsafe_allow_html=True)
 
     # Definición de los tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,tab11, tab12 = st.tabs([
         "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |",
         "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |",
-        "Earnings Calendar |", "Psychological Edge |", "Projection |", "Performance Map |"
+        "Projection |", "Performance Map |"
     ])
 
     # Tab 1: Gummy Data Bubbles®
@@ -4269,487 +4174,8 @@ def main():
 
 
         # Tab 9: Earnings Calendar (Tarjetas HTML con sentimiento mejorado)
-    with tab9:
-        st.subheader("Earnings Calendar")
-
-        # Configuración de fechas
-        today = datetime.now().date()
-        days_to_next_sunday = (6 - today.weekday() + 7) % 7
-        if days_to_next_sunday == 0:
-            days_to_next_sunday = 0
-        end_of_next_week = today + timedelta(days=days_to_next_sunday + 7)
-        start_date = today
-        end_date = end_of_next_week
-
-        # Función para obtener datos de la API con caché
-        @st.cache_data(ttl=3600)
-        def fetch_earnings_data(start_date_str: str, end_date_str: str) -> List[Dict]:
-            url = f"{FMP_BASE_URL}/earning_calendar"
-            params = {
-                "apikey": FMP_API_KEY,
-                "from": start_date_str,
-                "to": end_date_str
-            }
-            try:
-                response = session_fmp.get(url, params=params, headers=HEADERS_FMP, timeout=5)
-                response.raise_for_status()
-                data = response.json()
-                logger.info(f"Fetched {len(data)} earnings events from FMP")
-                return data if isinstance(data, list) else []
-            except Exception as e:
-                logger.error(f"Error fetching earnings data: {e}")
-                return []
-
-        # Función para obtener VIX
-        @st.cache_data(ttl=3600)
-        def get_vix() -> float:
-            url = f"{FMP_BASE_URL}/quote/^VIX"
-            params = {"apikey": FMP_API_KEY}
-            data = fetch_api_data(url, params, HEADERS_FMP, "VIX")
-            return float(data[0]["price"]) if data and isinstance(data, list) and "price" in data[0] else 20.0
-
-        # Función para calcular Possible Movement como Earnings Whispers
-        def calculate_possible_movement_batch(event_batch: List[Dict]) -> List[Dict]:
-            vix = get_vix()
-            for event in event_batch:
-                symbol = event.get("symbol", "")
-                eps_est = event.get("epsEstimated", 0)
-                revenue_est = event.get("revenueEstimated", 0)
-                time = event.get("time", "N/A").lower()
-
-                # Inicializar con valores por defecto
-                event["Possible Movement (%)"] = 1.0
-                event["Direction"] = "N/A"
-
-                if eps_est is None or revenue_est is None:
-                    continue
-
-                try:
-                    revenue_est = float(revenue_est)
-                except (ValueError, TypeError):
-                    revenue_est = 0
-
-                # Precio actual
-                current_price = get_current_price(symbol) or 100.0
-
-                # Straddle ATM (método Earnings Whispers)
-                expiration_dates = get_expiration_dates(symbol)
-                straddle_price = 0.0
-                if expiration_dates:
-                    options_data = get_options_data(symbol, expiration_dates[0])
-                    if options_data:
-                        strikes = [float(opt["strike"]) for opt in options_data]
-                        atm_strike = min(strikes, key=lambda x: abs(x - current_price))
-                        call = next((opt for opt in options_data if float(opt["strike"]) == atm_strike and opt["option_type"].lower() == "call"), None)
-                        put = next((opt for opt in options_data if float(opt["strike"]) == atm_strike and opt["option_type"].lower() == "put"), None)
-                        if call and put:
-                            call_price = (float(call.get("bid", 0)) + float(call.get("ask", 0))) / 2
-                            put_price = (float(put.get("bid", 0)) + float(put.get("ask", 0))) / 2
-                            straddle_price = call_price + put_price
-                        else:
-                            iv = get_implied_volatility(symbol) or 0.3
-                            straddle_price = current_price * iv * math.sqrt(1/252) * 2
-                    else:
-                        iv = get_implied_volatility(symbol) or 0.3
-                        straddle_price = current_price * iv * math.sqrt(1/252) * 2
-                else:
-                    iv = get_implied_volatility(symbol) or 0.3
-                    straddle_price = current_price * iv * math.sqrt(1/252) * 2
-
-                # Implied Move puro de Earnings Whispers
-                implied_move = (straddle_price / current_price) * 100
-                event["Possible Movement (%)"] = round(max(1.0, implied_move), 2)
-
-                # Dirección simplificada basada en EPS y VIX
-                if eps_est > 0:
-                    direction = "Up"
-                elif eps_est < 0:
-                    direction = "Down"
-                else:
-                    direction = "Neutral"
-                
-                if vix > 30 and direction != "Up":
-                    direction = "Down" if direction == "Neutral" else direction
-                
-                event["Direction"] = direction
-
-            return event_batch
-
-        # Función mejorada para obtener el sentimiento de noticias
-        @st.cache_data(ttl=300)
-        def get_news_sentiment(ticker: str) -> str:
-            keywords = [ticker]
-            news = fetch_google_news(keywords)
-            if not news:
-                logger.warning(f"No news found for {ticker}")
-                return "Neutral"
-            
-            # Lista de palabras clave para sentimiento
-            positive_words = ["up", "rise", "gain", "bullish", "strong", "profit", "growth", "beat", "positive"]
-            negative_words = ["down", "fall", "drop", "bearish", "weak", "loss", "decline", "miss", "negative"]
-            
-            sentiment_score = 0
-            total_articles = len(news)
-            for article in news:
-                title = article["title"].lower()
-                positive_count = sum(1 for word in positive_words if word in title)
-                negative_count = sum(1 for word in negative_words if word in title)
-                article_sentiment = positive_count - negative_count
-                sentiment_score += article_sentiment
-            
-            # Normalizar el puntaje (de -1 a 1)
-            if total_articles > 0:
-                normalized_score = sentiment_score / total_articles
-                sentiment = max(0, min(1, 0.5 + normalized_score / 5))  # Escala ajustada para mayor sensibilidad
-                if sentiment > 0.6:
-                    return "Alcista"
-                elif sentiment < 0.4:
-                    return "Bajista"
-                else:
-                    return "Neutral"
-            return "Neutral"
-
-        # Lista extendida de acciones
-        additional_stocks = {
-            "CL", "CALM", "MAMA", "LEVY", "PLAY", "GBX", "TLRY", "WBA", "RPM", "WDFC", 
-            "AEHR", "KRUS", "KRMN", "DAL", "SMPL", "STZ", "LAKE", "JPM", "KMX", "LOVE", 
-            "BLK", "WFC", "BK", "MS", "FAST"
-        }
-
-        # Obtener y procesar datos
-        with st.spinner(f"Fetching earnings from {start_date} to {end_date}..."):
-            earnings_data = fetch_earnings_data(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
-            if not earnings_data:
-                st.info("No earnings data available for the selected period.")
-                st.stop()
-
-            # Filtrar por acciones más comunes + las proporcionadas
-            top_stocks = get_top_traded_stocks().union(additional_stocks)
-            logger.info(f"Filtering for top stocks plus extras: {len(top_stocks)} symbols")
-            earnings_events = [event for event in earnings_data if event.get("symbol", "") in top_stocks]
-
-            # Procesar eventos en paralelo
-            batch_size = 10
-            event_batches = [earnings_events[i:i + batch_size] for i in range(0, len(earnings_events), batch_size)]
-            processed_events = []
-
-            with ThreadPoolExecutor(max_workers=min(8, len(event_batches))) as executor:
-                futures = [executor.submit(calculate_possible_movement_batch, batch) for batch in event_batches]
-                for future in futures:
-                    processed_events.extend(future.result())
-
-            # Formatear eventos con sentimiento
-            formatted_events = []
-            for event in processed_events:
-                symbol = event.get("symbol", "")
-                event_date = event.get("date", "")
-                try:
-                    event_date_obj = datetime.strptime(event_date, "%Y-%m-%d").date()
-                    if not (start_date <= event_date_obj <= end_date):
-                        continue
-                except ValueError:
-                    continue
-
-                eps_est = event.get("epsEstimated", 0)
-                revenue_est = event.get("revenueEstimated", 0)
-                time = event.get("time", "N/A").lower()
-
-                if eps_est is None or revenue_est < 1_000_000:
-                    continue
-
-                time_display = "Pre-Market" if time == "bmo" else "After-Market" if time == "amc" else "N/A"
-                sentiment = get_news_sentiment(symbol)
-
-                formatted_events.append({
-                    "Date": event_date,
-                    "Time": time_display,
-                    "Symbol": symbol,
-                    "Details": f"EPS: {eps_est:.2f} | Rev: ${revenue_est / 1_000_000:,.1f}M | Dir: {event.get('Direction', 'N/A')} | Sent: {sentiment}",
-                    "Logo": fetch_logo_url(symbol),
-                    "Possible Movement (%)": event["Possible Movement (%)"],
-                    "EPS": eps_est,
-                    "Revenue": revenue_est,
-                    "Sentiment": sentiment,
-                    "IsTopStock": True
-                })
-
-            # Ordenar eventos solo por Date
-            if formatted_events:
-                formatted_events.sort(key=lambda x: x["Date"])
-
-                # Agrupar por día
-                grouped_events = group_by_day_of_week(formatted_events, start_date, end_date)
-                logger.info(f"Grouped {len(formatted_events)} events into {len(grouped_events)} days")
-
-                # Renderizar HTML sin subsecciones
-                earnings_html = """
-                <style>
-                    .earnings-container {
-                        width: 100%;
-                        background: linear-gradient(135deg, #1E1E1E, #2A2A2A);
-                        padding: 20px;
-                        border-radius: 10px;
-                        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-                        overflow-y: auto;
-                        max-height: 600px;
-                    }
-                    .date-section {
-                        margin-bottom: 20px;
-                    }
-                    .date-header {
-                        background-color: #2D2D2D;
-                        color: #32CD32;
-                        padding: 10px;
-                        font-size: 18px;
-                        font-weight: 600;
-                        text-align: center;
-                        border-radius: 5px;
-                        cursor: default;
-                    }
-                    .cards-container {
-                        display: flex;
-                        flex-wrap: wrap;
-                        gap: 20px;
-                        padding: 10px;
-                    }
-                    .earning-card {
-                        width: 300px;
-                        border-radius: 10px;
-                        padding: 15px;
-                        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-                        transition: transform 0.3s ease, box-shadow 0.3s ease;
-                        position: relative;
-                        overflow: hidden;
-                    }
-                    .earning-card.pre-market {
-                        background: linear-gradient(145deg, #3C1A1A, #5C2A2A);
-                        border: 2px solid #FF4500;
-                    }
-                    .earning-card.after-market {
-                        background: linear-gradient(145deg, #1A2A3C, #2A3C5C);
-                        border: 2px solid #1E90FF;
-                    }
-                    .earning-card:hover {
-                        transform: translateY(-5px) scale(1.05);
-                        box-shadow: 0 10px 25px rgba(50, 205, 50, 0.2);
-                    }
-                    .earning-card img {
-                        width: 80px;
-                        height: 80px;
-                        object-fit: contain;
-                        border-radius: 50%;
-                        margin: 0 auto;
-                        display: block;
-                    }
-                    .earning-card .info {
-                        color: #FFFFFF;
-                        font-size: 14px;
-                        text-align: center;
-                        margin-top: 10px;
-                    }
-                    .earning-card .info .symbol {
-                        font-size: 18px;
-                        font-weight: 600;
-                        color: #32CD32;
-                    }
-                    .earning-card .info .highlight {
-                        color: #FFD700;
-                    }
-                    .tooltip {
-                        visibility: hidden;
-                        width: 250px;
-                        background: #2D2D2D;
-                        color: #FFFFFF;
-                        text-align: left;
-                        border-radius: 6px;
-                        padding: 10px;
-                        position: absolute;
-                        z-index: 1;
-                        top: 100%;
-                        left: 50%;
-                        margin-left: -125px;
-                        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-                        font-size: 12px;
-                    }
-                    .earning-card:hover .tooltip {
-                        visibility: visible;
-                    }
-                </style>
-                <div class="earnings-container">
-                """
-
-                if not grouped_events:
-                    earnings_html += "<p style='color: #FFFFFF; text-align: center;'>No events to display for the selected period.</p>"
-                else:
-                    for day, events in grouped_events.items():
-                        earnings_html += f"""
-                        <div class="date-section">
-                            <div class="date-header">{day}</div>
-                            <div class="cards-container">
-                        """
-                        for event in events:
-                            class_name = "earning-card pre-market" if event["Time"] == "Pre-Market" else "earning-card after-market" if event["Time"] == "After-Market" else "earning-card"
-                            logo = f'<img src="{event.get("Logo", "")}" alt="{event.get("Symbol", "N/A")}">'
-                            tooltip = f"""
-                                <div class="tooltip">
-                                    <b>Date:</b> {event["Date"]}<br>
-                                    <b>Time:</b> {event["Time"]}<br>
-                                    <b>Symbol:</b> {event["Symbol"]}<br>
-                                    <b>EPS:</b> {event["EPS"]:.2f}<br>
-                                    <b>Revenue:</b> ${event["Revenue"] / 1_000_000:,.1f}M<br>
-                                    <b>Possible Movement:</b> {event["Possible Movement (%)"]}%<br>
-                                    <b>Direction:</b> {event.get("Direction", "N/A")}<br>
-                                    <b>Sentiment:</b> {event["Sentiment"]}
-                                </div>
-                            """
-                            earnings_html += f"""
-                                <div class="{class_name}">
-                                    {logo}
-                                    <div class="info">
-                                        <div class="symbol">{event["Symbol"]}</div>
-                                        <div>{event["Time"]}</div>
-                                        <div>{event["Details"]}</div>
-                                        <div class="highlight">Move: {event["Possible Movement (%)"]}%</div>
-                                        {tooltip}
-                                    </div>
-                                </div>
-                            """
-                        earnings_html += """
-                            </div>
-                        </div>
-                        """
-
-                earnings_html += """
-                </div>
-                """
-
-                components.html(earnings_html, height=600, scrolling=True)
-
-                # Descarga de datos
-                earnings_csv = pd.DataFrame(formatted_events).drop(columns=["Logo", "EPS", "Revenue", "IsTopStock"], errors="ignore").to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Earnings Calendar",
-                    data=earnings_csv,
-                    file_name=f"earnings_calendar_{start_date}_to_{end_date}.csv",
-                    mime="text/csv",
-                    key="download_earnings_tab9"
-                )
-            else:
-                st.info(f"No earnings events found from {start_date} to {end_date} for top traded stocks.")
-                logger.warning("No earnings events retrieved or processed for top stocks")
-
-            st.markdown("---")
-            st.markdown("*Developed by Ozy | © 2025*")
-
-    # Tab 10: Psychological Edge
-    with tab10:
-        trading_points = [
-            ("Sigue los Order Blocks del MM / Spot order blocks of the MM", 
-             "Identifica zonas de order blocks (acumulación o distribución del MM) en niveles de liquidez clave. Opera con su flujo, no contra él. Camina antes de la sesión para alinear tu mente con su juego. / Spot order blocks (MM accumulation or distribution) at key liquidity zones. Trade with their flow, not against it. Walk before the session to sync your mind with their game.", 
-             "#2A2A3D"),
-            ("Domina el Riesgo Institucional / Master Institutional Risk", 
-             "Limita el riesgo al 1-2% por posición, ajustado por VaR (Value at Risk) si operas portafolios grandes. No entres si tu estado emocional compromete el análisis de datos duros. / Cap risk at 1-2% per position, adjusted by VaR for large portfolios. Don’t trade if your emotional state clouds hard data analysis.", 
-             "#1A2E2A"),
-            ("Analiza la Exposición al Gamma / Analyze Gamma Exposure", 
-             "Monitorea el gamma de opciones para prever cambios bruscos en el delta. Anticipa trampas del MM cerca de vencimientos (gamma squeezes) y reflexiona: ¿dónde están cazando stops? / Track options gamma to predict sharp delta shifts. Anticipate MM traps near expirations (gamma squeezes) and ask: Where are they hunting stops?", 
-             "#3D2A2A"),
-            ("Stop-Loss Basado en Liquidez / Liquidity-Based Stop-Loss", 
-             "Coloca stops en niveles de liquidez del MM (debajo de soportes o encima de resistencias), no en zonas aleatorias. Corta rápido: en trading institucional, preservar capital es prioridad. Opera de pie para máxima alerta. / Set stops at MM liquidity levels (below support or above resistance), not random zones. Cut fast: in institutional trading, capital preservation is king. Trade standing for peak alertness.", 
-             "#2A2A3D"),
-            ("Confirma con Flujo Institucional / Confirm with Institutional Flow", 
-             "Busca order flow en order blocks con picos de volumen y gamma. Usa herramientas como footprint charts o monitores de bloques si tienes acceso. Pregúntate: ¿qué están acumulando o descargando? / Look for order flow in order blocks with volume and gamma spikes. Use footprint charts or block monitors if available. Ask: What are they accumulating or unloading?", 
-             "#1E2A3D"),
-            ("Controla la Psicología bajo Presión / Control Psychology Under Pressure", 
-             "Evita reaccionar a volatilidad intradía o ruido de mercado. La disciplina del MM es tu modelo: no te sobreapalances ni cedas a la euforia. Muévete cada hora para no quemarte. / Don’t react to intraday volatility or market noise. MM discipline is your model: no over-leverage or euphoria. Move hourly to avoid burnout.", 
-             "#2E2A1E"),
-            ("Simula con Datos Reales / Simulate with Real Data", 
-             "Usa simulación con datos históricos de order flow y gamma para replicar movimientos del MM. Analiza cómo tu toma de decisiones resiste bajo presión institucional. / Simulate with historical order flow and gamma data to mirror MM moves. Test how your decision-making holds under institutional pressure.", 
-             "#1A2E2A"),
-            ("Sigue el Volumen Institucional / Track Institutional Volume", 
-             "Alto volumen en niveles clave con cambios en gamma confirma compromiso del MM. Opera con ellos cuando el smart money entra; usa volume profile para precisión. Camina para mantener claridad. / High volume at key levels with gamma shifts confirms MM commitment. Trade with them when smart money steps in; use volume profile for precision. Walk to stay clear-headed.", 
-             "#2A2A3D"),
-            ("Registra Cada Movimiento / Log Every Move", 
-             "Documenta trades con niveles de order blocks, gamma, volumen y resultados. Incluye tu estado mental para ajustar sesgos. Los institucionales viven de datos, no de intuición. / Log trades with order blocks, gamma, volume, and outcomes. Add your mental state to tweak biases. Institutionals live on data, not gut feel.", 
-             "#1E2A3D"),
-            ("Sal en Zonas de Liquidez / Exit at Liquidity Zones", 
-             "Toma ganancias en resistencias del MM o cuando el gamma indique un reversal. Usa liquidity grabs a tu favor: el MM a menudo empuja precios para atrapar a los débiles. / Take profits at MM resistance or when gamma signals a reversal. Leverage liquidity grabs: MM often pushes prices to trap the weak.", 
-             "#3D2A2A"),
-            ("Filtra el Ruido del Retail / Filter Retail Noise", 
-             "Ignora hype de redes sociales o noticias sin respaldo en order flow. Los institucionales confían en el DOM (Depth of Market) y el precio, no en titulares. / Ignore retail hype on social media or news without order flow backing. Institutionals trust DOM (Depth of Market) and price, not headlines.", 
-             "#2E2A1E"),
-            ("Ajusta por Volatilidad / Adjust for Volatility", 
-             "En días de alta volatilidad (vencimientos, eventos macro), reduce tamaño de posición. En días tranquilos, busca order blocks profundos para entradas sólidas. Adapta como el MM. / On high-volatility days (expirations, macro events), shrink position size. On quiet days, target deep order blocks for strong entries. Adapt like the MM.", 
-             "#1A2E2A"),
-            ("Explota las Ineficiencias / Exploit Inefficiencies", 
-             "Busca desbalances entre order flow y gamma (ej. short squeezes o stop runs). Los institucionales ganan donde el retail pierde: opera con ventaja, no con esperanza. / Hunt imbalances between order flow and gamma (e.g., short squeezes or stop runs). Institutionals win where retail loses: trade with edge, not hope.", 
-             "#2A2A3D"),
-            ("Piensa como el MM / Think Like the MM", 
-             "Pregúntate: ¿dónde colocan liquidez para atraer volumen? Usa su lógica (atrapar stops, forzar reversals) para anticipar y alinearte. Reflexiona entre sesiones. / Ask: Where do they place liquidity to draw volume? Use their logic (trap stops, force reversals) to anticipate and align. Reflect between sessions.", 
-             "#1E2A3D"),
-            ("Monitorea el Gummy Data Bubbles® y la Volatilidad Implícita / Monitor Gummy Data Bubbles® and Implied Volatility", 
-             "Analiza el skew de opciones (asimetría en volatilidad implícita) para detectar sesgos del MM hacia alzas o bajas. Un skew pronunciado puede señalar liquidity grabs o stop hunts. Usa esta data para afinar entradas. / Track options skew (implied volatility asymmetry) to spot MM bias toward upside or downside. Sharp skew can signal liquidity grabs or stop hunts. Use it to fine-tune entries.", 
-             "#3D2A2A"),
-            ("Aprovecha el Dark Pool Flow / Leverage Dark Pool Flow", 
-             "Si tienes acceso Monitores de Ozytarget (volumen institucional oculto), busca confirmación de order blocks. El MM usa estos flujos para mover mercados sin alertar al retail. Alinea tus trades con este smart money. / If you have dark pool data (hidden institutional volume), confirm order blocks. MM uses these flows to move markets without tipping off retail. Align trades with this smart money.", 
-             "#2E2A1E"),
-            ("Juega el Juego del Spoofing Legal / Play the Legal Spoofing Game", 
-             "Detecta patrones de spoofing en el DOM o tape. No luches contra ellos; úsalos para entrar cuando el precio revierta tras el flush de liquidez. Requiere velocidad y precisión. / Spot spoofing patterns (MM fake orders to mislead) in the DOM or tape. Don’t fight them; use them to enter when price reverses after the liquidity flush. Demands speed and precision.", 
-             "#1A2E2A")
-        ]
-
-        for i, (title, content, color) in enumerate(trading_points, 1):
-            with st.expander(f"{i}. {title}"):
-                st.markdown(f"""
-                <div style='background-color: {color}; padding: 10px; border-radius: 5px; color: #FFFFFF;'>
-                    {content}
-                </div>
-                """, unsafe_allow_html=True)
-
-        st.subheader("Inversión a largo plazo para institucionales / Long-Term Investing for Institutionals")
-        
-        investing_points = [
-            ("Horizontes por Edad y Objetivo / Horizons by Age and Goal", 
-             "Invierte según el ciclo: 5-10 años para capital activo, 15-20 para crecimiento sostenido, 30+ para legado o fondos soberanos. Elige activos con fundamentales sólidos, no especulación. / Invest by cycle: 5-10 years for active capital, 15-20 for sustained growth, 30+ for legacy or sovereign funds. Pick assets with solid fundamentals, not speculation.", 
-             "#2A2A3D"),
-            ("Diversifica con Precisión / Diversify with Precision", 
-             "Reparte entre clases de activos (acciones, bonos, materias primas) según correlaciones y riesgo ajustado (Sharpe ratio). Compra más en caídas si el order flow institucional lo respalda. / Spread across asset classes (stocks, bonds, commodities) by correlations and risk-adjusted return (Sharpe ratio). Buy more on dips if institutional order flow supports it.", 
-             "#1A2E2A"),
-            ("Foco en Valor Fundamental / Focus on Fundamental Value", 
-             "Selecciona empresas con flujo de caja robusto, baja deuda y ventaja estructural. Ignora ruido de corto plazo: los institucionales miran décadas, no días. / Choose firms with strong cash flow, low debt, and structural edge. Ignore short-term noise: institutionals eye decades, not days.", 
-             "#3D2A2A"),
-            ("Reinversión Estratégica / Strategic Reinvestment", 
-             "Usa ganancias para aumentar exposición en activos con smart money detrás. Aprovecha caídas para acumular: el MM exagera el miedo para comprar barato. / Reinvest profits to boost exposure to smart money-backed assets. Capitalize on dips: MM overplays fear to buy low.", 
-             "#1E2A3D"),
-            ("Paciencia Institucional / Institutional Patience", 
-             "Mantén posiciones a través de ciclos económicos: el crecimiento global supera las crisis (dato histórico). Compra más en rojo con análisis de order flow, no pánico. / Hold through economic cycles: global growth outlasts crises (historical fact). Buy more in the red with order flow analysis, not panic.", 
-             "#2E2A1E"),
-            ("Visión Macro Avanzada / Advanced Macro Vision", 
-             "Invierte en sectores con respaldo institucional (tecnología, infraestructura, energía limpia) según datos macro (PIB, tasas, demografía). Ajusta con calma, no por modas. / Invest in institutionally backed sectors (tech, infrastructure, clean energy) based on macro data (GDP, rates, demographics). Adjust calmly, not on trends.", 
-             "#2A2A3D"),
-            ("Contrario con Datos / Contrarian with Data", 
-             "Aumenta posiciones en caídas si el volume profile y fundamentales lo justifican. El MM usa el pánico retail para acumular; tú haz lo mismo con ventaja. / Build positions on dips if volume profile and fundamentals hold. MM uses retail panic to accumulate; you do the same with an edge.", 
-             "#1A2E2A"),
-            ("Gestión Activa Pasiva / Active-Passive Management", 
-             "Combina tenencia pasiva (ETFs, índices) con compras activas en order blocks de largo plazo. Rebalancea según smart money, no emociones. / Blend passive holding (ETFs, indexes) with active buys at long-term order blocks. Rebalance by smart money, not emotion.", 
-             "#3D2A2A"),
-            ("Incorpora Derivados para Cobertura / Use Derivatives for Hedging", 
-             "Usa futuros o opciones para cubrir portafolios contra caídas sin vender activos clave. Los institucionales protegen ganancias sin sacrificar exposición a largo plazo. Ajusta según gamma y volatility index (VIX). / Use futures or options to hedge portfolios against dips without selling core assets. Institutionals shield gains without losing long-term exposure. Adjust by gamma and volatility index (VIX).", 
-             "#1E2A3D"),
-            ("Explota Ciclos de Rebalancing / Exploit Rebalancing Cycles", 
-             "Aprovecha ventanas de rebalancing institucional (fin de mes, trimestre) cuando el MM ajusta posiciones. Compra en caídas inducidas por estos flujos; el volume profile te dirá dónde entran. / Exploit institutional rebalancing windows (month-end, quarter-end) when MM adjusts positions. Buy dips driven by these flows; volume profile shows where they step in.", 
-             "#2E2A1E")
-        ]
-
-        for i, (title, content, color) in enumerate(investing_points, 1):
-            with st.expander(f"{i}. {title}"):
-                st.markdown(f"""
-                <div style='background-color: {color}; padding: 10px; border-radius: 5px; color: #FFFFFF;'>
-                    {content}
-                </div>
-                """, unsafe_allow_html=True)
-        st.markdown("---")
-        st.markdown("*Developed by Ozy | © 2025*")
-
+    
+    
     # Tab 11: Projection
     with tab11:
         # Estilo CSS
