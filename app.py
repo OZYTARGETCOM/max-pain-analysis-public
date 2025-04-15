@@ -226,7 +226,7 @@ if not st.session_state["intro_shown"]:
 [OK] Financial Data Streams Intercepted
 <span class="yellow">> SYSTEM CHECK COMPLETE</span>
 <span class="green">> STATUS: READY FOR DEPLOYMENT</span>
-<span class="red">> WARNING: Unauthorized Access Detected - Enter Credentials to Proceed...</span>
+<span class="red">>CMD WINDOW : authorized Access Detected - Enter Credentials to Proceed...</span>
         </div>
     </div>
     <script>
