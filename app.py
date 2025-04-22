@@ -26,6 +26,7 @@ import streamlit.components.v1 as components
 import krakenex
 import base64
 import threading
+from streamlit_autorefresh import st_autorefresh
 
 logging.getLogger("streamlit").setLevel(logging.ERROR)
 
@@ -551,7 +552,7 @@ def fetch_api_data(url: str, params: Dict, headers: Dict, source: str) -> Option
         logger.error(f"{source} error: {e}")
         return None
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def get_current_price(ticker: str) -> float:
     """
     Obtiene el precio actual de un ticker usando la API de Tradier con fallback a FMP.
@@ -611,7 +612,7 @@ def get_expiration_dates(ticker: str) -> List[str]:
         logger.error(f"Error fetching expiration dates for {ticker}: {str(e)}")
         return []
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def get_current_prices(tickers: List[str]) -> Dict[str, float]:
     """
     Obtiene precios actuales para una lista de tickers usando la API de Tradier con fallback a FMP.
@@ -688,7 +689,7 @@ def get_metaverse_stocks() -> List[str]:
 
 
 
-@st.cache_data(ttl=CACHE_TTL)
+@st.cache_data(ttl=3600)
 def get_options_data(ticker: str, expiration_date: str) -> List[Dict]:
     url = f"{TRADIER_BASE_URL}/markets/options/chains"
     params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
@@ -697,7 +698,7 @@ def get_options_data(ticker: str, expiration_date: str) -> List[Dict]:
         return data['options']['option']
     return []
 
-@st.cache_data(ttl=CACHE_TTL)
+@st.cache_data(ttl=3600)
 def get_historical_prices_combined(symbol, period="daily", limit=30):
     """Obtener precios históricos combinando FMP y Tradier para máxima velocidad y fiabilidad."""
     url_fmp = f"{FMP_BASE_URL}/historical-price-full/{symbol}"
@@ -720,7 +721,7 @@ def get_historical_prices_combined(symbol, period="daily", limit=30):
     logger.warning(f"No historical data for {symbol} from either API")
     return [], []
 
-@st.cache_data(ttl=CACHE_TTL)
+@st.cache_data(ttl=3600)
 def get_stock_list_combined():
     """Obtener lista de acciones combinando FMP y Tradier."""
     combined_tickers = set()  # Usamos un set para evitar duplicados
@@ -771,33 +772,55 @@ def get_stock_list_combined():
     return final_list[:200]  # Máximo 200 para mantener rendimiento
 
 # --- Funciones de Análisis ---
-def analyze_contracts(ticker, expiration, current_price):
+def analyze_contracts(ticker, expiration, current_price, options_data=None):
+    """
+    Analyzes option contracts for a given ticker and expiration date.
+    Uses provided options_data if available, otherwise fetches from API.
+    Returns a DataFrame with contract details.
+    """
+    if options_data is not None:
+        # Use the provided options_data
+        if not options_data:
+            logger.warning(f"No options data provided for {ticker} on {expiration} in analyze_contracts.")
+            return pd.DataFrame(columns=["strike", "option_type", "open_interest", "volume", "bid"])
+        
+        df = pd.DataFrame(options_data)
+        if df.empty:
+            return pd.DataFrame(columns=["strike", "option_type", "open_interest", "volume", "bid"])
+        
+        # Ensure option_type is lowercase for consistency
+        df["option_type"] = df["option_type"].str.lower()
+        return df[["strike", "option_type", "open_interest", "volume", "bid"]]
+    
+    # Fallback to API call if no options_data provided
     url = f"{TRADIER_BASE_URL}/markets/options/chains"
-    params = {"symbol": ticker, "expiration": expiration, "greeks": True}
+    params = {
+        "symbol": ticker,
+        "expiration": expiration,
+        "greeks": "true"
+    }
     try:
         response = requests.get(url, headers=HEADERS_TRADIER, params=params, timeout=10)
-        if response.status_code != 200:
-            st.error(f"Error retrieving option contracts: {response.status_code}")
-            return pd.DataFrame()
-        options = response.json().get("options", {}).get("option", [])
+        response.raise_for_status()
+        data = response.json()
+        if data is None:
+            logger.warning(f"No JSON data returned from API for {ticker} on {expiration}. Response: {response.text}")
+            return pd.DataFrame(columns=["strike", "option_type", "open_interest", "volume", "bid"])
+        
+        options = data.get("options", {}).get("option", [])
         if not options:
-            st.warning("No contracts available.")
-            return pd.DataFrame()
+            logger.warning(f"No options data found in analyze_contracts for {ticker} on {expiration}. Response: {data}")
+            return pd.DataFrame(columns=["strike", "option_type", "open_interest", "volume", "bid"])
+        
         df = pd.DataFrame(options)
-        for col in ['strike', 'option_type', 'open_interest', 'volume', 'bid', 'ask', 'last_volume', 'trade_date', 'bid_exchange', 'delta', 'gamma', 'break_even']:
-            if col not in df.columns:
-                df[col] = 0
-        # Asegurar que open_interest sea numérico y no nan
-        df['open_interest'] = pd.to_numeric(df['open_interest'], errors='coerce').fillna(0).astype(int).clip(lower=0)
-        df['trade_date'] = datetime.now().strftime('%Y-%m-%d')
-        df['break_even'] = df.apply(lambda row: row['strike'] + row['bid'] if row['option_type'] == 'call' else row['strike'] - row['bid'], axis=1)
-        return df
-    except requests.exceptions.ReadTimeout:
-        st.error(f"Timeout retrieving option contracts for {ticker}. Tradier API did not respond.")
-        return pd.DataFrame()
-    except requests.RequestException as e:
-        st.error(f"Error retrieving option contracts for {ticker}: {str(e)}")
-        return pd.DataFrame()
+        if df.empty:
+            return pd.DataFrame(columns=["strike", "option_type", "open_interest", "volume", "bid"])
+        
+        df["option_type"] = df["option_type"].str.lower()
+        return df[["strike", "option_type", "open_interest", "volume", "bid"]]
+    except Exception as e:
+        logger.error(f"Error fetching contracts for {ticker} on {expiration}: {str(e)}")
+        return pd.DataFrame(columns=["strike", "option_type", "open_interest", "volume", "bid"])
 
 def style_and_sort_table(df):
     ordered_columns = ['strike', 'option_type', 'open_interest', 'volume', 'trade_date', 'bid', 'ask', 'last_volume', 'bid_exchange', 'delta', 'gamma', 'break_even']
@@ -827,11 +850,16 @@ def select_best_contracts(df, current_price):
 # Versión original para opciones (usada en Tab 1)
 # Versión original para opciones (usada en Tab 1)
 def calculate_max_pain(df):
-    """Calcula el Max Pain para opciones."""
+    """Calculates the Max Pain for options."""
     if df.empty or 'strike' not in df.columns:
-        logger.error("DataFrame vacío o sin columna 'strike' en calculate_max_pain")
+        logger.error("DataFrame is empty or missing 'strike' column in calculate_max_pain")
         return None, pd.DataFrame(columns=['strike', 'total_loss'])
+
     strikes = df['strike'].unique()
+    if len(strikes) == 0:
+        logger.error("No unique strikes found in DataFrame")
+        return None, pd.DataFrame(columns=['strike', 'total_loss'])
+
     max_pain_data = []
     for strike in strikes:
         call_losses = ((strike - df[df['option_type'] == 'call']['strike']).clip(lower=0) * 
@@ -840,11 +868,17 @@ def calculate_max_pain(df):
                       df[df['option_type'] == 'put']['open_interest']).sum()
         total_loss = call_losses + put_losses
         max_pain_data.append({'strike': strike, 'total_loss': total_loss})
+
     max_pain_df = pd.DataFrame(max_pain_data)
     if max_pain_df.empty:
-        logger.warning("No se generaron datos de Max Pain")
+        logger.warning("No Max Pain data generated")
         return None, max_pain_df
-    max_pain_strike = max_pain_df.loc[max_pain_df['total_loss'].idxmin()]
+
+    # Find the index of the minimum total loss
+    min_loss_idx = max_pain_df['total_loss'].idxmin()
+    # Extract the strike value as a float
+    max_pain_strike = float(max_pain_df.loc[min_loss_idx, 'strike'])
+    
     return max_pain_strike, max_pain_df.sort_values(by='total_loss', ascending=True)
 
 def calculate_support_resistance_mid(max_pain_table, current_price):
@@ -2571,28 +2605,33 @@ def calculate_momentum(prices: List[float], vol_historical: float) -> float:
     return price_change / vol_historical if vol_historical > 0 else 0.0
 
 
-@st.cache_data(ttl=60)
-def get_intraday_prices(ticker: str, interval: str, hours_back: int) -> Tuple[List[float], List[str]]:
-    url = f"{TRADIER_BASE_URL}/markets/timesales"
-    end_time = datetime.now()
-    start_time = end_time - timedelta(hours=hours_back)
-    params = {
-        "symbol": ticker,
-        "interval": interval,
-        "start": start_time.strftime("%Y-%m-%d %H:%M"),
-        "end": end_time.strftime("%Y-%m-%d %H:%M")
-    }
-    data = fetch_api_data(url, params, HEADERS_TRADIER, f"Tradier Intraday {ticker}")
-    if data is not None and isinstance(data, dict):
-        if "series" in data and isinstance(data["series"], dict) and "data" in data["series"]:
-            prices = [float(entry["close"]) for entry in data["series"]["data"]]
-            timestamps = [entry["time"] for entry in data["series"]["data"]]
-            logger.info(f"Fetched {len(prices)} intraday prices for {ticker} over {hours_back} hours")
-            return prices, timestamps
-    # Fallback si la API falla
-    current_price = get_current_price(ticker) or 100.0
-    logger.warning(f"No intraday data for {ticker}, using current price: ${current_price}. Response: {data}")
-    return [current_price] * max(2, hours_back), [(end_time - timedelta(hours=i)).strftime("%Y-%m-%d %H:%M:%S") for i in range(max(2, hours_back))]
+
+
+def get_intraday_prices(ticker, interval, start_time, end_time):
+  url = f"{TRADIER_BASE_URL}/markets/timesales"
+  params = {
+    "symbol": ticker,
+    "interval": interval,
+    "start": start_time.strftime('%Y-%m-%d %H:%M:%S'),
+    "end": end_time.strftime('%Y-%m-%d %H:%M:%S')
+  }
+  try:
+    response = requests.get(url, headers=HEADERS_TRADIER, params=params, timeout=10)
+    response.raise_for_status()
+    data = response.json()
+    if data and 'series' in data and 'data' in data['series']:
+      timesales = data['series']['data']
+      timestamps = [pd.to_datetime(entry['time']) for entry in timesales]
+      prices = [float(entry.get('close', 0)) for entry in timesales]
+      return prices, timestamps
+  except Exception as e:
+    logger.error(f"Error fetching intraday prices for {ticker}: {str(e)}")
+    return [], []
+  return [], []
+
+
+
+
 
 def fetch_earnings_data(start_date: str, end_date: str) -> List[Dict]:
     """Fetch earnings calendar data from FMP for a date range."""
@@ -2609,6 +2648,554 @@ def fetch_earnings_data(start_date: str, end_date: str) -> List[Dict]:
     except Exception as e:
         logger.error(f"Error fetching earnings data: {str(e)}")
         return []
+
+
+
+
+
+
+
+import yfinance as yf
+from scipy.stats import norm
+
+def calculate_gamma(S: float, K: float, T: float, r: float, sigma: float) -> float:
+    """Calculates Gamma using Black-Scholes."""
+    try:
+        if T <= 0:
+            T = 0.0001
+        d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+        return norm.pdf(d1) / (S * sigma * np.sqrt(T))
+    except:
+        return 0.0
+
+def calculate_delta(S: float, K: float, T: float, r: float, sigma: float, option_type: str = "call") -> float:
+    """Calculates Delta using Black-Scholes."""
+    try:
+        if T <= 0:
+            T = 0.0001
+        d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+        if option_type.lower() == "call":
+            return norm.cdf(d1)
+        else:
+            return norm.cdf(d1) - 1
+    except:
+        return 0.0
+
+def calculate_theta(S: float, K: float, T: float, r: float, sigma: float, option_type: str = "call") -> float:
+    """Calculates Theta (daily time decay) using Black-Scholes."""
+    try:
+        if T <= 0:
+            T = 0.0001  # Prevent division by zero
+        d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        if option_type.lower() == "call":
+            theta = - (S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) - r * K * np.exp(-r * T) * norm.cdf(d2)
+        else:
+            theta = - (S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) + r * K * np.exp(-r * T) * norm.cdf(-d2)
+        daily_theta = theta / 365.0
+        return min(daily_theta, 0.0)  # Ensure theta is non-positive (decay)
+    except Exception as e:
+        logger.error(f"Error calculating theta: {e}")
+        return 0.0
+
+@st.cache_data(ttl=CACHE_TTL)
+def estimate_historical_volatility(ticker: str) -> float:
+    """Estimates historical volatility using 30-day daily returns."""
+    try:
+        yf_ticker = "^GSPC" if ticker == "SPX" else ticker
+        stock = yf.Ticker(yf_ticker)
+        hist = stock.history(period="1mo")["Close"]
+        returns = hist.pct_change().dropna()
+        volatility = returns.std() * np.sqrt(252)
+        return max(0.1, min(volatility, 1.0))
+    except Exception as e:
+        logger.error(f"Error estimating volatility for {ticker}: {e}")
+        return 0.2
+
+@st.cache_data(ttl=CACHE_TTL)
+def calculate_max_pain_strategy(ticker: str, expiry_date: datetime.date) -> float:
+    """Calculates the Max Pain strike price for strategy analyzer using yfinance."""
+    try:
+        yf_ticker = "^GSPC" if ticker == "SPX" else ticker
+        stock = yf.Ticker(yf_ticker)
+        current_price = stock.history(period="1d")["Close"].iloc[-1]
+        expiry_str = expiry_date.strftime("%Y-%m-%d")
+        options = stock.option_chain(expiry_str) if expiry_str in stock.options else None
+        if not options:
+            logger.warning(f"No option data for {ticker} on {expiry_str}")
+            return current_price
+
+        strikes = []
+        pain_values = []
+        for option_type in ["calls", "puts"]:
+            chain = getattr(options, option_type)
+            for strike in chain["strike"]:
+                if strike not in strikes:
+                    strikes.append(strike)
+
+        for strike in strikes:
+            total_pain = 0
+            call_chain = options.calls[options.calls["strike"] == strike]
+            put_chain = options.puts[options.puts["strike"] == strike]
+            call_oi = call_chain["openInterest"].iloc[0] if not call_chain.empty else 0
+            put_oi = put_chain["openInterest"].iloc[0] if not put_chain.empty else 0
+            if current_price > strike:
+                total_pain += (current_price - strike) * call_oi
+            if current_price < strike:
+                total_pain += (strike - current_price) * put_oi
+            pain_values.append(total_pain)
+
+        if pain_values:
+            max_pain_strike = strikes[np.argmin(pain_values)]
+            return max_pain_strike
+        return current_price
+    except Exception as e:
+        logger.error(f"Error calculating Max Pain for {ticker}: {e}")
+        return 0.0
+
+@st.cache_data(ttl=CACHE_TTL)
+def get_option_contracts(ticker: str, expiry_date: datetime.date) -> dict:
+    """Fetches option chain and suggests contracts based on Max Pain and Gamma."""
+    try:
+        yf_ticker = "^GSPC" if ticker == "SPX" else ticker
+        stock = yf.Ticker(yf_ticker)
+        current_price = stock.history(period="1d")["Close"].iloc[-1]
+        expiry_str = expiry_date.strftime("%Y-%m-%d")
+        options = stock.option_chain(expiry_str) if expiry_str in stock.options else None
+        if not options:
+            logger.warning(f"No option data for {ticker} on {expiry_str}")
+            max_pain = current_price
+            strike_step = 10.0 if current_price > 100 else 5.0
+            contracts = [
+                {"type": "call", "strike": round(current_price * 1.05 / strike_step) * strike_step, "gamma": 0.03, "volume": 100, "distance_to_max_pain": 0.05 * current_price},
+                {"type": "call", "strike": round(current_price * 1.10 / strike_step) * strike_step, "gamma": 0.02, "volume": 80, "distance_to_max_pain": 0.10 * current_price},
+                {"type": "put", "strike": round(current_price * 0.95 / strike_step) * strike_step, "gamma": 0.03, "volume": 100, "distance_to_max_pain": 0.05 * current_price},
+                {"type": "put", "strike": round(current_price * 0.90 / strike_step) * strike_step, "gamma": 0.02, "volume": 80, "distance_to_max_pain": 0.10 * current_price},
+                {"type": "call", "strike": round(current_price * 1.15 / strike_step) * strike_step, "gamma": 0.01, "volume": 60, "distance_to_max_pain": 0.15 * current_price}
+            ]
+            return {"max_pain": max_pain, "contracts": contracts}
+
+        max_pain = calculate_max_pain_strategy(ticker, expiry_date)
+        contracts = []
+        sigma = estimate_historical_volatility(ticker)
+        current_time = datetime.now()
+        T = max((datetime.combine(expiry_date, datetime.min.time()) - current_time).total_seconds() / (365 * 24 * 60 * 60), 0.0001)
+        for option_type in ["calls", "puts"]:
+            chain = getattr(options, option_type)
+            for _, row in chain.iterrows():
+                strike = row["strike"]
+                volume = row["volume"] if not pd.isna(row["volume"]) else 0
+                if T <= 0:
+                    T = 0.0001
+                gamma = calculate_gamma(current_price, strike, T, 0.045, sigma)
+                contracts.append({
+                    "type": option_type,
+                    "strike": strike,
+                    "gamma": gamma,
+                    "volume": volume,
+                    "distance_to_max_pain": abs(strike - max_pain)
+                })
+
+        contracts = [c for c in contracts if c["volume"] > 0]
+        contracts.sort(key=lambda x: x["gamma"], reverse=True)
+        return {"max_pain": max_pain, "contracts": contracts[:5]}
+    except Exception as e:
+        logger.error(f"Error fetching option contracts for {ticker}: {e}")
+        current_price = get_current_price(ticker)
+        max_pain = current_price
+        strike_step = 10.0 if current_price > 100 else 5.0
+        contracts = [
+            {"type": "call", "strike": round(current_price * 1.05 / strike_step) * strike_step, "gamma": 0.03, "volume": 100, "distance_to_max_pain": 0.05 * current_price},
+            {"type": "call", "strike": round(current_price * 1.10 / strike_step) * strike_step, "gamma": 0.02, "volume": 80, "distance_to_max_pain": 0.10 * current_price},
+            {"type": "put", "strike": round(current_price * 0.95 / strike_step) * strike_step, "gamma": 0.03, "volume": 100, "distance_to_max_pain": 0.05 * current_price},
+            {"type": "put", "strike": round(current_price * 0.90 / strike_step) * strike_step, "gamma": 0.02, "volume": 80, "distance_to_max_pain": 0.10 * current_price},
+            {"type": "call", "strike": round(current_price * 1.15 / strike_step) * strike_step, "gamma": 0.01, "volume": 60, "distance_to_max_pain": 0.15 * current_price}
+        ]
+        return {"max_pain": max_pain, "contracts": contracts}
+
+def estimate_option_premium(S: float, K: float, T: float, r: float = 0.045, sigma: float = 0.2, option_type: str = "call") -> float:
+    """Estimates the option premium using a simplified Black-Scholes model."""
+    try:
+        if T <= 0:
+            T = 0.0001
+        d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        if option_type.lower() == "call":
+            premium = S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+        else:
+            premium = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+        return max(premium, 0) * 100
+    except:
+        return 0.0
+
+def calculate_strategy_metrics(strategy: str, spx: float, spx_current: float, call_strike: float, 
+                              put_strike: float, put_strike_lower: float, call_strike_higher: float, 
+                              expiry_date: datetime.date, call_strike_buy: float = 0.0, put_strike_buy: float = 0.0, 
+                              ticker: str = "SPY") -> tuple:
+    """Calculates the payoff, net premium, Current Delta, Decayed Delta, and Theta for the selected strategy."""
+    # Log inputs for debugging
+    logger.debug(f"Calculating metrics for strategy: {strategy}, ticker: {ticker}, spx: {spx}, spx_current: {spx_current}, "
+                 f"call_strike: {call_strike}, put_strike: {put_strike}, put_strike_lower: {put_strike_lower}, "
+                 f"call_strike_higher: {call_strike_higher}, call_strike_buy: {call_strike_buy}, put_strike_buy: {put_strike_buy}")
+
+    try:
+        expiry_datetime = datetime.combine(expiry_date, datetime.min.time())
+        current_time = datetime.now()
+        T = max((expiry_datetime - current_time).total_seconds() / (365 * 24 * 60 * 60), 0.0001)  # Convert to years
+        sigma = estimate_historical_volatility(ticker)
+        T_current = T
+        T_decayed = max(T - 1/365.0, 0.0001)  # One day less for decayed delta
+
+        if strategy == "Collar":
+            if spx < put_strike_lower:
+                payoff = spx - spx_current - (put_strike - put_strike_lower)
+            elif spx < put_strike:
+                payoff = put_strike - spx_current
+            elif spx < call_strike:
+                payoff = spx - spx_current
+            else:
+                payoff = call_strike - spx_current
+            call_premium = estimate_option_premium(spx_current, call_strike, T, sigma=sigma, option_type="call")
+            put_premium = estimate_option_premium(spx_current, put_strike, T, sigma=sigma, option_type="put")
+            put_lower_premium = estimate_option_premium(spx_current, put_strike_lower, T, sigma=sigma, option_type="put")
+            net_premium = call_premium + put_lower_premium - put_premium
+
+            delta_current = -calculate_delta(spx_current, call_strike, T_current, 0.045, sigma, "call") + \
+                            calculate_delta(spx_current, put_strike, T_current, 0.045, sigma, "put") - \
+                            calculate_delta(spx_current, put_strike_lower, T_current, 0.045, sigma, "put")
+            delta_decayed = -calculate_delta(spx_current, call_strike, T_decayed, 0.045, sigma, "call") + \
+                            calculate_delta(spx_current, put_strike, T_decayed, 0.045, sigma, "put") - \
+                            calculate_delta(spx_current, put_strike_lower, T_decayed, 0.045, sigma, "put")
+            theta = -calculate_theta(spx_current, call_strike, T, 0.045, sigma, "call") + \
+                    calculate_theta(spx_current, put_strike, T, 0.045, sigma, "put") - \
+                    calculate_theta(spx_current, put_strike_lower, T, 0.045, sigma, "put")
+
+        elif strategy == "Iron Condor":
+            call_strike_lower = put_strike
+            if spx < put_strike_lower:
+                payoff = spx - put_strike_lower
+            elif spx < put_strike:
+                payoff = 0
+            elif spx < call_strike_lower:
+                payoff = 0
+            elif spx < call_strike:
+                payoff = call_strike_lower - spx
+            else:
+                payoff = call_strike_lower - call_strike
+            put_lower_premium = estimate_option_premium(spx_current, put_strike_lower, T, sigma=sigma, option_type="put")
+            put_premium = estimate_option_premium(spx_current, put_strike, T, sigma=sigma, option_type="put")
+            call_lower_premium = estimate_option_premium(spx_current, call_strike_lower, T, sigma=sigma, option_type="call")
+            call_premium = estimate_option_premium(spx_current, call_strike, T, sigma=sigma, option_type="call")
+            net_premium = put_lower_premium + call_lower_premium - put_premium - call_premium
+
+            delta_current = -calculate_delta(spx_current, put_strike, T_current, 0.045, sigma, "put") + \
+                            calculate_delta(spx_current, put_strike_lower, T_current, 0.045, sigma, "put") - \
+                            calculate_delta(spx_current, call_strike_lower, T_current, 0.045, sigma, "call") + \
+                            calculate_delta(spx_current, call_strike, T_current, 0.045, sigma, "call")
+            delta_decayed = -calculate_delta(spx_current, put_strike, T_decayed, 0.045, sigma, "put") + \
+                            calculate_delta(spx_current, put_strike_lower, T_decayed, 0.045, sigma, "put") - \
+                            calculate_delta(spx_current, call_strike_lower, T_decayed, 0.045, sigma, "call") + \
+                            calculate_delta(spx_current, call_strike, T_decayed, 0.045, sigma, "call")
+            theta = -calculate_theta(spx_current, put_strike, T, 0.045, sigma, "put") + \
+                    calculate_theta(spx_current, put_strike_lower, T, 0.045, sigma, "put") - \
+                    calculate_theta(spx_current, call_strike_lower, T, 0.045, sigma, "call") + \
+                    calculate_theta(spx_current, call_strike, T, 0.045, sigma, "call")
+
+        elif strategy == "Butterfly":
+            mid_strike = put_strike
+            wing_width = (call_strike - put_strike) / 2
+            lower_strike = mid_strike - wing_width
+            higher_strike = mid_strike + wing_width
+            if spx < lower_strike or spx > higher_strike:
+                payoff = 0
+            elif spx < mid_strike:
+                payoff = spx - lower_strike
+            else:
+                payoff = higher_strike - spx
+            lower_premium = estimate_option_premium(spx_current, lower_strike, T, sigma=sigma, option_type="call")
+            mid_premium = estimate_option_premium(spx_current, mid_strike, T, sigma=sigma, option_type="call") * 2
+            higher_premium = estimate_option_premium(spx_current, higher_strike, T, sigma=sigma, option_type="call")
+            net_premium = lower_premium + higher_premium - mid_premium
+
+            delta_current = calculate_delta(spx_current, lower_strike, T_current, 0.045, sigma, "call") - \
+                            2 * calculate_delta(spx_current, mid_strike, T_current, 0.045, sigma, "call") + \
+                            calculate_delta(spx_current, higher_strike, T_current, 0.045, sigma, "call")
+            delta_decayed = calculate_delta(spx_current, lower_strike, T_decayed, 0.045, sigma, "call") - \
+                            2 * calculate_delta(spx_current, mid_strike, T_decayed, 0.045, sigma, "call") + \
+                            calculate_delta(spx_current, higher_strike, T_decayed, 0.045, sigma, "call")
+            theta = calculate_theta(spx_current, lower_strike, T, 0.045, sigma, "call") - \
+                    2 * calculate_theta(spx_current, mid_strike, T, 0.045, sigma, "call") + \
+                    calculate_theta(spx_current, higher_strike, T, 0.045, sigma, "call")
+
+        elif strategy == "Call Spread":
+            if spx < call_strike_buy:
+                payoff = 0
+            elif spx < call_strike:
+                payoff = spx - call_strike_buy
+            else:
+                payoff = call_strike - call_strike_buy
+            buy_premium = estimate_option_premium(spx_current, call_strike_buy, T, sigma=sigma, option_type="call")
+            sell_premium = estimate_option_premium(spx_current, call_strike, T, sigma=sigma, option_type="call")
+            net_premium = sell_premium - buy_premium
+
+            delta_current = calculate_delta(spx_current, call_strike_buy, T_current, 0.045, sigma, "call") - \
+                            calculate_delta(spx_current, call_strike, T_current, 0.045, sigma, "call")
+            delta_decayed = calculate_delta(spx_current, call_strike_buy, T_decayed, 0.045, sigma, "call") - \
+                            calculate_delta(spx_current, call_strike, T_decayed, 0.045, sigma, "call")
+            theta = calculate_theta(spx_current, call_strike_buy, T, 0.045, sigma, "call") - \
+                    calculate_theta(spx_current, call_strike, T, 0.045, sigma, "call")
+
+        elif strategy == "Put Spread":
+            if spx < put_strike_buy:
+                payoff = put_strike_buy - put_strike_lower
+            elif spx < put_strike:
+                payoff = put_strike_buy - spx
+            else:
+                payoff = 0
+            buy_premium = estimate_option_premium(spx_current, put_strike_buy, T, sigma=sigma, option_type="put")
+            sell_premium = estimate_option_premium(spx_current, put_strike_lower, T, sigma=sigma, option_type="put")
+            net_premium = sell_premium - buy_premium
+
+            delta_current = calculate_delta(spx_current, put_strike_buy, T_current, 0.045, sigma, "put") - \
+                            calculate_delta(spx_current, put_strike_lower, T_current, 0.045, sigma, "put")
+            delta_decayed = calculate_delta(spx_current, put_strike_buy, T_decayed, 0.045, sigma, "put") - \
+                            calculate_delta(spx_current, put_strike_lower, T_decayed, 0.045, sigma, "put")
+            theta = calculate_theta(spx_current, put_strike_buy, T, 0.045, sigma, "put") - \
+                    calculate_theta(spx_current, put_strike_lower, T, 0.045, sigma, "put")
+
+        elif strategy == "Buy Call":
+            if spx < call_strike_buy:
+                payoff = 0
+            else:
+                payoff = spx - call_strike_buy
+            premium = estimate_option_premium(spx_current, call_strike_buy, T, sigma=sigma, option_type="call")
+            net_premium = -premium
+
+            delta_current = calculate_delta(spx_current, call_strike_buy, T_current, 0.045, sigma, "call")
+            delta_decayed = calculate_delta(spx_current, call_strike_buy, T_decayed, 0.045, sigma, "call")
+            theta = calculate_theta(spx_current, call_strike_buy, T, 0.045, sigma, "call")
+
+        elif strategy == "Buy Put":
+            if spx < put_strike_buy:
+                payoff = put_strike_buy - spx
+            else:
+                payoff = 0
+            premium = estimate_option_premium(spx_current, put_strike_buy, T, sigma=sigma, option_type="put")
+            net_premium = -premium
+
+            delta_current = calculate_delta(spx_current, put_strike_buy, T_current, 0.045, sigma, "put")
+            delta_decayed = calculate_delta(spx_current, put_strike_buy, T_decayed, 0.045, sigma, "put")
+            theta = calculate_theta(spx_current, put_strike_buy, T, 0.045, sigma, "put")
+
+        else:
+            logger.error(f"Unhandled strategy: {strategy}")
+            return 0.0, 0.0, 0.0, 0.0, 0.0  # Fallback for invalid strategy
+
+        logger.debug(f"Strategy: {strategy}, T: {T:.6f}, Theta: {theta:.6f}")
+        return payoff, net_premium, delta_current, delta_decayed, theta
+
+    except Exception as e:
+        logger.error(f"Error in calculate_strategy_metrics for {strategy}: {e}")
+        return 0.0, 0.0, 0.0, 0.0, 0.0  # Fallback for any errors
+
+def suggest_strategy(max_pain: float, contracts: list, current_price: float) -> tuple[str, dict]:
+    """Suggests an options strategy based on Max Pain and Gamma."""
+    if not contracts or max_pain == 0.0:
+        return "Collar", {
+            "call_strike": current_price * 1.05,
+            "put_strike": current_price * 0.95,
+            "put_strike_lower": current_price * 0.9,
+            "call_strike_higher": 0.0,
+            "initial_price": current_price,
+            "call_strike_buy": 0.0,
+            "put_strike_buy": 0.0
+        }
+
+    avg_call_gamma = np.mean([c["gamma"] for c in contracts if c["type"] == "calls"]) if any(c["type"] == "calls" for c in contracts) else 0.0
+    avg_put_gamma = np.mean([c["gamma"] for c in contracts if c["type"] == "puts"]) if any(c["type"] == "puts" for c in contracts) else 0.0
+    call_strikes = [c["strike"] for c in contracts if c["type"] == "calls" and c["strike"] > max_pain]
+    put_strikes = [c["strike"] for c in contracts if c["type"] == "puts" and c["strike"] < max_pain]
+
+    if avg_call_gamma > 0.05 or avg_put_gamma > 0.05:
+        if current_price > max_pain * 1.05:
+            strategy = "Buy Call"
+            strikes = {
+                "call_strike": 0.0,
+                "put_strike": 0.0,
+                "put_strike_lower": 0.0,
+                "call_strike_higher": 0.0,
+                "initial_price": max_pain,
+                "call_strike_buy": min(call_strikes, default=max_pain * 1.05) if call_strikes else max_pain * 1.05,
+                "put_strike_buy": 0.0
+            }
+        elif current_price < max_pain * 0.95:
+            strategy = "Buy Put"
+            strikes = {
+                "call_strike": 0.0,
+                "put_strike": 0.0,
+                "put_strike_lower": 0.0,
+                "call_strike_higher": 0.0,
+                "initial_price": max_pain,
+                "call_strike_buy": 0.0,
+                "put_strike_buy": max(put_strikes, default=max_pain * 0.95) if put_strikes else max_pain * 0.95
+            }
+        else:
+            strategy = "Call Spread" if avg_call_gamma > avg_put_gamma else "Put Spread"
+            if strategy == "Call Spread":
+                strikes = {
+                    "call_strike": min(call_strikes, default=max_pain * 1.1) if call_strikes else max_pain * 1.1,
+                    "put_strike": 0.0,
+                    "put_strike_lower": 0.0,
+                    "call_strike_higher": max(call_strikes, default=max_pain * 1.2) if call_strikes else max_pain * 1.2,
+                    "initial_price": max_pain,
+                    "call_strike_buy": min(call_strikes, default=max_pain * 1.1) if call_strikes else max_pain * 1.1,
+                    "put_strike_buy": 0.0
+                }
+            else:
+                strikes = {
+                    "call_strike": 0.0,
+                    "put_strike": max(put_strikes, default=max_pain * 0.9) if put_strikes else max_pain * 0.9,
+                    "put_strike_lower": min(put_strikes, default=max_pain * 0.8) if put_strikes else max_pain * 0.8,
+                    "call_strike_higher": 0.0,
+                    "initial_price": max_pain,
+                    "call_strike_buy": 0.0,
+                    "put_strike_buy": max(put_strikes, default=max_pain * 0.9) if put_strikes else max_pain * 0.9
+                }
+    else:
+        if current_price > max_pain * 1.05 or current_price < max_pain * 0.95:
+            strategy = "Iron Condor"
+            strikes = {
+                "call_strike": min(call_strikes, default=max_pain * 1.15) if call_strikes else max_pain * 1.15,
+                "put_strike": max(put_strikes, default=max_pain * 0.95) if put_strikes else max_pain * 0.95,
+                "put_strike_lower": min(put_strikes, default=max_pain * 0.85) if put_strikes else max_pain * 0.85,
+                "call_strike_higher": max(call_strikes, default=max_pain * 1.25) if call_strikes else max_pain * 1.25,
+                "initial_price": max_pain,
+                "call_strike_buy": 0.0,
+                "put_strike_buy": 0.0
+            }
+        else:
+            strategy = "Butterfly"
+            strikes = {
+                "call_strike": max_pain * 1.1,
+                "put_strike": max_pain,
+                "put_strike_lower": max_pain * 0.9,
+                "call_strike_higher": 0.0,
+                "initial_price": max_pain,
+                "call_strike_buy": 0.0,
+                "put_strike_buy": 0.0
+            }
+    return strategy, strikes
+
+def plot_strategy_payoff(strategy: str, current_price: float, current_payoff: float, price_current: float, 
+                         call_strike: float, put_strike: float, put_strike_lower: float, call_strike_higher: float, 
+                         expiry_date: datetime.date, call_strike_buy: float = 0.0, put_strike_buy: float = 0.0, 
+                         ticker: str = "SPY") -> go.Figure:
+    """Plots a dynamic payoff profile with Current Delta, Decayed Delta, and Theta curves."""
+    scale = 1.0 if current_price > 1000 else 0.1
+    min_price = max(10, price_current * 0.8) if scale < 1.0 else max(1000, price_current * 0.9)
+    max_price = price_current * 1.2 if scale < 1.0 else price_current * 1.1
+    price_range = np.linspace(min_price, max_price, 500)
+    payoff = []
+    delta_current = []
+    delta_decayed = []
+    theta = []
+    for p in price_range:
+        p_data, n_premium, d_current, d_decayed, t = calculate_strategy_metrics(strategy, p, price_current, call_strike, put_strike, 
+                                                                               put_strike_lower, call_strike_higher, expiry_date, 
+                                                                               call_strike_buy, put_strike_buy, ticker)
+        payoff.append(p_data)
+        delta_current.append(d_current)
+        delta_decayed.append(d_decayed)
+        theta.append(t)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=price_range, y=payoff, mode="lines", name="Payoff", line=dict(color="#39FF14", width=3),
+        hovertemplate="Price: $%{x:.2f}<br>Payoff: $%{y:.2f}<br>Delta (Current): %{customdata[0]:.2f}<br>Delta (Decayed): %{customdata[1]:.2f}<br>Theta: $%{customdata[2]:.2f}",
+        customdata=np.stack((delta_current, delta_decayed, theta), axis=-1)
+    ))
+    fig.add_trace(go.Scatter(
+        x=price_range, y=delta_current, mode="lines", name="Delta (Current)", line=dict(color="#FFA500", width=2, dash="dash"),
+        yaxis="y2",
+        hovertemplate="Price: $%{x:.2f}<br>Delta (Current): %{y:.2f}"
+    ))
+    fig.add_trace(go.Scatter(
+        x=price_range, y=delta_decayed, mode="lines", name="Delta (Decayed)", line=dict(color="#FF8C00", width=2, dash="dot"),
+        yaxis="y2",
+        hovertemplate="Price: $%{x:.2f}<br>Delta (Decayed): %{y:.2f}"
+    ))
+    fig.add_trace(go.Scatter(
+        x=price_range, y=theta, mode="lines", name="Theta (Daily)", line=dict(color="#00CED1", width=2, dash="dot"),
+        hovertemplate="Price: $%{x:.2f}<br>Theta: $%{y:.2f}"
+    ))
+    fig.add_trace(go.Scatter(
+        x=[current_price], y=[current_payoff], mode="markers", name="Current Price",
+        marker=dict(size=12, color="#FFD700", symbol="circle", line=dict(width=2, color="#FFF")),
+        hovertemplate="Price: $%{x:.2f}<br>Payoff: $%{y:.2f}"
+    ))
+    if strategy in ["Collar", "Iron Condor", "Butterfly"]:
+        if call_strike > 0:
+            fig.add_hline(y=call_strike, line=dict(color="#FF4500", width=1, dash="dot"), annotation_text="Call Strike (Sell)", annotation_position="top left")
+        if put_strike > 0:
+            fig.add_hline(y=put_strike, line=dict(color="#32CD32", width=1, dash="dot"), annotation_text="Put Strike (Buy)", annotation_position="top left")
+        if put_strike_lower > 0:
+            fig.add_hline(y=put_strike_lower, line=dict(color="#800080", width=1, dash="dot"), annotation_text="Lower Put Strike (Sell)", annotation_position="top left")
+        if call_strike_higher > 0:
+            fig.add_hline(y=call_strike_higher, line=dict(color="#FF69B4", width=1, dash="dot"), annotation_text="Higher Call Strike (Buy)", annotation_position="top left")
+    elif strategy == "Call Spread":
+        if call_strike_buy > 0:
+            fig.add_hline(y=call_strike_buy, line=dict(color="#FFA500", width=1, dash="dot"), annotation_text="Call Strike (Buy)", annotation_position="top left")
+        if call_strike > 0:
+            fig.add_hline(y=call_strike, line=dict(color="#FF4500", width=1, dash="dot"), annotation_text="Call Strike (Sell)", annotation_position="top left")
+    elif strategy == "Put Spread":
+        if put_strike_buy > 0:
+            fig.add_hline(y=put_strike_buy, line=dict(color="#00CED1", width=1, dash="dot"), annotation_text="Put Strike (Buy)", annotation_position="top left")
+        if put_strike_lower > 0:
+            fig.add_hline(y=put_strike_lower, line=dict(color="#800080", width=1, dash="dot"), annotation_text="Lower Put Strike (Sell)", annotation_position="top left")
+    elif strategy == "Buy Call" and call_strike_buy > 0:
+        fig.add_hline(y=call_strike_buy, line=dict(color="#FFA500", width=1, dash="dot"), annotation_text="Call Strike (Buy)", annotation_position="top left")
+    elif strategy == "Buy Put" and put_strike_buy > 0:
+        fig.add_hline(y=put_strike_buy, line=dict(color="#00CED1", width=1, dash="dot"), annotation_text="Put Strike (Buy)", annotation_position="top left")
+    
+    fig.add_hline(y=price_current, line=dict(color="#666", width=1, dash="dash"), annotation_text="Initial Price", annotation_position="top left")
+    fig.add_vline(x=0, line=dict(color="#666", width=1))
+    fig.update_layout(
+        title=f"{ticker} {strategy} Payoff Profile",
+        xaxis_title="Price ($)",
+        yaxis_title="Payoff/Theta ($)",
+        yaxis2=dict(title="Delta", overlaying="y", side="right", showgrid=False),
+        template="plotly_dark",
+        height=600,
+        margin=dict(l=50, r=50, t=80, b=50),
+        showlegend=True,
+        xaxis=dict(gridcolor="#333", tickformat=",.2f", showgrid=True),
+        yaxis=dict(gridcolor="#333", tickformat=",.2f", showgrid=True),
+        plot_bgcolor="#000",
+        paper_bgcolor="#000",
+        font=dict(color="#FFF", family="Arial, sans-serif"),
+        hovermode="x unified",
+        updatemenus=[
+            dict(
+                buttons=[
+                    dict(label="Zoom In", method="update", args=[{"xaxis.range": [current_price * 0.9, current_price * 1.1]}]),
+                    dict(label="Zoom Out", method="update", args=[{"xaxis.range": [min_price, max_price]}]),
+                ],
+                direction="down",
+                showactive=True,
+                x=1.0,
+                xanchor="right",
+                y=1.1,
+                yanchor="top"
+            )
+        ]
+    )
+    return fig
+
+
+
+
+
+
 
 
 # --- Main App --
@@ -2816,8 +3403,8 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-    # Definición de los tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,tab11, tab12 = st.tabs([
+    # Definición de los tabs (Tab 13 removed)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab11, tab12 = st.tabs([
         "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |",
         "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |",
         "Projection |", "Performance Map |"
@@ -2832,7 +3419,14 @@ def main():
             st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
             return
         
+        # Ensure we select a valid expiration date (not in the future)
         expiration_date = st.selectbox("Expiration Date", expiration_dates, key="expiration_date")
+        selected_date = datetime.strptime(expiration_date, '%Y-%m-%d')
+        current_date = datetime.now()
+        if selected_date > current_date:
+            
+            valid_dates = [d for d in expiration_dates if datetime.strptime(d, '%Y-%m-%d') <= current_date]
+            expiration_date = max(valid_dates, default=expiration_date) if valid_dates else expiration_date
         
         with st.spinner("Fetching price..."):
             current_price = get_current_price(ticker)
@@ -2846,15 +3440,21 @@ def main():
         with st.spinner(f"Fetching data for {expiration_date}..."):
             options_data = get_options_data(ticker, expiration_date)
             if not options_data:
-                st.error("No options data available for this ticker and expiration date.")
-                return
+                st.warning(f"No options data available for {ticker} on {expiration_date}. Using default values.")
+                options_data = [
+                    {"strike": current_price - 10, "option_type": "call", "volume": 1000, "implied_volatility": 0.2, "greeks": {"gamma": 0.01}, "bid": 1.0, "ask": 1.2, "open_interest": 500},
+                    {"strike": current_price + 10, "option_type": "put", "volume": 1200, "implied_volatility": 0.22, "greeks": {"gamma": 0.015}, "bid": 1.1, "ask": 1.3, "open_interest": 600}
+                ]
             
-            # Procesamiento vectorizado corregido
+            # Procesamiento vectorizado corregido, incluyendo Gamma
             strikes = np.array([float(opt.get("strike", 0)) for opt in options_data if opt and isinstance(opt, dict)])
             option_types = np.array([opt.get("option_type", "").upper() for opt in options_data if opt and isinstance(opt, dict)])
             ois = np.array([int(opt.get("open_interest", 0)) for opt in options_data if opt and isinstance(opt, dict)])
+            volumes = np.array([int(opt.get("volume", 0)) for opt in options_data if opt and isinstance(opt, dict)])
             gammas = np.array([float(opt.get("greeks", {}).get("gamma", 0)) if isinstance(opt.get("greeks", {}), dict) else 0
-                              for opt in options_data if opt and isinstance(opt, dict)])
+                            for opt in options_data if opt and isinstance(opt, dict)])
+            ivs = np.array([float(opt.get("implied_volatility", 0)) if opt.get("implied_volatility") else 0
+                            for opt in options_data if opt and isinstance(opt, dict)])
             
             processed_data = {}
             unique_strikes = np.unique(strikes)
@@ -2863,11 +3463,15 @@ def main():
                 processed_data[strike] = {
                     "CALL": {
                         "OI": np.sum(ois[mask & (option_types == "CALL")]),
-                        "Gamma": np.sum(gammas[mask & (option_types == "CALL")])
+                        "Volume": np.sum(volumes[mask & (option_types == "CALL")]),
+                        "Gamma": np.sum(gammas[mask & (option_types == "CALL")]),
+                        "IV": np.mean(ivs[mask & (option_types == "CALL")])
                     },
                     "PUT": {
                         "OI": np.sum(ois[mask & (option_types == "PUT")]),
-                        "Gamma": np.sum(gammas[mask & (option_types == "PUT")])
+                        "Volume": np.sum(volumes[mask & (option_types == "PUT")]),
+                        "Gamma": np.sum(gammas[mask & (option_types == "PUT")]),
+                        "IV": np.mean(ivs[mask & (option_types == "PUT")])
                     }
                 }
             
@@ -2879,8 +3483,15 @@ def main():
             historical_prices = prices
             touched_strikes = detect_touched_strikes(processed_data.keys(), historical_prices)
             max_pain = calculate_max_pain_optimized(options_data)
-            df = analyze_contracts(ticker, expiration_date, current_price)
+            df = analyze_contracts(ticker, expiration_date, current_price, options_data=options_data)
+            if df.empty:
+                # Construct a fallback DataFrame from options_data
+                df = pd.DataFrame(options_data)[["strike", "option_type", "open_interest", "volume", "bid"]]
+                if df.empty:
+                    df = pd.DataFrame(columns=["strike", "option_type", "open_interest", "volume", "bid"])
             max_pain_strike, max_pain_df = calculate_max_pain(df)
+            if max_pain_strike is None:
+                max_pain_strike = current_price  # Fallback to current price
             
             gamma_fig = gamma_exposure_chart(processed_data, current_price, touched_strikes)
             st.plotly_chart(gamma_fig, use_container_width=True)
@@ -2915,8 +3526,8 @@ def main():
                 key="download_skew_tab1"
             )
             
-            st.write(f"Current Price of {ticker}: ${current_price:.2f} (Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
-            st.write(f"**Max Pain Strike (Optimized):** {max_pain if max_pain else 'N/A'}")
+            st.write(f"Current Price of {ticker}: ${current_price:.2f} (Updated: {datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')})")
+            st.write(f"**Max Pain Strike (Optimized):** ${max_pain if max_pain else 'N/A'}")
             
             max_pain_fig = plot_max_pain_histogram_with_levels(max_pain_df, current_price)
             st.plotly_chart(max_pain_fig, use_container_width=True)
@@ -2930,67 +3541,499 @@ def main():
                 key="download_max_pain_tab1"
             )
             
-            # Gráfico combinado de CALLs y PUTs
-            call_df = df[df['option_type'] == 'call'].copy()
-            put_df = df[df['option_type'] == 'put'].copy()
+            # Nueva sección NET_FLOW_REALTIME_ELITE_ optimizada para movimientos del MM
+            st.markdown('<div class="main-title">> NET_FLOW</div>', unsafe_allow_html=True)
             
-            # Limpiar open_interest para evitar nan en ambos DataFrames
-            call_df['open_interest'] = call_df['open_interest'].fillna(0).astype(int).clip(lower=0)
-            put_df['open_interest'] = put_df['open_interest'].fillna(0).astype(int).clip(lower=0)
-            
-            # Crear figura combinada
-            fig_options = go.Figure()
-            
-            # Agregar CALLs
-            fig_options.add_trace(go.Scatter(
-                x=call_df['strike'],
-                y=call_df['bid'],
-                mode='markers',
-                marker=dict(
-                    size=call_df['open_interest'].apply(lambda x: max(5, min(30, x / 1000))),  # Escalar tamaño
-                    color='blue',
-                    opacity=0.7
+            # Configuración de actualización automática cada 220 segundos
+            st_autorefresh(interval=220 * 1000, key="netflowrefresh")
+
+            # Usar el mismo ticker y expiration_date de arriba
+            st.write(f"**Using Ticker:** {ticker} | **Expiration Date:** {expiration_date}")
+
+            # Usar una fecha histórica para evitar problemas con datos futuros
+            today = datetime(2025, 4, 16)  # Usamos una fecha histórica para datos más realistas
+            start_time = today.replace(hour=5, minute=0)  # 5:00 AM
+            end_time = today.replace(hour=20, minute=0)   # 8:00 PM
+            interval = "1min"
+
+            # Obtener datos intradía (precios y volumen)
+            try:
+                prices, timestamps = get_intraday_prices(ticker, interval, start_time=start_time, end_time=end_time)
+                if not prices or len(prices) < 2:
+                    raise ValueError("No intraday prices returned.")
+            except Exception as e:
+                st.error(f"Unable to fetch intraday prices for {ticker} from 5 AM to 8 PM. Using fallback data. Error: {str(e)}")
+                # Simular precios realistas para SPY (basado en un rango típico)
+                time_bins = pd.date_range(start=start_time, end=end_time, freq='H')
+                prices = [current_price * (1 + 0.005 * np.sin(i)) for i in range(len(time_bins))]  # Simulación de precios
+                timestamps = time_bins.tolist()
+
+            # Obtener volumen intradía del subyacente
+            timesales_data = []
+            try:
+                url = f"{TRADIER_BASE_URL}/markets/timesales"
+                params = {
+                    "symbol": ticker,
+                    "interval": interval,
+                    "start": start_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    "end": end_time.strftime('%Y-%m-%d %H:%M:%S')
+                }
+                response = requests.get(url, headers=HEADERS_TRADIER, params=params, timeout=10)
+                response.raise_for_status()
+                data = response.json()
+                if data and 'series' in data and 'data' in data['series']:
+                    timesales_data = data['series']['data']
+                else:
+                    raise ValueError("No timesales data returned.")
+            except Exception as e:
+                st.error(f"Unable to fetch timesales data for {ticker} from 5 AM to 8 PM. Using fallback volume. Error: {str(e)}")
+                timesales_data = [{"time": t.strftime('%Y-%m-%d %H:%M:%S'), "volume": 1000 * (1 + 0.3 * np.sin(i))} 
+                                for i, t in enumerate(pd.date_range(start=start_time, end=end_time, freq='H'))]
+
+            # Agrupar datos por hora
+            time_bins = pd.date_range(start=start_time, end=end_time, freq='H')
+            prices_dict = {pd.to_datetime(ts): price for ts, price in zip(timestamps, prices)}
+
+            # Mapear timestamps a volúmenes del subyacente
+            underlying_volumes = {}
+            for entry in timesales_data:
+                ts = pd.to_datetime(entry['time'])
+                volume = entry.get('volume', 0)
+                underlying_volumes[ts] = volume
+
+            # Procesar datos para la gráfica y cálculos avanzados
+            mm_data = {
+                "time": [],
+                "net_drift": [],           # Net Drift ($M)
+                "underlying_price": [],    # Precio subyacente
+                "calls_oi_pressure": [],   # Presión de OI de Calls
+                "puts_oi_pressure": [],    # Presión de OI de Puts
+                "gamma_exposure": [],      # Gamma Exposure
+                "max_pain_distance": [],   # Distancia al Max Pain
+                "volatility_skew": [],     # Volatility Skew
+                "momentum": [],            # Momentum del precio
+                "mm_score": [],            # Puntaje de dirección del MM
+                "mm_direction": []         # Dirección predicha del MM
+            }
+            previous_price = None
+            max_volume = max(underlying_volumes.values(), default=1)
+            max_net_drift = 0
+            max_price = 0
+            max_calls_oi = 0
+            max_puts_oi = 0
+            max_gamma = 0
+            max_skew = 0
+            max_momentum = 0
+            max_mm_score = 0
+
+            # Calcular OI y Gamma por strike para identificar niveles clave
+            strikes_data = {}
+            for opt in options_data:
+                strike = float(opt.get("strike", 0))
+                opt_type = opt.get("option_type", "").upper()
+                oi = int(opt.get("open_interest", 0))
+                gamma = float(opt.get("greeks", {}).get("gamma", 0) or 0)
+                if strike not in strikes_data:
+                    strikes_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
+                strikes_data[strike][opt_type]["OI"] += oi
+                strikes_data[strike][opt_type]["Gamma"] += gamma
+
+            # Identificar el Gamma Wall (strike con mayor Gamma Exposure)
+            gamma_by_strike = {strike: (data["CALL"]["Gamma"] + data["PUT"]["Gamma"]) * (current_price / 100) 
+                            for strike, data in strikes_data.items()}
+            gamma_wall = max(gamma_by_strike.items(), key=lambda x: abs(x[1]), default=(current_price, 0))[0]
+
+            for t in time_bins:
+                start_hour = t
+                end_hour = t + pd.Timedelta(hours=1)
+                hourly_timestamps = [ts for ts in timestamps if start_hour <= pd.to_datetime(ts) < end_hour]
+                if not hourly_timestamps:
+                    continue
+
+                # Promedio del precio subyacente
+                hourly_prices = [prices_dict.get(pd.to_datetime(ts), current_price) for ts in hourly_timestamps]
+                avg_price = np.mean(hourly_prices) if hourly_prices else current_price
+
+                # Calcular primas, OI, IV y Gamma de Calls y Puts
+                calls_premium = 0
+                puts_premium = 0
+                calls_oi = 0
+                puts_oi = 0
+                iv_calls_list = []
+                iv_puts_list = []
+                gamma_calls = 0
+                gamma_puts = 0
+
+                for opt in options_data:
+                    opt_type = opt.get("option_type", "").lower()
+                    bid = opt.get("bid", 0.0)
+                    ask = opt.get("ask", 0.0)
+                    oi = int(opt.get("open_interest", 0) or 0)
+                    iv = float(opt.get("implied_volatility", 0) or 0)
+                    gamma = float(opt.get("greeks", {}).get("gamma", 0) or 0)
+
+                    if bid <= 0 or ask <= 0:
+                        logger.warning(f"Non-positive bid/ask for {ticker} option: bid={bid}, ask={ask}")
+                        continue
+
+                    premium = (float(bid) + float(ask)) / 2 * oi * 100
+                    if opt_type == "call":
+                        calls_premium += premium
+                        calls_oi += oi
+                        if iv > 0:
+                            iv_calls_list.append(iv)
+                        gamma_calls += gamma
+                    elif opt_type == "put":
+                        puts_premium += premium
+                        puts_oi += oi
+                        if iv > 0:
+                            iv_puts_list.append(iv)
+                        gamma_puts += gamma
+
+                # Calcular métricas clave
+                net_drift = calls_premium - puts_premium
+                net_drift_m = net_drift / 1_000_000 if calls_premium + puts_premium > 0 else 0
+                hourly_underlying_vol = sum(vol for ts, vol in underlying_volumes.items() if start_hour <= ts < end_hour) or 1000
+
+                # Calcular Volatility Skew
+                iv_calls_avg = np.mean(iv_calls_list) * 100 if iv_calls_list else 0.0
+                iv_puts_avg = np.mean(iv_puts_list) * 100 if iv_puts_list else 0.0
+                volatility_skew = (iv_calls_avg - iv_puts_avg) * (calls_oi / (puts_oi + 1)) if puts_oi > 0 else 0
+
+                # Calcular Gamma Exposure total
+                total_gamma = (gamma_calls + gamma_puts) * (current_price / 100)
+
+                # Calcular presión de OI por encima y por debajo del precio actual
+                calls_oi_above = sum(data["CALL"]["OI"] for strike, data in strikes_data.items() if strike > avg_price)
+                puts_oi_below = sum(data["PUT"]["OI"] for strike, data in strikes_data.items() if strike < avg_price)
+                calls_oi_pressure = calls_oi_above / (max(1, abs(avg_price - gamma_wall) + 1)) if gamma_wall != avg_price else 0
+                puts_oi_pressure = puts_oi_below / (max(1, abs(avg_price - gamma_wall) + 1)) if gamma_wall != avg_price else 0
+
+                # Calcular Momentum
+                momentum = 0
+                if previous_price is not None:
+                    price_change = (avg_price - previous_price) / previous_price if previous_price != 0 else 0
+                    momentum = price_change * (hourly_underlying_vol / max_volume)
+                previous_price = avg_price
+
+                # Calcular la distancia al Max Pain y la presión hacia él
+                max_pain_distance = (avg_price - max_pain_strike) / max_pain_strike if max_pain_strike != 0 else 0
+                max_pain_pressure = -max_pain_distance * (calls_oi + puts_oi) / 1000  # Negativo para indicar dirección hacia Max Pain
+
+                # Calcular el puntaje del MM (MM Score)
+                # Factores: Max Pain Pressure (40%), Net Drift (20%), Gamma Exposure (20%), OI Pressure (10%), Momentum (10%)
+                mm_score = (
+                    (max_pain_pressure * 0.4) +
+                    (-net_drift_m * 0.2) +  # Negativo porque el MM tiende a ir contra el flujo
+                    (total_gamma * 0.2) +
+                    ((calls_oi_pressure - puts_oi_pressure) * 0.1) +
+                    (-momentum * 0.1)  # Negativo para contrarrestar el momentum
+                )
+
+                # Determinar la dirección predicha del MM
+                mm_direction = "Down" if mm_score < 0 else "Up" if mm_score > 0 else "Neutral"
+
+                # Guardar datos
+                mm_data["time"].append(t)
+                mm_data["net_drift"].append(net_drift_m)
+                mm_data["underlying_price"].append(avg_price)
+                mm_data["calls_oi_pressure"].append(calls_oi_pressure)
+                mm_data["puts_oi_pressure"].append(puts_oi_pressure)
+                mm_data["gamma_exposure"].append(total_gamma)
+                mm_data["max_pain_distance"].append(max_pain_distance)
+                mm_data["volatility_skew"].append(volatility_skew)
+                mm_data["momentum"].append(momentum)
+                mm_data["mm_score"].append(mm_score)
+                mm_data["mm_direction"].append(mm_direction)
+
+                # Actualizar máximos para normalización
+                max_net_drift = max(max_net_drift, abs(net_drift_m))
+                max_price = max(max_price, avg_price)
+                max_calls_oi = max(max_calls_oi, calls_oi_pressure)
+                max_puts_oi = max(max_puts_oi, puts_oi_pressure)
+                max_gamma = max(max_gamma, total_gamma)
+                max_skew = max(max_skew, abs(volatility_skew))
+                max_momentum = max(max_momentum, abs(momentum))
+                max_mm_score = max(max_mm_score, abs(mm_score))
+
+            # Calcular medias móviles para suavizar las líneas (ventana de 3 horas)
+            window = 3
+            mm_df = pd.DataFrame(mm_data)
+            mm_df["net_drift_ma"] = mm_df["net_drift"].rolling(window=window, min_periods=1).mean()
+            mm_df["underlying_price_ma"] = mm_df["underlying_price"].rolling(window=window, min_periods=1).mean()
+            mm_df["calls_oi_pressure_ma"] = mm_df["calls_oi_pressure"].rolling(window=window, min_periods=1).mean()
+            mm_df["puts_oi_pressure_ma"] = mm_df["puts_oi_pressure"].rolling(window=window, min_periods=1).mean()
+            mm_df["gamma_exposure_ma"] = mm_df["gamma_exposure"].rolling(window=window, min_periods=1).mean()
+
+            # Normalizar valores para la visualización
+            net_drift_normalized = [v / (max_net_drift + 1e-10) for v in mm_df["net_drift_ma"]]
+            price_normalized = [(v - min(mm_df["underlying_price"])) / (max_price - min(mm_df["underlying_price"]) + 1e-10) 
+                                for v in mm_df["underlying_price_ma"]]
+            calls_oi_normalized = [v / (max_calls_oi + 1e-10) for v in mm_df["calls_oi_pressure_ma"]]
+            puts_oi_normalized = [v / (max_puts_oi + 1e-10) for v in mm_df["puts_oi_pressure_ma"]]
+            gamma_normalized = [v / (max_gamma + 1e-10) for v in mm_df["gamma_exposure_ma"]]
+
+            # Crear gráfica de líneas
+            fig = go.Figure()
+
+            # Línea de Net Drift (verde)
+            fig.add_trace(go.Scatter(
+                x=mm_df["time"],
+                y=net_drift_normalized,
+                mode='lines',
+                line=dict(color="#00FF00", width=2),
+                name="Net Drift",
+                hovertemplate=(
+                    "Time: %{x|%I:%M %p}<br>" +
+                    "Net Drift: $%{customdata[0]:.2f}M<br>" +
+                    "Price: $%{customdata[1]:.2f}<br>" +
+                    "Calls OI Press: %{customdata[2]:,.0f}<br>" +
+                    "Puts OI Press: %{customdata[3]:,.0f}<br>" +
+                    "Gamma Exp: %{customdata[4]:.2f}<br>" +
+                    "Max Pain Dist: %{customdata[5]:.2%}<br>" +
+                    "Vol Skew: %{customdata[6]:.2f}<br>" +
+                    "Momentum: %{customdata[7]:.2f}<br>" +
+                    "MM Score: %{customdata[8]:.2f}<br>" +
+                    "MM Dir: %{customdata[9]}"
                 ),
-                name='CALL Options',
-                hovertemplate="<b>Strike:</b> %{x:.2f}<br><b>Bid:</b> ${%y:.2f}<br><b>Open Interest:</b> %{customdata:,}",
-                customdata=call_df['open_interest']
+                customdata=list(zip(
+                    mm_df["net_drift"],
+                    mm_df["underlying_price"],
+                    mm_df["calls_oi_pressure"],
+                    mm_df["puts_oi_pressure"],
+                    mm_df["gamma_exposure"],
+                    mm_df["max_pain_distance"],
+                    mm_df["volatility_skew"],
+                    mm_df["momentum"],
+                    mm_df["mm_score"],
+                    mm_df["mm_direction"]
+                ))
             ))
-            
-            # Agregar PUTs
-            fig_options.add_trace(go.Scatter(
-                x=put_df['strike'],
-                y=put_df['bid'],
-                mode='markers',
-                marker=dict(
-                    size=put_df['open_interest'].apply(lambda x: max(5, min(30, x / 1000))),  # Escalar tamaño
-                    color='red',
-                    opacity=0.7
+
+            # Línea de Precio Subyacente (azul)
+            fig.add_trace(go.Scatter(
+                x=mm_df["time"],
+                y=price_normalized,
+                mode='lines',
+                line=dict(color="#00FFFF", width=2),
+                name="Underlying Price",
+                hovertemplate=(
+                    "Time: %{x|%I:%M %p}<br>" +
+                    "Net Drift: $%{customdata[0]:.2f}M<br>" +
+                    "Price: $%{customdata[1]:.2f}<br>" +
+                    "Calls OI Press: %{customdata[2]:,.0f}<br>" +
+                    "Puts OI Press: %{customdata[3]:,.0f}<br>" +
+                    "Gamma Exp: %{customdata[4]:.2f}<br>" +
+                    "Max Pain Dist: %{customdata[5]:.2%}<br>" +
+                    "Vol Skew: %{customdata[6]:.2f}<br>" +
+                    "Momentum: %{customdata[7]:.2f}<br>" +
+                    "MM Score: %{customdata[8]:.2f}<br>" +
+                    "MM Dir: %{customdata[9]}"
                 ),
-                name='PUT Options',
-                hovertemplate="<b>Strike:</b> %{x:.2f}<br><b>Bid:</b> ${%y:.2f}<br><b>Open Interest:</b> %{customdata:,}",
-                customdata=put_df['open_interest']
+                customdata=list(zip(
+                    mm_df["net_drift"],
+                    mm_df["underlying_price"],
+                    mm_df["calls_oi_pressure"],
+                    mm_df["puts_oi_pressure"],
+                    mm_df["gamma_exposure"],
+                    mm_df["max_pain_distance"],
+                    mm_df["volatility_skew"],
+                    mm_df["momentum"],
+                    mm_df["mm_score"],
+                    mm_df["mm_direction"]
+                ))
             ))
-            
+
+            # Línea de Calls OI Pressure (amarillo)
+            fig.add_trace(go.Scatter(
+                x=mm_df["time"],
+                y=calls_oi_normalized,
+                mode='lines',
+                line=dict(color="#FFD700", width=2),
+                name="Calls OI Pressure",
+                hovertemplate=(
+                    "Time: %{x|%I:%M %p}<br>" +
+                    "Net Drift: $%{customdata[0]:.2f}M<br>" +
+                    "Price: $%{customdata[1]:.2f}<br>" +
+                    "Calls OI Press: %{customdata[2]:,.0f}<br>" +
+                    "Puts OI Press: %{customdata[3]:,.0f}<br>" +
+                    "Gamma Exp: %{customdata[4]:.2f}<br>" +
+                    "Max Pain Dist: %{customdata[5]:.2%}<br>" +
+                    "Vol Skew: %{customdata[6]:.2f}<br>" +
+                    "Momentum: %{customdata[7]:.2f}<br>" +
+                    "MM Score: %{customdata[8]:.2f}<br>" +
+                    "MM Dir: %{customdata[9]}"
+                ),
+                customdata=list(zip(
+                    mm_df["net_drift"],
+                    mm_df["underlying_price"],
+                    mm_df["calls_oi_pressure"],
+                    mm_df["puts_oi_pressure"],
+                    mm_df["gamma_exposure"],
+                    mm_df["max_pain_distance"],
+                    mm_df["volatility_skew"],
+                    mm_df["momentum"],
+                    mm_df["mm_score"],
+                    mm_df["mm_direction"]
+                ))
+            ))
+
+            # Línea de Puts OI Pressure (rojo)
+            fig.add_trace(go.Scatter(
+                x=mm_df["time"],
+                y=puts_oi_normalized,
+                mode='lines',
+                line=dict(color="#FF4500", width=2),
+                name="Puts OI Pressure",
+                hovertemplate=(
+                    "Time: %{x|%I:%M %p}<br>" +
+                    "Net Drift: $%{customdata[0]:.2f}M<br>" +
+                    "Price: $%{customdata[1]:.2f}<br>" +
+                    "Calls OI Press: %{customdata[2]:,.0f}<br>" +
+                    "Puts OI Press: %{customdata[3]:,.0f}<br>" +
+                    "Gamma Exp: %{customdata[4]:.2f}<br>" +
+                    "Max Pain Dist: %{customdata[5]:.2%}<br>" +
+                    "Vol Skew: %{customdata[6]:.2f}<br>" +
+                    "Momentum: %{customdata[7]:.2f}<br>" +
+                    "MM Score: %{customdata[8]:.2f}<br>" +
+                    "MM Dir: %{customdata[9]}"
+                ),
+                customdata=list(zip(
+                    mm_df["net_drift"],
+                    mm_df["underlying_price"],
+                    mm_df["calls_oi_pressure"],
+                    mm_df["puts_oi_pressure"],
+                    mm_df["gamma_exposure"],
+                    mm_df["max_pain_distance"],
+                    mm_df["volatility_skew"],
+                    mm_df["momentum"],
+                    mm_df["mm_score"],
+                    mm_df["mm_direction"]
+                ))
+            ))
+
+            # Línea de Gamma Exposure (púrpura)
+            fig.add_trace(go.Scatter(
+                x=mm_df["time"],
+                y=gamma_normalized,
+                mode='lines',
+                line=dict(color="#FF00FF", width=2),
+                name="Gamma Exposure",
+                hovertemplate=(
+                    "Time: %{x|%I:%M %p}<br>" +
+                    "Net Drift: $%{customdata[0]:.2f}M<br>" +
+                    "Price: $%{customdata[1]:.2f}<br>" +
+                    "Calls OI Press: %{customdata[2]:,.0f}<br>" +
+                    "Puts OI Press: %{customdata[3]:,.0f}<br>" +
+                    "Gamma Exp: %{customdata[4]:.2f}<br>" +
+                    "Max Pain Dist: %{customdata[5]:.2%}<br>" +
+                    "Vol Skew: %{customdata[6]:.2f}<br>" +
+                    "Momentum: %{customdata[7]:.2f}<br>" +
+                    "MM Score: %{customdata[8]:.2f}<br>" +
+                    "MM Dir: %{customdata[9]}"
+                ),
+                customdata=list(zip(
+                    mm_df["net_drift"],
+                    mm_df["underlying_price"],
+                    mm_df["calls_oi_pressure"],
+                    mm_df["puts_oi_pressure"],
+                    mm_df["gamma_exposure"],
+                    mm_df["max_pain_distance"],
+                    mm_df["volatility_skew"],
+                    mm_df["momentum"],
+                    mm_df["mm_score"],
+                    mm_df["mm_direction"]
+                ))
+            ))
+
+            # Líneas horizontales para Max Pain y Gamma Wall
+            max_pain_norm = (max_pain_strike - min(mm_df["underlying_price"])) / (max_price - min(mm_df["underlying_price"]) + 1e-10)
+            gamma_wall_norm = (gamma_wall - min(mm_df["underlying_price"])) / (max_price - min(mm_df["underlying_price"]) + 1e-10)
+
+            fig.add_hline(
+                y=max_pain_norm,
+                line_dash="dash",
+                line_color="yellow",
+                annotation_text=f"Max Pain: ${max_pain_strike:.2f}",
+                annotation_position="top",
+                annotation_font_color="yellow"
+            )
+
+            fig.add_hline(
+                y=gamma_wall_norm,
+                line_dash="dash",
+                line_color="purple",
+                annotation_text=f"Gamma Wall: ${gamma_wall:.2f}",
+                annotation_position="top right",
+                annotation_font_color="purple"
+            )
+
+            # Agregar anotación con predicción del MM
+            latest_mm_score = mm_df["mm_score"].iloc[-1] if not mm_df.empty else 0
+            latest_mm_direction = mm_df["mm_direction"].iloc[-1] if not mm_df.empty else "Neutral"
+            speculation = (
+                f"MM Likely to Push: {latest_mm_direction}<br>" +
+                f"Max Pain Pressure: {max_pain_pressure:.2f}<br>" +
+                f"Gamma Wall Influence: {gamma_wall:.2f}<br>" +
+                f"Net OI Pressure: {(calls_oi_pressure - puts_oi_pressure):.2f}"
+            )
+            fig.add_annotation(
+                xref="paper", yref="paper",
+                x=0.02, y=0.98,
+                text=speculation,
+                showarrow=False,
+                font=dict(color="#FFD700", size=12),
+                bgcolor="rgba(0, 0, 0, 0.5)",
+                bordercolor="#39FF14",
+                borderwidth=1,
+                borderpad=4
+            )
+
             # Configurar diseño
-            fig_options.update_layout(
-                title=f"CALL and PUT Options for {ticker}",
-                xaxis_title="Strike Price",
-                yaxis_title="Bid Price",
-                template="plotly_white",
+            fig.update_layout(
+                title=f"MM Flow Elite - {ticker} | {datetime.now().strftime('%Y-%m-%d')}",
+                xaxis=dict(
+                    title="Time",
+                    tickformat="%I:%M %p",
+                    showgrid=True,
+                    gridcolor="rgba(255, 255, 255, 0.1)",
+                    range=[start_time, end_time]
+                ),
+                yaxis=dict(
+                    title="Normalized Value",
+                    showgrid=True,
+                    gridcolor="rgba(255, 255, 255, 0.1)",
+                    range=[-0.1, 1.1]
+                ),
+                template="plotly_dark",
+                plot_bgcolor="#0A0A0A",
+                paper_bgcolor="#0A0A0A",
+                font=dict(color="#FFFFFF", family="Courier New, monospace"),
+                hovermode="x unified",
+                height=600,
+                margin=dict(l=80, r=80, t=80, b=60),
                 legend=dict(
                     yanchor="top",
-                    y=0.99,
-                    xanchor="left",
-                    x=0.01
-                ),
-                hovermode="closest"
+                    y=1.15,
+                    xanchor="right",
+                    x=1,
+                    bgcolor="rgba(0, 0, 0, 0.5)",
+                    bordercolor="#39FF14",
+                    borderwidth=1
+                )
             )
-            
-            st.plotly_chart(fig_options, use_container_width=True)
-            
-            st.markdown("---")
-            st.markdown("*Developed by Ozy | © 2025*")
 
+            st.plotly_chart(fig)
+
+            # Pie de página
+            st.markdown(f'<div class="footer-text">> LAST_UPDATED: {datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")} | POWERED_BY_OZY_ANALYTICS_</div>', unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("*Developed by Ozy | © 2025*")
+
+
+
+    
     with tab2:
         st.subheader("Market Scanner Pro")
         
@@ -2999,6 +4042,7 @@ def main():
             "Select Scan Type",
             ["Bullish (Upward Momentum)", "Bearish (Downward Momentum)", "Breakouts", "Unusual Volume"],
             key="scan_type_tab2"
+        
         )
         max_results = st.slider("Max Stocks to Display", 1, 200, 20, key="max_results_tab2")
         
@@ -3421,14 +4465,28 @@ def main():
 
     # Tab 5: Options Order Flow
     with tab5:
-        st.subheader("Order Flow")
-        stock = st.text_input("Enter Stock Ticker (e.g., AAPL, MSFT):", value="SPY", key="stock_analysis").upper()
-        expiration_dates = get_expiration_dates(stock)
-        if not expiration_dates:
-            st.error(f"No expiration dates found for '{stock}'. Please enter a valid stock ticker (e.g., SPY, AAPL).")
-            return
-        selected_expiration = st.selectbox("Select an Expiration Date:", expiration_dates, key="stock_exp_date")
-        if stock:
+        st.subheader("Options Order Flow & Strategy Analyzer")
+    
+    # Input section
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            stock = st.text_input("Enter Stock Ticker (e.g., AAPL, MSFT):", value="SPY", key="stock_analysis").upper()
+            expiration_dates = get_expiration_dates(stock)
+            if not expiration_dates:
+                st.error(f"No expiration dates found for '{stock}'. Please enter a valid stock ticker (e.g., SPY, AAPL).")
+            else:
+                selected_expiration = st.selectbox("Select an Expiration Date:", expiration_dates, key="stock_exp_date")
+                # Toggle for Strategy Analyzer
+                show_strategy_analyzer = st.checkbox("Show Options Strategy Analyzer", value=False, key="show_strategy_tab5")
+
+    # Initialize/reset session state for strategy analyzer
+    if st.session_state.get("ticker") != stock:
+        st.session_state["suggested_params"] = None
+        st.session_state["strategy"] = "Collar"
+        st.session_state["ticker"] = stock
+
+    with col2:
+        if stock and expiration_dates:
             with st.spinner("Fetching data..."):
                 financial_metrics = get_financial_metrics(stock)
                 prices, volumes = get_historical_prices_fmp(stock)
@@ -3439,203 +4497,292 @@ def main():
                     current_price = get_current_price(stock)
                     if current_price == 0.0:
                         st.error(f"❌ No se pudo obtener el precio actual para {stock}. Verifica el ticker o la conexión a la API.")
-                        return
-                    st.markdown(f"### Metrics for {stock}")
-                    st.write(f"- **Current Price**: ${current_price:,.2f}")
-                    st.write(f"- **EBITDA**: ${financial_metrics.get('EBITDA', 0):,.2f}")
-                    st.write(f"- **Revenue**: ${financial_metrics.get('Revenue', 0):,.2f}")
-                    st.write(f"- **Net Income**: ${financial_metrics.get('Net Income', 0):,.2f}")
-                    st.write(f"- **ROE**: {financial_metrics.get('ROE', 0):,.2f}")
-                    st.write(f"- **Beta**: ${financial_metrics.get('Beta', 0):,.2f}")
-                    st.write(f"- **PE Ratio**: ${financial_metrics.get('PE Ratio', 0):,.2f}")
-                    st.write(f"- **Debt-to-Equity Ratio**: {financial_metrics.get('Debt-to-Equity Ratio', 0):.2f}")
-                    st.write(f"- **Market Cap**: ${financial_metrics.get('Market Cap', 0):,.2f}")
-                    st.write(f"- **Operating Cash Flow**: ${financial_metrics.get('Operating Cash Flow', 0):,.2f}")
-                    st.write(f"- **Free Cash Flow**: ${financial_metrics.get('Free Cash Flow', 0):,.2f}")
-                    st.markdown(f"### Possibilities for {stock}")
-                    st.write(f"- **Trend**: {trend}")
-                    st.write(f"- **Confidence**: {confidence:.2f}")
-                    st.write(f"- **Predicted Price (Next Day)**: ${predicted_price:.2f}" if predicted_price is not None else "- **Predicted Price (Next Day)**: N/A")
-                    option_data = get_option_data(stock, selected_expiration)
-                    if not option_data.empty:
-                        option_data_list = option_data.to_dict('records')
-                        buy_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "buy")]
-                        sell_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "sell")]
-                        buy_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "buy")]
-                        sell_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "sell")]
-                        all_strikes = sorted(set(option_data["strike"]))
-                        buy_calls_data = pd.DataFrame({"strike": all_strikes}).merge(buy_calls[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
-                        sell_calls_data = pd.DataFrame({"strike": all_strikes}).merge(sell_calls[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
-                        buy_puts_data = pd.DataFrame({"strike": all_strikes}).merge(buy_puts[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
-                        sell_puts_data = pd.DataFrame({"strike": all_strikes}).merge(sell_puts[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
-                        fig = go.Figure()
+                    else:
+                        # Existing Metrics Section
+                        st.markdown(f"### Metrics for {stock}")
+                        st.write(f"- **Current Price**: ${current_price:,.2f}")
+                        st.write(f"- **EBITDA**: ${financial_metrics.get('EBITDA', 0):,.2f}")
+                        st.write(f"- **Revenue**: ${financial_metrics.get('Revenue', 0):,.2f}")
+                        st.write(f"- **Net Income**: ${financial_metrics.get('Net Income', 0):,.2f}")
+                        st.write(f"- **ROE**: {financial_metrics.get('ROE', 0):,.2f}")
+                        st.write(f"- **Beta**: ${financial_metrics.get('Beta', 0):,.2f}")
+                        st.write(f"- **PE Ratio**: ${financial_metrics.get('PE Ratio', 0):,.2f}")
+                        st.write(f"- **Debt-to-Equity Ratio**: {financial_metrics.get('Debt-to-Equity Ratio', 0):.2f}")
+                        st.write(f"- **Market Cap**: ${financial_metrics.get('Market Cap', 0):,.2f}")
+                        st.write(f"- **Operating Cash Flow**: ${financial_metrics.get('Operating Cash Flow', 0):,.2f}")
+                        st.write(f"- **Free Cash Flow**: ${financial_metrics.get('Free Cash Flow', 0):,.2f}")
+                        st.markdown(f"### Possibilities for {stock}")
+                        st.write(f"- **Trend**: {trend}")
+                        st.write(f"- **Confidence**: {confidence:.2f}")
+                        st.write(f"- **Predicted Price (Next Day)**: ${predicted_price:.2f}" if predicted_price is not None else "- **Predicted Price (Next Day)**: N/A")
 
-                        fig.add_trace(go.Bar(
-                            x=buy_calls_data["strike"],
-                            y=buy_calls_data["open_interest"],
-                            name="Buy Call",
-                            marker_color="green",
-                            width=0.4,
-                            hovertemplate="%{y:,}",
-                            text="Buy Call",
-                            textposition="inside"
-                        ))
-                        fig.add_trace(go.Bar(
-                            x=sell_calls_data["strike"],
-                            y=sell_calls_data["open_interest"],
-                            name="Sell Call",
-                            marker_color="orange",
-                            width=0.4,
-                            hovertemplate="%{y:,}",
-                            text="Sell Call",
-                            textposition="inside"
-                        ))
-                        fig.add_trace(go.Bar(
-                            x=buy_puts_data["strike"],
-                            y=-buy_puts_data["open_interest"],
-                            name="Buy Put",
-                            marker_color="red",
-                            width=0.4,
-                            hovertemplate="%{customdata:,}",
-                            customdata=[abs(oi) for oi in buy_puts_data["open_interest"]],
-                            text="Buy Put",
-                            textposition="inside"
-                        ))
-                        fig.add_trace(go.Bar(
-                            x=sell_puts_data["strike"],
-                            y=-sell_puts_data["open_interest"],
-                            name="Sell Put",
-                            marker_color="purple",
-                            width=0.4,
-                            hovertemplate="%{customdata:,}",
-                            customdata=[abs(oi) for oi in sell_puts_data["open_interest"]],
-                            text="Sell Put",
-                            textposition="inside"
-                        ))
+                        # Existing Options Order Flow Section
+                        st.markdown('<div class="section-header">Options Order Flow</div>', unsafe_allow_html=True)
+                        option_data = get_option_data(stock, selected_expiration)
+                        if not option_data.empty:
+                            option_data_list = option_data.to_dict('records')
+                            buy_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "buy")]
+                            sell_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "sell")]
+                            buy_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "buy")]
+                            sell_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "sell")]
+                            all_strikes = sorted(set(option_data["strike"]))
+                            buy_calls_data = pd.DataFrame({"strike": all_strikes}).merge(buy_calls[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
+                            sell_calls_data = pd.DataFrame({"strike": all_strikes}).merge(sell_calls[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
+                            buy_puts_data = pd.DataFrame({"strike": all_strikes}).merge(buy_puts[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
+                            sell_puts_data = pd.DataFrame({"strike": all_strikes}).merge(sell_puts[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
+                            fig = go.Figure()
 
-                        fig.update_traces(
-                            hoverlabel=dict(
-                                bgcolor="rgba(0,0,0,0.1)",
-                                bordercolor="rgba(255,255,255,0.3)",
-                                font=dict(color="white", size=12)
+                            fig.add_trace(go.Bar(
+                                x=buy_calls_data["strike"],
+                                y=buy_calls_data["open_interest"],
+                                name="Buy Call",
+                                marker_color="green",
+                                width=0.4,
+                                hovertemplate="%{y:,}",
+                                text="Buy Call",
+                                textposition="inside"
+                            ))
+                            fig.add_trace(go.Bar(
+                                x=sell_calls_data["strike"],
+                                y=sell_calls_data["open_interest"],
+                                name="Sell Call",
+                                marker_color="orange",
+                                width=0.4,
+                                hovertemplate="%{y:,}",
+                                text="Sell Call",
+                                textposition="inside"
+                            ))
+                            fig.add_trace(go.Bar(
+                                x=buy_puts_data["strike"],
+                                y=-buy_puts_data["open_interest"],
+                                name="Buy Put",
+                                marker_color="red",
+                                width=0.4,
+                                hovertemplate="%{customdata:,}",
+                                customdata=[abs(oi) for oi in buy_puts_data["open_interest"]],
+                                text="Buy Put",
+                                textposition="inside"
+                            ))
+                            fig.add_trace(go.Bar(
+                                x=sell_puts_data["strike"],
+                                y=-sell_puts_data["open_interest"],
+                                name="Sell Put",
+                                marker_color="purple",
+                                width=0.4,
+                                hovertemplate="%{customdata:,}",
+                                customdata=[abs(oi) for oi in sell_puts_data["open_interest"]],
+                                text="Sell Put",
+                                textposition="inside"
+                            ))
+
+                            fig.update_traces(
+                                hoverlabel=dict(
+                                    bgcolor="rgba(0,0,0,0.1)",
+                                    bordercolor="rgba(255,255,255,0.3)",
+                                    font=dict(color="white", size=12)
+                                )
                             )
-                        )
 
-                        max_pain = calculate_max_pain_optimized(option_data_list)
-                        total_call_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "call" and row["strike"] > current_price)
-                        total_put_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "put" and row["strike"] < current_price)
-                        total_oi = total_call_oi + total_put_oi
-                        gamma_calls = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0
-                                          for row in option_data_list if row["option_type"] == "call" and "greeks" in row)
-                        gamma_puts = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0
-                                         for row in option_data_list if row["option_type"] == "put" and "greeks" in row)
-                        net_gamma = gamma_calls - gamma_puts
-                        max_pain_factor = -2 if current_price > max_pain else 2 if current_price < max_pain else 0
-                        oi_pressure = (total_call_oi - total_put_oi) / max(total_oi, 1)
-                        gamma_factor = net_gamma / 10000
-                        combined_score = max_pain_factor + oi_pressure + gamma_factor
-                        direction_mm = "Down" if combined_score < 0 else "Up" if combined_score > 0 else "Neutral"
-                        st.write(f"Debug: Current Price = {current_price}, Max Pain = {max_pain}, OI Pressure = {oi_pressure}, Net Gamma = {net_gamma}, Combined Score = {combined_score}, Direction = {direction_mm}")
+                            max_pain = calculate_max_pain_optimized(option_data_list)
+                            total_call_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "call" and row["strike"] > current_price)
+                            total_put_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "put" and row["strike"] < current_price)
+                            total_oi = total_call_oi + total_put_oi
+                            gamma_calls = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0
+                                            for row in option_data_list if row["option_type"] == "call" and "greeks" in row)
+                            gamma_puts = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0
+                                            for row in option_data_list if row["option_type"] == "put" and "greeks" in row)
+                            net_gamma = gamma_calls - gamma_puts
+                            max_pain_factor = -2 if current_price > max_pain else 2 if current_price < max_pain else 0
+                            oi_pressure = (total_call_oi - total_put_oi) / max(total_oi, 1)
+                            gamma_factor = net_gamma / 10000
+                            combined_score = max_pain_factor + oi_pressure + gamma_factor
+                            direction_mm = "Down" if combined_score < 0 else "Up" if combined_score > 0 else "Neutral"
+                            st.write(f"Debug: Current Price = {current_price}, Max Pain = {max_pain}, OI Pressure = {oi_pressure}, Net Gamma = {net_gamma}, Combined Score = {combined_score}, Direction = {direction_mm}")
 
-                        y_max = max(buy_calls_data["open_interest"].max() or 0, sell_calls_data["open_interest"].max() or 0) * 1.1 or 100
-                        y_min = -y_max
-                        fig.add_trace(go.Scatter(
-                            x=[current_price, current_price],
-                            y=[y_min, y_max],
-                            mode="lines",
-                            line=dict(width=1, dash="dash", color="#39FF14"),
-                            name="Current Price",
-                            hovertemplate=(
-                                f"<b>Current Price:</b> ${current_price:.2f}<br>"
-                                f"<b>Max Pain:</b> ${max_pain:.2f}<br>"
-                                f"<b>Total Call OI:</b> {total_call_oi:,}<br>"
-                                f"<b>Total Put OI:</b> {total_put_oi:,}<br>"
-                                f"<b>Net Gamma:</b> {net_gamma:.2f}<br>"
-                                f"<b>MM Direction:</b> {direction_mm}"
-                            ),
-                            showlegend=False,
-                            hoverlabel=dict(
-                                bgcolor="rgba(0,0,0,0)",
-                                bordercolor="rgba(0,0,0,0)",
-                                font=dict(color="#39FF14", size=12)
+                            y_max = max(buy_calls_data["open_interest"].max() or 0, sell_calls_data["open_interest"].max() or 0) * 1.1 or 100
+                            y_min = -y_max
+                            fig.add_trace(go.Scatter(
+                                x=[current_price, current_price],
+                                y=[y_min, y_max],
+                                mode="lines",
+                                line=dict(width=1, dash="dash", color="#39FF14"),
+                                name="Current Price",
+                                hovertemplate=(
+                                    f"<b>Current Price:</b> ${current_price:.2f}<br>"
+                                    f"<b>Max Pain:</b> ${max_pain:.2f}<br>"
+                                    f"<b>Total Call OI:</b> {total_call_oi:,}<br>"
+                                    f"<b>Total Put OI:</b> {total_put_oi:,}<br>"
+                                    f"<b>Net Gamma:</b> {net_gamma:.2f}<br>"
+                                    f"<b>MM Direction:</b> {direction_mm}"
+                                ),
+                                showlegend=False,
+                                hoverlabel=dict(
+                                    bgcolor="rgba(0,0,0,0)",
+                                    bordercolor="rgba(0,0,0,0)",
+                                    font=dict(color="#39FF14", size=12)
+                                )
+                            ))
+
+                            fig.add_annotation(
+                                x=current_price,
+                                y=y_max * 0.95,
+                                text=f"Price: ${current_price:.2f}",
+                                showarrow=False,
+                                font=dict(color="#39FF14", size=10),
+                                bgcolor="rgba(0,0,0,0.5)",
+                                bordercolor="#39FF14",
+                                borderwidth=1,
+                                borderpad=4
                             )
-                        ))
 
-                        fig.add_annotation(
-                            x=current_price,
-                            y=y_max * 0.95,
-                            text=f"Price: ${current_price:.2f}",
-                            showarrow=False,
-                            font=dict(color="#39FF14", size=10),
-                            bgcolor="rgba(0,0,0,0.5)",
-                            bordercolor="#39FF14",
-                            borderwidth=1,
-                            borderpad=4
-                        )
+                            score_color = "red" if combined_score < 0 else "green" if combined_score > 0 else "white"
+                            fig.add_annotation(
+                                x=current_price,
+                                y=y_max * 0.9,
+                                text=f"MM Score: <span style='color:{score_color}'>{combined_score:.2f}</span><br>{direction_mm}",
+                                showarrow=True,
+                                arrowhead=2,
+                                arrowsize=1,
+                                arrowwidth=1,
+                                arrowcolor="#39FF14",
+                                font=dict(size=12),
+                                ax=20,
+                                ay=-30,
+                                bgcolor="rgba(0,0,0,0.5)",
+                                bordercolor="#39FF14"
+                            )
 
-                        score_color = "red" if combined_score < 0 else "green" if combined_score > 0 else "white"
-                        fig.add_annotation(
-                            x=current_price,
-                            y=y_max * 0.9,
-                            text=f"MM Score: <span style='color:{score_color}'>{combined_score:.2f}</span><br>{direction_mm}",
-                            showarrow=True,
-                            arrowhead=2,
-                            arrowsize=1,
-                            arrowwidth=1,
-                            arrowcolor="#39FF14",
-                            font=dict(size=12),
-                            ax=20,
-                            ay=-30,
-                            bgcolor="rgba(0,0,0,0.5)",
-                            bordercolor="#39FF14"
-                        )
+                            fig.update_layout(
+                                title=f"| {stock} | Expiration: {selected_expiration}",
+                                xaxis_title="Strike Price",
+                                yaxis_title="Open Interest",
+                                barmode="relative",
+                                showlegend=True,
+                                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+                                xaxis=dict(
+                                    tickmode="array",
+                                    tickvals=all_strikes,
+                                    ticktext=[f"{s:.2f}" for s in all_strikes],
+                                    range=[min(all_strikes) - 10, max(all_strikes) + 10],
+                                    showgrid=False,
+                                    rangeslider=dict(visible=True)
+                                ),
+                                yaxis=dict(showgrid=False),
+                                hovermode="x",
+                                bargap=0.2,
+                                height=600,
+                                template="plotly_dark"
+                            )
 
-                        fig.update_layout(
-                            title=f"| {stock} |  Expiration: {selected_expiration}",
-                            xaxis_title="Strike Price",
-                            yaxis_title="Open Interest",
-                            barmode="relative",
-                            showlegend=True,
-                            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                            xaxis=dict(
-                                tickmode="array",
-                                tickvals=all_strikes,
-                                ticktext=[f"{s:.2f}" for s in all_strikes],
-                                range=[min(all_strikes) - 10, max(all_strikes) + 10],
-                                showgrid=False,
-                                rangeslider=dict(visible=True)
-                            ),
-                            yaxis=dict(showgrid=False),
-                            hovermode="x",
-                            bargap=0.2,
-                            height=600,
-                            template="plotly_dark"
-                        )
+                            st.plotly_chart(fig, use_container_width=True, height=600)
+                            order_flow_df = pd.DataFrame({
+                                "Strike": all_strikes,
+                                "Buy_Call_OI": buy_calls_data["open_interest"],
+                                "Sell_Call_OI": sell_calls_data["open_interest"],
+                                "Buy_Put_OI": buy_puts_data["open_interest"],
+                                "Sell_Put_OI": sell_puts_data["open_interest"],
+                                "Max_Pain": [max_pain] * len(all_strikes),
+                                "Total_Call_OI": [total_call_oi] * len(all_strikes),
+                                "Total_Put_OI": [total_put_oi] * len(all_strikes),
+                                "Net_Gamma": [net_gamma] * len(all_strikes),
+                                "MM_Direction": [direction_mm] * len(all_strikes)
+                            })
+                            order_flow_csv = order_flow_df.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Download Order Flow Data",
+                                data=order_flow_csv,
+                                file_name=f"{stock}_order_flow_{selected_expiration}.csv",
+                                mime="text/csv",
+                                key="download_tab5"
+                            )
 
-                        st.plotly_chart(fig, use_container_width=True, height=600)
-                        order_flow_df = pd.DataFrame({
-                            "Strike": all_strikes,
-                            "Buy_Call_OI": buy_calls_data["open_interest"],
-                            "Sell_Call_OI": sell_calls_data["open_interest"],
-                            "Buy_Put_OI": buy_puts_data["open_interest"],
-                            "Sell_Put_OI": sell_puts_data["open_interest"],
-                            "Max_Pain": [max_pain] * len(all_strikes),
-                            "Total_Call_OI": [total_call_oi] * len(all_strikes),
-                            "Total_Put_OI": [total_put_oi] * len(all_strikes),
-                            "Net_Gamma": [net_gamma] * len(all_strikes),
-                            "MM_Direction": [direction_mm] * len(all_strikes)
-                        })
-                        order_flow_csv = order_flow_df.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download Order Flow Data",
-                            data=order_flow_csv,
-                            file_name=f"{stock}_order_flow_{selected_expiration}.csv",
-                            mime="text/csv",
-                            key="download_tab5"
-                        )
+                        # New Options Strategy Analyzer Section
+                        if show_strategy_analyzer:
+                            st.markdown('<div class="section-header">Options Strategy Analyzer</div>', unsafe_allow_html=True)
+                            
+                            # Strategy selection
+                            strategies = ["Collar", "Iron Condor", "Butterfly", "Call Spread", "Put Spread", "Buy Call", "Buy Put"]
+                            strategy = st.selectbox("Select Strategy", strategies, index=strategies.index(st.session_state["strategy"]), key="strategy_select_tab5")
+                            
+                            # Fetch option contracts and suggest strategy
+                            expiry_date = datetime.strptime(selected_expiration, "%Y-%m-%d").date()
+                            option_data_strategy = get_option_contracts(stock, expiry_date)
+                            max_pain_strategy = option_data_strategy["max_pain"]
+                            contracts = option_data_strategy["contracts"]
+                            
+                            if strategy == st.session_state["strategy"]:
+                                suggested_strategy, suggested_strikes = suggest_strategy(max_pain_strategy, contracts, max_pain_strategy if max_pain_strategy > 0 else current_price)
+                                st.session_state["strategy"] = suggested_strategy
+                                st.session_state["suggested_params"] = suggested_strikes
+                            else:
+                                _, suggested_strikes = suggest_strategy(max_pain_strategy, contracts, max_pain_strategy if max_pain_strategy > 0 else current_price)
+                                st.session_state["suggested_params"] = suggested_strikes
+                                st.session_state["strategy"] = strategy
+
+                            # Display suggested contracts
+                            st.markdown("**Suggested Contracts**")
+                            if contracts:
+                                for contract in contracts:
+                                    st.markdown(f"- {contract['type'].capitalize()} Strike: ${contract['strike']:.2f} | Gamma: {contract['gamma']:.4f} | Volume: {contract['volume']}")
+                            else:
+                                st.warning(f"No contracts available for {stock} on this expiration. Using fallback strikes.")
+
+                            # Display selected strategy
+                            st.markdown(f"**Selected Strategy**: {strategy}")
+                            if strategy in ["Collar", "Iron Condor", "Butterfly", "Call Spread", "Put Spread"]:
+                                st.markdown(f"- Call Strike (Sell): ${suggested_strikes['call_strike']:.2f}")
+                                st.markdown(f"- Put Strike (Buy): ${suggested_strikes['put_strike']:.2f}")
+                                st.markdown(f"- Lower Put Strike (Sell): ${suggested_strikes['put_strike_lower']:.2f}")
+                                if suggested_strikes['call_strike_higher'] > 0:
+                                    st.markdown(f"- Higher Call Strike (Buy): ${suggested_strikes['call_strike_higher']:.2f}")
+                            elif strategy == "Buy Call":
+                                st.markdown(f"- Call Strike (Buy): ${suggested_strikes['call_strike_buy']:.2f}")
+                            elif strategy == "Buy Put":
+                                st.markdown(f"- Put Strike (Buy): ${suggested_strikes['put_strike_buy']:.2f}")
+                            st.markdown(f"- Initial Price: ${suggested_strikes['initial_price']:.2f}")
+                            st.markdown(f"- Max Pain Strike: ${max_pain_strategy:.2f}")
+
+                            # Calculate payoff and metrics with error handling
+                            try:
+                                current_payoff, net_premium, current_delta, decayed_delta, current_theta = calculate_strategy_metrics(
+                                    strategy, current_price, suggested_strikes["initial_price"], 
+                                    suggested_strikes["call_strike"], suggested_strikes["put_strike"], 
+                                    suggested_strikes["put_strike_lower"], suggested_strikes["call_strike_higher"], 
+                                    expiry_date, suggested_strikes.get("call_strike_buy", 0.0), suggested_strikes.get("put_strike_buy", 0.0),
+                                    stock
+                                )
+                            except Exception as e:
+                                st.error(f"Error calculating strategy metrics: {e}")
+                                logger.error(f"Failed to calculate strategy metrics: {e}")
+                                current_payoff = net_premium = current_delta = decayed_delta = current_theta = 0.0
+
+                            payoff_dollars = current_payoff * 100
+                            color = "#39FF14" if current_payoff >= 0 else "#FF4500"
+                            premium_color = "#39FF14" if net_premium >= 0 else "#FF4500"
+                            status = "Winning" if current_payoff >= 0 else "Losing"
+                            
+                            st.markdown(f"<div class='metric-label'>Current Gain/Loss</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='metric-label'>Price: ${current_price:.2f} | Payoff: <span style='color:{color}'>{current_payoff:.2f} points ({status} ${payoff_dollars:,.2f})</span></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='metric-label'>Net Premium: <span style='color:{premium_color}'>${net_premium:,.2f}</span> ({'Received' if net_premium >= 0 else 'Paid'})</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='metric-label'>Delta (Current): {current_delta:.2f} | Delta (Decayed): {decayed_delta:.2f} | Theta (Daily): ${current_theta:.2f}</div>", unsafe_allow_html=True)
+                            
+                            # Plot payoff profile
+                            st.markdown(f"<div class='metric-label'>Payoff Profile with Delta and Theta</div>", unsafe_allow_html=True)
+                            try:
+                                fig_strategy = plot_strategy_payoff(
+                                    strategy, current_price, current_payoff, suggested_strikes["initial_price"],
+                                    suggested_strikes["call_strike"], suggested_strikes["put_strike"],
+                                    suggested_strikes["put_strike_lower"], suggested_strikes["call_strike_higher"],
+                                    expiry_date, suggested_strikes.get("call_strike_buy", 0.0), suggested_strikes.get("put_strike_buy", 0.0),
+                                    stock
+                                )
+                                st.plotly_chart(fig_strategy, use_container_width=True)
+                            except Exception as e:
+                                st.error(f"Error plotting payoff profile: {e}")
+                                logger.error(f"Failed to plot payoff profile: {e}")
+
                         st.markdown("---")
                         st.markdown("*Developed by Ozy | © 2025*")
-
     # Tab 6: Analyst Rating Flow
         # Tab 6: Analyst Rating Flow
     with tab6:
@@ -4241,7 +5388,7 @@ def main():
         with st.spinner(f"Fetching real-time data for {ticker}..."):
             try:
                 # Funciones internas optimizadas
-                @st.cache_data(ttl=60)
+                @st.cache_data(ttl=300)
                 def get_intraday_data(ticker: str, interval="1min", limit=5) -> Tuple[List[float], List[int]]:
                     url = f"{TRADIER_BASE_URL}/markets/history"
                     start_time = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -4254,14 +5401,14 @@ def main():
                         return prices, volumes
                     return [get_current_price(ticker)] * limit, [0] * limit
 
-                @st.cache_data(ttl=60)
+                @st.cache_data(ttl=300)
                 def get_vix() -> float:
                     url = f"{FMP_BASE_URL}/quote/^VIX"
                     params = {"apikey": FMP_API_KEY}
                     data = fetch_api_data(url, params, HEADERS_FMP, "VIX")
                     return float(data[0]["price"]) if data and isinstance(data, list) and "price" in data[0] else 20.0
 
-                @st.cache_data(ttl=300)
+                @st.cache_data(ttl=3600)
                 def get_news_sentiment(ticker: str) -> float:
                     keywords = [ticker]
                     news = fetch_google_news(keywords)
@@ -4580,7 +5727,6 @@ def main():
         # Tab 12: Performance Map
         # Tab 12: Performance Map
     with tab12:
-        
         st.markdown("""
             <style>
             /* Fondo oscuro estilo terminal para toda la app */
@@ -4909,5 +6055,6 @@ def main():
 
             st.markdown(f'<div class="footer-text">> LAST_UPDATED: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | POWERED_BY_OZY_ANALYTICS_</div>', unsafe_allow_html=True)
 
+    
 if __name__ == "__main__":
     main()
