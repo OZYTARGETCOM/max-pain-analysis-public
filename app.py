@@ -2655,7 +2655,7 @@ def fetch_earnings_data(start_date: str, end_date: str) -> List[Dict]:
 
 
 
-import yfinance as yf
+
 from scipy.stats import norm
 
 def calculate_gamma(S: float, K: float, T: float, r: float, sigma: float) -> float:
