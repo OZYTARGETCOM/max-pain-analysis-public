@@ -26,7 +26,7 @@ import streamlit.components.v1 as components
 import krakenex
 import base64
 import threading
-from streamlit_autorefresh import st_autorefresh
+
 
 logging.getLogger("streamlit").setLevel(logging.ERROR)
 
