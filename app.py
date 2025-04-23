@@ -1645,7 +1645,7 @@ def fetch_api_data(url: str, params: Dict = None, headers: Dict = None, source: 
         return response.json()
     except requests.RequestException as e:
         logger.error(f"{source} error: {str(e)}, URL: {url}")
-        st.error(f"Error fetching {source}: {str(e)}")
+        
         return None
     except ValueError as e:
         logger.error(f"{source} parsing error: {str(e)}, URL: {url}")
@@ -2465,7 +2465,7 @@ def plot_liquidity_pulse(df, current_price, price_target):
 @st.cache_data(ttl=300)
 def get_intraday_data(ticker: str, interval: str = "1min", limit: int = 5) -> Tuple[List[float], List[int]]:
     """
-    Obtiene datos intradiarios para un ticker desde Tradier.
+    Obtiene datos intradiarios para un ticker desde Tradier usando el endpoint timesales.
 
     Args:
         ticker (str): Símbolo del ticker (e.g., "SPY").
@@ -2475,18 +2475,37 @@ def get_intraday_data(ticker: str, interval: str = "1min", limit: int = 5) -> Tu
     Returns:
         Tuple[List[float], List[int]]: Precios y volúmenes intradiarios.
     """
-    url = f"{TRADIER_BASE_URL}/markets/history"
-    start_time = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    end_time = datetime.now().strftime("%Y-%m-%d")
-    params = {"symbol": ticker, "interval": interval, "start": start_time, "end": end_time}
+    # Use current trading day, starting from market open (9:30 AM)
+    now = datetime.now()
+    start_time = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    if now.hour < 9 or (now.hour == 9 and now.minute < 30):
+        # If before market open, use previous trading day
+        start_time = (start_time - timedelta(days=1)).replace(hour=9, minute=30)
+    end_time = now  # Use current time as end
+
+    # Format dates with time for timesales endpoint
+    start_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
+    end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    url = f"{TRADIER_BASE_URL}/markets/timesales"
+    params = {
+        "symbol": ticker,
+        "interval": interval,
+        "start": start_str,
+        "end": end_str
+    }
     data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier Intraday")
-    if data and "history" in data and "day" in data["history"]:
-        prices = [float(day["close"]) for day in data["history"]["day"][-limit:]]
-        volumes = [int(day["volume"]) for day in data["history"]["day"][-limit:]]
+    
+    if data and "series" in data and "data" in data["series"]:
+        timesales = data["series"]["data"]
+        prices = [float(entry.get("close", 0)) for entry in timesales[-limit:]]
+        volumes = [int(entry.get("volume", 0)) for entry in timesales[-limit:]]
         logger.info(f"Fetched {len(prices)} intraday prices for {ticker}")
         return prices, volumes
-    logger.warning(f"No intraday data for {ticker}")
-    return [get_current_price(ticker)] * limit, [0] * limit
+    
+    logger.warning(f"No intraday data for {ticker}, falling back to current price")
+    current_price = get_current_price(ticker)
+    return [current_price] * limit, [0] * limit
 
 @st.cache_data(ttl=300)
 def get_vix() -> float:
@@ -5346,9 +5365,6 @@ def main():
         st.markdown("*Developed by Ozy | © 2025*")
 
 
-        # Tab 9: Earnings Calendar (Tarjetas HTML con sentimiento mejorado)
-    
-    
     # Tab 11: Projection
     with tab11:
         # Estilo CSS
