@@ -4130,8 +4130,8 @@ def main():
                     # Obtener datos de mercado de CoinGecko
                     market_data = fetch_coingecko_data(ticker)
                     if not market_data:
-                        st.error(f"Failed to fetch market data for {ticker} from CoinGecko.")
-                        logger.error(f"No market data returned for {ticker} from CoinGecko")
+                        st.error(f"Failed to fetch market data for {ticker} from  Data.")
+                        logger.error(f"No market data returned for {ticker} from Data")
                     else:
                         # Obtener libro de órdenes de Kraken
                         logger.info(f"Attempting to fetch order book for {selected_pair}")
