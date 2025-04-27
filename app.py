@@ -77,24 +77,31 @@ def initialize_passwords_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS passwords 
                  (password TEXT PRIMARY KEY, usage_count INTEGER DEFAULT 0, ip1 TEXT DEFAULT '', ip2 TEXT DEFAULT '')''')
-    initial_passwords = [
-        ("abc234", 0, "", ""), ("def456", 0, "", ""), ("ghi789", 0, "", ""),
-        ("jkl010", 0, "", ""), ("mno345", 0, "", ""), ("pqr678", 0, "", ""),
-        ("stu901", 0, "", ""), ("vwx234", 0, "", ""), ("yz1234", 0, "", ""),
-        ("abcd56", 0, "", ""), ("efgh78", 0, "", ""), ("ijkl90", 0, "", ""),
-        ("mnop12", 0, "", ""), ("qrst34", 0, "", ""), ("uvwx56", 0, "", ""),
-        ("yzab78", 0, "", ""), ("cdef90", 0, "", ""), ("ghij12", 0, "", ""),
-        ("news34", 0, "", ""), ("opqr56", 0, "", ""), ("xyz789", 0, "", ""),
-        ("kml456", 0, "", ""), ("nop123", 0, "", ""), ("qwe987", 0, "", ""),
-        ("asd654", 0, "", ""), ("zxc321", 0, "", ""), ("bnm098", 0, "", ""),
-        ("vfr765", 0, "", ""), ("tgb432", 0, "", ""), ("hju109", 0, "", "")
-    ]
-    hashed_passwords = [(bcrypt.hashpw(pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'), count, ip1, ip2) 
-                        for pwd, count, ip1, ip2 in initial_passwords]
-    c.executemany("INSERT OR IGNORE INTO passwords VALUES (?, ?, ?, ?)", hashed_passwords)
+    
+    # Check if passwords already exist to avoid redundant inserts
+    c.execute("SELECT COUNT(*) FROM passwords")
+    if c.fetchone()[0] == 0:  # Only insert if table is empty
+        initial_passwords = [
+            ("abc234", 0, "", ""), ("def456", 0, "", ""), ("ghi789", 0, "", ""),
+            ("jkl010", 0, "", ""), ("mno345", 0, "", ""), ("pqr678", 0, "", ""),
+            ("stu901", 0, "", ""), ("vwx234", 0, "", ""), ("yz1234", 0, "", ""),
+            ("abcd56", 0, "", ""), ("efgh78", 0, "", ""), ("ijkl90", 0, "", ""),
+            ("mnop12", 0, "", ""), ("qrst34", 0, "", ""), ("uvwx56", 0, "", ""),
+            ("yzab78", 0, "", ""), ("cdef90", 0, "", ""), ("ghij12", 0, "", ""),
+            ("news34", 0, "", ""), ("opqr56", 0, "", ""), ("xyz789", 0, "", ""),
+            ("kml456", 0, "", ""), ("nop123", 0, "", ""), ("qwe987", 0, "", ""),
+            ("asd654", 0, "", ""), ("zxc321", 0, "", ""), ("bnm098", 0, "", ""),
+            ("vfr765", 0, "", ""), ("tgb432", 0, "", ""), ("hju109", 0, "", "")
+        ]
+        hashed_passwords = [(bcrypt.hashpw(pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'), count, ip1, ip2) 
+                           for pwd, count, ip1, ip2 in initial_passwords]
+        c.executemany("INSERT OR IGNORE INTO passwords VALUES (?, ?, ?, ?)", hashed_passwords)
+        logger.info("Password database initialized with new passwords.")
+    else:
+        logger.info("Password database already initialized, skipping insertion.")
+    
     conn.commit()
     conn.close()
-    logger.info("Password database initialized with existing and new passwords.")
 
 def load_passwords():
     conn = sqlite3.connect(PASSWORDS_DB)
@@ -151,18 +158,16 @@ def authenticate_password(input_password):
     logger.warning(f"Authentication failed: Invalid password {input_password}")
     return False
 
-# Inicializar la base de datos
+# Initialize database
 initialize_passwords_db()
 
-
-# Estado de la sesión
+# Session state initialization
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
-
 if "intro_shown" not in st.session_state:
     st.session_state["intro_shown"] = False
 
-# Animación introductoria estilo CMD con hackeo
+# Optimized introductory animation (same format, faster duration)
 if not st.session_state["intro_shown"]:
     st.markdown("""
     <style>
@@ -195,7 +200,7 @@ if not st.session_state["intro_shown"]:
         z-index: 9999;
     }
     .intro-text {
-        animation: typing 4s steps(40, end); /* Reducido de 7s a 4s para mayor velocidad */
+        animation: typing 2s steps(40, end); /* Reduced from 4s to 2s */
         display: inline-block;
     }
     .yellow { color: #FFFF00; } /* Amarillo */
@@ -207,40 +212,23 @@ if not st.session_state["intro_shown"]:
     }
     </style>
     """, unsafe_allow_html=True)
-
     st.markdown("""
-    <div class="intro-container" id="introContainer">
-        <div class="intro-text">
-<span class="yellow">> INITIALIZING PRO SCANNER v3.0.0...</span>
-<span class="green">> LOADING HACKING MODULES...</span>
-[OK] Bypassing Market Maker (MM) Firewalls...
-[OK] Accessing MM Liquidity Pools...
-<span class="red">[ALERT] MM Defense Systems Detected - Countermeasures Deployed</span>
-[OK] Extracting EBITDA Data from Corporate Servers...
-<span class="yellow">[PROGRESS] 25%... 50%... 75%... 100%</span>
-[OK] EBITDA Data Compromised
-<span class="green">> INFILTRATING BROKER NETWORKS...</span>
-[OK] Nasdq API Breached Bypassing
-[OK] NYSE API Breached  Bypassing
-<span class="red">[ALERT] Broker Counter-Hack Attempt - Neutralized</span>
-[OK] Financial Data Streams Intercepted
-<span class="yellow">> SYSTEM CHECK COMPLETE</span>
-<span class="green">> STATUS: READY FOR DEPLOYMENT</span>
-<span class="red">>CMD WINDOW : authorized Access Detected - Enter Credentials to Proceed...</span>
-        </div>
+    <div class="intro-container">
+        <span class="intro-text green">> INITIALIZING PRO SCANNER...</span><br>
+        <span class="intro-text yellow">[*] Accessing Secure Database...</span><br>
+        <span class="intro-text green">[+] Connection Established</span><br>
+        <span class="intro-text red">WARNING: Unauthorized Access Prohibited</span><br>
+        <span class="intro-text yellow">> Loading Market Data Interfaces...</span><br>
+        <span class="intro-text green">[+] Systems Online</span><br>
+        <span class="intro-text green">> Ready for Authentication</span>
     </div>
-    <script>
-    setTimeout(function() {
-        document.getElementById('introContainer').style.display = 'none';
-    }, 4000); /* Reducido de 7000ms a 4000ms */
-    </script>
     """, unsafe_allow_html=True)
-
-    time.sleep(4)  # Duración de la animación introductoria (reducida de 7s a 4s)
+    
+    time.sleep(2)  # Reduced from 4s to 2s
     st.session_state["intro_shown"] = True
     st.rerun()
 
-# Pantalla de login original
+# Optimized login screen (same format, faster authentication delay)
 if not st.session_state["authenticated"]:
     st.markdown("""
     <style>
@@ -357,90 +345,14 @@ if not st.session_state["authenticated"]:
                     st.error("❌ Please enter a password.")
                 elif authenticate_password(password):
                     st.session_state["authenticated"] = True
-                    st.markdown("""
-                    <div class="-overlay" id="hackerOverlay">
-                        <canvas class="hacker-canvas" id="hackerCanvas"></canvas>
-                        <div class="hacker-text">✅ ACCESS GRANTED</div>
-                    </div>
-                    <script>
-                    const [OK] Nasdq API Breached Bypassing = document.getElementById('hackerCanvas');
-                    const ctx = canvas.getContext('2d');
-                    canvas.width = window.innerWidth;
-                    canvas.height = [OK] Nasdq API Breached Bypassing;
-
-                    const numbers = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789{}[]()+-*/=<>;,.#$%&@!'; /*  RISK_FREE_RATE */
-                    const fontSize = 20;
-                    const columns = can.width / fontSize;
-                    const drops = [];
-
-                    for (let x = 0; x < columns; x++) {
-                        drops[x] = Math.random() *  RISK_FREE_RATE;
-                    }
-
-                    function drawDynamic() {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.fillStyle = '#FFFF00'; /* Amarillo */
-                        ctx.shadowBlur = 20;
-                        ctx.shadowColor = '#FFFF00';
-                        ctx.font = fontSize + 'px monospace';
-
-                        for (let i = 0; i < drops.length; i++) {
-                            const text = numbers.charAt(Math.floor(Math.random() * numbers.length));
-                            ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-                            drops[i] += 8; /* [OK] Nasdq API Breached Bypassing (de 5 a 8) */
-                            if (drops[i] * fontSize > canvas.height && Math.random() > 0.95) {
-                                drops[i] = -fontSize;
-                            }
-                        }
-                        ctx.shadowBlur = 0;
-                        requestAnimationFrame(drawDynamic);
-                    }
-
-                    function drawStatic() {
-                        ctx.fillStyle = '#39FF14'; /* Verde */
-                        ctx.shadowBlur = 20;
-                        ctx.shadowColor = '#39FF14';
-                        ctx.font = fontSize + 'px monospace';
-                        for (let i = 0; i < columns; i++) {
-                            const text = numbers.charAt(Math.floor(Math.random() * numbers.length));
-                            ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-                        }
-                    }
-
-                    try {
-                        drawDynamic();
-                    } catch (e) {
-                        drawStatic();
-                    }
-
-                    setTimeout(function() {
-                        document.getElementById('Overlay').style.display = 'none';
-                    }, 1000); /* Reducido de 2000ms a 1000ms */
-                    </script>
-                    """, unsafe_allow_html=True)
-                    time.sleep(1)  # Reducido de 2s a 1s
+                    time.sleep(0.5)  # Reduced from 1s to 0.5s
                     st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-
-########################################################app
-########################################################app
-
-
-
-
-
-
-
-
-
-
-
-
-
-@st.cache_data(ttl=3600)
+# Rest of the original application code (unchanged)
+@st.cache_data(ttl=CACHE_TTL)
 def fetch_logo_url(symbol: str) -> str:
     """Obtiene la URL del logo de Clearbit con un fallback como base64."""
     url = f"https://logo.clearbit.com/{symbol.lower()}.com"
@@ -481,8 +393,6 @@ def get_top_traded_stocks() -> set:
         # Fallback básico
         return {"AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META", "JPM", "WMT", "SPY"}
 
-
-
 @st.cache_data(ttl=86400)
 def get_implied_volatility(symbol: str) -> Optional[float]:
     """Obtiene la volatilidad implícita promedio de opciones cercanas desde Tradier."""
@@ -507,36 +417,6 @@ def get_implied_volatility(symbol: str) -> Optional[float]:
         logger.error(f"Error fetching IV for {symbol}: {e}")
         return None
 
-
-
-
-
-
-
-
-
-    # Fallback to FMP API
-    url_fmp = f"{FMP_BASE_URL}/quote/{ticker}"
-    params_fmp = {"apikey": FMP_API_KEY}
-    try:
-        response = session_fmp.get(url_fmp, params=params_fmp, headers=HEADERS_FMP, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-        if data and isinstance(data, list) and len(data) > 0:
-            price = float(data[0].get("price", 0.0))
-            if price > 0:
-                logger.info(f"Fetched current price for {ticker} from FMP: ${price:.2f}")
-                return price
-    except Exception as e:
-        logger.error(f"FMP failed to fetch price for {ticker}: {str(e)}")
-
-    logger.error(f"Unable to fetch current price for {ticker} from any API")
-    return 0.0
-
-
-# Definiciones de funciones necesarias antes de main()
-# Definiciones de funciones necesarias antes de main()
-# Definiciones de funciones necesarias antes de main()
 def fetch_api_data(url: str, params: Dict, headers: Dict, source: str) -> Optional[Dict]:
     """
     Realiza una solicitud GET a una API con manejo de reintentos y logging.
@@ -677,17 +557,6 @@ def get_metaverse_stocks() -> List[str]:
     logger.warning("Failed to retrieve stocks from FMP API. Using fallback list.")
     return ["NVDA", "TSLA", "AAPL", "AMD", "PLTR", "META", "RBLX", "U", "COIN", "HOOD"]
 
-
-
-
-
-
-
-
-
-
-
-
 @st.cache_data(ttl=CACHE_TTL)
 def get_options_data(ticker: str, expiration_date: str) -> List[Dict]:
     url = f"{TRADIER_BASE_URL}/markets/options/chains"
@@ -824,7 +693,6 @@ def select_best_contracts(df, current_price):
         economic_contract = None
     return closest_contract, economic_contract
 
-# Versión original para opciones (usada en Tab 1)
 # Versión original para opciones (usada en Tab 1)
 def calculate_max_pain(df):
     """Calcula el Max Pain para opciones."""
@@ -1284,7 +1152,6 @@ def fetch_instagram_posts(keywords):
                 st.warning(f"Error fetching Instagram posts for {keyword}: {e}")
     return posts
 
-
 # Funciones de análisis de sentimiento (agregadas aquí para evitar NameError)
 def calculate_retail_sentiment(news):
     """Calcula el sentimiento de mercado de retail basado en titulares de noticias."""
@@ -1353,13 +1220,6 @@ def calculate_volatility_sentiment(news):
         volatility_text = "Stable"
     
     return normalized_score, volatility_text
-
-
-
-
-
-
-
 
 def fetch_batch_stock_data(tickers):
     tickers_str = ",".join(tickers)
