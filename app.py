@@ -2840,7 +2840,7 @@ def main():
                     "strike": float(opt.get("strike", 0)),
                     "option_type": opt.get("option_type", "").lower(),
                     "open_interest": int(opt.get("open_interest", 0)),
-                    "bid": float(opt.get("bid", 0))
+                    "bid": float(opt.get("bid", 0)) if opt.get("bid") is not None and isinstance(opt.get("bid"), (int, float, str)) else 0
                 }
                 for opt in options_data if isinstance(opt, dict)
             ]
@@ -3607,14 +3607,14 @@ def main():
         # Vol Filter
         st.markdown("### Vol Filter")
         volume_options = {
-            "0.1M": 1000,
-            "0.2M": 2000,
-            "0.3M": 3000,
-            "0.4M": 4000,
-            "0.5M": 5000,
-            "1.0M": 10000
+            "0.1M": 10000,
+            "0.2M": 20000,
+            "0.3M": 30000,
+            "0.4M": 40000,
+            "0.5M": 50000,
+            "1.0M": 100000
         }
-        auto_oi = int(10000 * (1 + iv_factor * 2))
+        auto_oi = int(100000 * (1 + iv_factor * 2))
         auto_oi_key = next((k for k, v in volume_options.items() if v >= auto_oi), "0.1M")
         use_auto_oi = st.checkbox("Auto OI (Volatility-Based)", value=False, key="auto_oi")
         if use_auto_oi:
@@ -3627,7 +3627,7 @@ def main():
         # Gamma Filter
         st.markdown("### Gamma Filter")
         gamma_options = {
-            "0.001": 0.0001,
+            "0.001": 0.001,
             "0.005": 0.005,
             "0.01": 0.01,
             "0.02": 0.02,
@@ -3679,9 +3679,9 @@ def main():
                 iv = float(greeks.get("smv_vol", 0)) if isinstance(greeks, dict) else 0
                 delta = float(greeks.get("delta", 0)) if isinstance(greeks, dict) else 0
                 volume = int(opt.get("volume", 0) or 0)
-                last = opt.get("last")
-                bid = opt.get("bid")
-                last_price = float(last) if last is not None and isinstance(last, (int, float, str)) else float(bid) if bid is not None and isinstance(bid, (int, float, str)) else 0
+                last = opt.get("last", 0)
+                bid = opt.get("bid", 0)
+                last_price = float(last) if last is not None and isinstance(last, (int, float, str)) and last != 0 else float(bid) if bid is not None and isinstance(bid, (int, float, str)) and bid != 0 else 0
                 
                 if oi >= open_interest_threshold and gamma >= gamma_threshold:
                     valid_contracts += 1
@@ -3724,41 +3724,60 @@ def main():
                 
                 # Gráfico de burbujas
                 fig = go.Figure()
-                call_df = df[df['Type'] == 'CALL']
+                call_data = [
+                    {
+                        "strike": float(opt.get("strike", 0)),
+                        "option_type": opt.get("option_type", "").lower(),
+                        "open_interest": int(opt.get("open_interest", 0)),
+                        "bid": float(opt.get("bid", 0)) if opt.get("bid") is not None and isinstance(opt.get("bid"), (int, float, str)) else 0
+                    }
+                    for opt in options_data if isinstance(opt, dict)
+                ]
+                call_df = pd.DataFrame([d for d in call_data if d["option_type"] == "call"])
+                put_df = pd.DataFrame([d for d in call_data if d["option_type"] == "put"])
+                
+                # Limpiar open_interest para evitar nan
+                call_df['open_interest'] = call_df['open_interest'].fillna(0).astype(int).clip(lower=0)
+                put_df['open_interest'] = put_df['open_interest'].fillna(0).astype(int).clip(lower=0)
+                
+                # Crear figura combinada
                 if not call_df.empty:
-                    total_profit = call_df['Profit ($)'].fillna(0)
+                    total_profit = call_df['open_interest'] * call_df['bid']
                     max_total_profit = total_profit.max() if total_profit.max() > 0 else 1
                     sizes = np.nan_to_num(total_profit / max_total_profit * 50, nan=0, posinf=0, neginf=0)
                     sizes = np.maximum(sizes, 5)
                     fig.add_trace(go.Scatter(
-                        x=call_df['Strike'], 
-                        y=call_df['Profit ($)'], 
+                        x=call_df['strike'], 
+                        y=call_df['bid'], 
                         mode='markers', 
-                        name='CALL Profit ($)', 
+                        name='CALL Options', 
                         marker=dict(
                             size=sizes, 
                             color='#228B22', 
                             opacity=0.7
                         ),
-                        text=call_df['Contract'] + '<br>Profit: $' + call_df['Profit ($)'].astype(str)
+                        text=call_df['strike'].astype(str) + '<br>OI: ' + call_df['open_interest'].astype(str),
+                        hovertemplate="<b>Strike:</b> %{x:.2f}<br><b>Bid:</b> ${%y:.2f}<br><b>Open Interest:</b> %{customdata:,}",
+                        customdata=call_df['open_interest']
                     ))
-                put_df = df[df['Type'] == 'PUT']
                 if not put_df.empty:
-                    total_profit = put_df['Profit ($)'].fillna(0)
+                    total_profit = put_df['open_interest'] * put_df['bid']
                     max_total_profit = total_profit.max() if total_profit.max() > 0 else 1
                     sizes = np.nan_to_num(total_profit / max_total_profit * 50, nan=0, posinf=0, neginf=0)
                     sizes = np.maximum(sizes, 5)
                     fig.add_trace(go.Scatter(
-                        x=put_df['Strike'], 
-                        y=-put_df['Profit ($)'], 
+                        x=put_df['strike'], 
+                        y=put_df['bid'], 
                         mode='markers', 
-                        name='PUT Profit ($)', 
+                        name='PUT Options', 
                         marker=dict(
                             size=sizes, 
                             color='#CD5C5C', 
                             opacity=0.7
                         ),
-                        text=put_df['Contract'] + '<br>Profit: $' + put_df['Profit ($)'].astype(str)
+                        text=put_df['strike'].astype(str) + '<br>OI: ' + put_df['open_interest'].astype(str),
+                        hovertemplate="<b>Strike:</b> %{x:.2f}<br><b>Bid:</b> ${%y:.2f}<br><b>Open Interest:</b> %{customdata:,}",
+                        customdata=put_df['open_interest']
                     ))
                 if mm_gain > 0 and max_pain is not None:
                     fig.add_trace(go.Scatter(
@@ -3776,7 +3795,7 @@ def main():
                 fig.update_layout(
                     title="Average Profit by Strike", 
                     xaxis_title="Strike", 
-                    yaxis_title="Profit ($)", 
+                    yaxis_title="Bid Price", 
                     template="plotly_dark", 
                     height=400
                 )
