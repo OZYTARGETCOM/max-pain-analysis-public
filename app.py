@@ -169,64 +169,7 @@ if "intro_shown" not in st.session_state:
 
 # Optimized introductory animation (same format, faster duration)
 if not st.session_state["intro_shown"]:
-    st.markdown("""
-    <style>
-    /* Fondo negro para la intro */
-    .stApp {
-        background-color: #000000;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        min-height: 100vh;
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-    }
-    .intro-container {
-        width: 100vw; /* Ancho completo */
-        height: 100vh; /* Alto completo */
-        background: #000000;
-        border: 2px solid #FFFF00; /* Amarillo */
-        padding: 40px;
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 20px; /* Tamaño de fuente aumentado */
-        line-height: 1.5;
-        white-space: pre-wrap;
-        overflow-y: auto;
-        box-shadow: 0 0 20px rgba(255, 255, 0, 0.5); /* Sombra amarilla */
-        position: fixed;
-        top: 0;
-        left: 0;
-        z-index: 9999;
-    }
-    .intro-text {
-        animation: typing 2s steps(40, end); /* Reduced from 4s to 2s */
-        display: inline-block;
-    }
-    .yellow { color: #FFFF00; } /* Amarillo */
-    .green { color: #39FF14; } /* Verde neón */
-    .red { color: #FF0000; } /* Rojo */
-    @keyframes typing {
-        from { width: 0; }
-        to { width: 100%; }
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    st.markdown("""
-    <div class="intro-container">
-        <span class="intro-text green">> INITIALIZING PRO SCANNER...</span><br>
-        <span class="intro-text yellow">[*] Accessing Secure Database...</span><br>
-        <span class="intro-text green">[+] Connection Established</span><br>
-        <span class="intro-text red">WARNING: Unauthorized Access Prohibited</span><br>
-        <span class="intro-text yellow">> Loading Market Data Interfaces...</span><br>
-        <span class="intro-text green">[+] Systems Online</span><br>
-        <span class="intro-text green">> Ready for Authentication</span>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    time.sleep(2)  # Reduced from 4s to 2s
     st.session_state["intro_shown"] = True
-    st.rerun()
 
 # Optimized login screen (same format, faster authentication delay)
 if not st.session_state["authenticated"]:
@@ -2471,6 +2414,136 @@ def fetch_earnings_data(start_date: str, end_date: str) -> List[Dict]:
         return []
 
 
+
+
+
+@st.cache_data(ttl=300)
+def process_options_data(ticker: str, expiration_date: str) -> Tuple[Dict, set, float, pd.DataFrame]:
+    """Process options data for Tab 1 with caching, including detailed max pain DataFrame."""
+    options_data = get_options_data(ticker, expiration_date)
+    if not options_data:
+        return {}, set(), None, pd.DataFrame(columns=["strike", "total_loss"])
+    
+    processed_data = {}
+    strikes_data = {}
+    for opt in options_data:
+        if not isinstance(opt, dict):
+            continue
+        strike = float(opt.get("strike", 0))
+        opt_type = opt.get("option_type", "").upper()
+        oi = int(opt.get("open_interest", 0))
+        gamma = float(opt.get("greeks", {}).get("gamma", 0)) if isinstance(opt.get("greeks", {}), dict) else 0
+        if strike not in processed_data:
+            processed_data[strike] = {"CALL": {"OI": 0, "Gamma": 0}, "PUT": {"OI": 0, "Gamma": 0}}
+            strikes_data[strike] = {"CALL": 0, "PUT": 0}
+        processed_data[strike][opt_type]["OI"] += oi
+        processed_data[strike][opt_type]["Gamma"] += gamma
+        strikes_data[strike][opt_type] += oi
+    
+    prices, _ = get_historical_prices_combined(ticker)
+    touched_strikes = detect_touched_strikes(processed_data.keys(), prices)
+    max_pain = calculate_max_pain_optimized(options_data)
+    
+    # Calculate detailed max pain DataFrame
+    strike_prices = sorted(strikes_data.keys())
+    max_pain_data = []
+    for strike in strike_prices:
+        call_loss = sum((strikes_data[s]["CALL"] * max(0, s - strike)) for s in strike_prices)
+        put_loss = sum((strikes_data[s]["PUT"] * max(0, strike - s)) for s in strike_prices)
+        total_loss = call_loss + put_loss
+        max_pain_data.append({"strike": strike, "total_loss": total_loss})
+    max_pain_df = pd.DataFrame(max_pain_data)
+    
+    return processed_data, touched_strikes, max_pain, max_pain_df
+
+@st.cache_data(ttl=300)
+def process_order_flow_data(ticker: str, expiration_date: str, current_price: float) -> Tuple[pd.DataFrame, float, float, float, str]:
+    """Process options data for Tab 5 order flow with caching."""
+    option_data = get_option_data(ticker, expiration_date)
+    if option_data.empty:
+        return pd.DataFrame(), 0.0, 0.0, 0.0, "N/A"
+    
+    option_data_list = option_data.to_dict('records')
+    max_pain = calculate_max_pain_optimized(option_data_list)
+    
+    # Process buy/sell calls/puts
+    all_strikes = sorted(set(option_data["strike"]))
+    buy_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "buy")]
+    sell_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "sell")]
+    buy_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "buy")]
+    sell_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "sell")]
+    
+    order_flow_df = pd.DataFrame({
+        "Strike": all_strikes,
+        "Buy_Call_OI": buy_calls.set_index("strike")["open_interest"].reindex(all_strikes, fill_value=0),
+        "Sell_Call_OI": sell_calls.set_index("strike")["open_interest"].reindex(all_strikes, fill_value=0),
+        "Buy_Put_OI": buy_puts.set_index("strike")["open_interest"].reindex(all_strikes, fill_value=0),
+        "Sell_Put_OI": sell_puts.set_index("strike")["open_interest"].reindex(all_strikes, fill_value=0)
+    })
+    
+    # Calculate MM metrics
+    total_call_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "call" and row["strike"] > current_price)
+    total_put_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "put" and row["strike"] < current_price)
+    total_oi = max(total_call_oi + total_put_oi, 1)
+    gamma_calls = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0
+                      for row in option_data_list if row["option_type"] == "call" and "greeks" in row)
+    gamma_puts = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0
+                     for row in option_data_list if row["option_type"] == "put" and "greeks" in row)
+    net_gamma = gamma_calls - gamma_puts
+    
+    # Simplified MM direction score
+    oi_pressure = (total_call_oi - total_put_oi) / total_oi
+    gamma_factor = net_gamma / 10000
+    mm_score = oi_pressure * 0.6 + gamma_factor * 0.4
+    direction_mm = "Up" if mm_score > 0.1 else "Down" if mm_score < -0.1 else "Neutral"
+    
+    return order_flow_df, total_call_oi, total_put_oi, net_gamma, direction_mm
+
+
+
+
+@st.cache_data(ttl=300)
+def process_rating_flow_data(ticker: str, expiration_date: str, current_price: float) -> Tuple[List[Dict], float, float]:
+    """Process options data for Tab 6 rating flow with caching."""
+    options_data = get_options_data(ticker, expiration_date)
+    if not options_data:
+        return [], 0.0, 0.0
+    
+    # Process strikes and calculate max pain and MM gain
+    strikes_data = {}
+    for opt in options_data:
+        if not isinstance(opt, dict):
+            continue
+        strike = float(opt.get("strike", 0))
+        opt_type = opt.get("option_type", "").upper()
+        oi = int(opt.get("open_interest", 0))
+        if strike not in strikes_data:
+            strikes_data[strike] = {"CALL": 0, "PUT": 0}
+        strikes_data[strike][opt_type] += oi
+    
+    strike_prices = sorted(strikes_data.keys())
+    min_loss = float('inf')
+    max_pain = None
+    call_loss_at_max_pain = 0
+    put_loss_at_max_pain = 0
+    for test_strike in strike_prices:
+        call_loss = sum(max(0, s - test_strike) * strikes_data[s]["CALL"] for s in strike_prices)
+        put_loss = sum(max(0, test_strike - s) * strikes_data[s]["PUT"] for s in strike_prices)
+        total_loss = call_loss + put_loss
+        if total_loss < min_loss:
+            min_loss = total_loss
+            max_pain = test_strike
+            call_loss_at_max_pain = call_loss
+            put_loss_at_max_pain = put_loss
+    
+    mm_gain = (call_loss_at_max_pain + put_loss_at_max_pain) * 100
+    
+    return options_data, max_pain, mm_gain
+
+
+    
+
+
 # --- Main App --
 # --- Main App ---
 # --- Main App ---
@@ -2704,43 +2777,14 @@ def main():
         st.markdown(f"**Current Price:** ${current_price:.2f}")
         
         with st.spinner(f"Fetching data for {expiration_date}..."):
-            options_data = get_options_data(ticker, expiration_date)
-            if not options_data:
-                st.error("No options data available for this ticker and expiration date.")
-                return
-            
-            # Procesamiento vectorizado corregido
-            strikes = np.array([float(opt.get("strike", 0)) for opt in options_data if opt and isinstance(opt, dict)])
-            option_types = np.array([opt.get("option_type", "").upper() for opt in options_data if opt and isinstance(opt, dict)])
-            ois = np.array([int(opt.get("open_interest", 0)) for opt in options_data if opt and isinstance(opt, dict)])
-            gammas = np.array([float(opt.get("greeks", {}).get("gamma", 0)) if isinstance(opt.get("greeks", {}), dict) else 0
-                              for opt in options_data if opt and isinstance(opt, dict)])
-            
-            processed_data = {}
-            unique_strikes = np.unique(strikes)
-            for strike in unique_strikes:
-                mask = strikes == strike
-                processed_data[strike] = {
-                    "CALL": {
-                        "OI": np.sum(ois[mask & (option_types == "CALL")]),
-                        "Gamma": np.sum(gammas[mask & (option_types == "CALL")])
-                    },
-                    "PUT": {
-                        "OI": np.sum(ois[mask & (option_types == "PUT")]),
-                        "Gamma": np.sum(gammas[mask & (option_types == "PUT")])
-                    }
-                }
-            
+            processed_data, touched_strikes, max_pain, max_pain_df = process_options_data(ticker, expiration_date)
             if not processed_data:
                 st.error("No valid data to display.")
                 return
             
-            prices, _ = get_historical_prices_combined(ticker)
-            historical_prices = prices
-            touched_strikes = detect_touched_strikes(processed_data.keys(), historical_prices)
-            max_pain = calculate_max_pain_optimized(options_data)
-            df = analyze_contracts(ticker, expiration_date, current_price)
-            max_pain_strike, max_pain_df = calculate_max_pain(df)
+            options_data = get_options_data(ticker, expiration_date)  # Needed for skew analysis
+            if max_pain_df.empty:
+                st.warning("No max pain data available for this ticker and expiration date.")
             
             gamma_fig = gamma_exposure_chart(processed_data, current_price, touched_strikes)
             st.plotly_chart(gamma_fig, use_container_width=True)
@@ -2791,10 +2835,19 @@ def main():
             )
             
             # Gráfico combinado de CALLs y PUTs
-            call_df = df[df['option_type'] == 'call'].copy()
-            put_df = df[df['option_type'] == 'put'].copy()
+            call_data = [
+                {
+                    "strike": float(opt.get("strike", 0)),
+                    "option_type": opt.get("option_type", "").lower(),
+                    "open_interest": int(opt.get("open_interest", 0)),
+                    "bid": float(opt.get("bid", 0))
+                }
+                for opt in options_data if isinstance(opt, dict)
+            ]
+            call_df = pd.DataFrame([d for d in call_data if d["option_type"] == "call"])
+            put_df = pd.DataFrame([d for d in call_data if d["option_type"] == "put"])
             
-            # Limpiar open_interest para evitar nan en ambos DataFrames
+            # Limpiar open_interest para evitar nan
             call_df['open_interest'] = call_df['open_interest'].fillna(0).astype(int).clip(lower=0)
             put_df['open_interest'] = put_df['open_interest'].fillna(0).astype(int).clip(lower=0)
             
@@ -2850,6 +2903,7 @@ def main():
             
             st.markdown("---")
             st.markdown("*Developed by Ozy | © 2025*")
+
 
     with tab2:
         st.subheader("Market Scanner Pro")
@@ -3290,226 +3344,214 @@ def main():
         selected_expiration = st.selectbox("Select an Expiration Date:", expiration_dates, key="stock_exp_date")
         if stock:
             with st.spinner("Fetching data..."):
-                financial_metrics = get_financial_metrics(stock)
-                prices, volumes = get_historical_prices_fmp(stock)
-                if not prices or not volumes:
-                    st.error(f"❌ Unable to fetch data for {stock}.")
-                else:
-                    trend, confidence, predicted_price = speculate_next_day_movement(financial_metrics, prices, volumes)
-                    current_price = get_current_price(stock)
-                    if current_price == 0.0:
-                        st.error(f"❌ No se pudo obtener el precio actual para {stock}. Verifica el ticker o la conexión a la API.")
-                        return
-                    st.markdown(f"### Metrics for {stock}")
-                    st.write(f"- **Current Price**: ${current_price:,.2f}")
-                    st.write(f"- **EBITDA**: ${financial_metrics.get('EBITDA', 0):,.2f}")
-                    st.write(f"- **Revenue**: ${financial_metrics.get('Revenue', 0):,.2f}")
-                    st.write(f"- **Net Income**: ${financial_metrics.get('Net Income', 0):,.2f}")
-                    st.write(f"- **ROE**: {financial_metrics.get('ROE', 0):,.2f}")
-                    st.write(f"- **Beta**: ${financial_metrics.get('Beta', 0):,.2f}")
-                    st.write(f"- **PE Ratio**: ${financial_metrics.get('PE Ratio', 0):,.2f}")
-                    st.write(f"- **Debt-to-Equity Ratio**: {financial_metrics.get('Debt-to-Equity Ratio', 0):.2f}")
-                    st.write(f"- **Market Cap**: ${financial_metrics.get('Market Cap', 0):,.2f}")
-                    st.write(f"- **Operating Cash Flow**: ${financial_metrics.get('Operating Cash Flow', 0):,.2f}")
-                    st.write(f"- **Free Cash Flow**: ${financial_metrics.get('Free Cash Flow', 0):,.2f}")
-                    st.markdown(f"### Possibilities for {stock}")
-                    st.write(f"- **Trend**: {trend}")
-                    st.write(f"- **Confidence**: {confidence:.2f}")
-                    st.write(f"- **Predicted Price (Next Day)**: ${predicted_price:.2f}" if predicted_price is not None else "- **Predicted Price (Next Day)**: N/A")
-                    option_data = get_option_data(stock, selected_expiration)
-                    if not option_data.empty:
-                        option_data_list = option_data.to_dict('records')
-                        buy_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "buy")]
-                        sell_calls = option_data[(option_data["option_type"] == "call") & (option_data["action"] == "sell")]
-                        buy_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "buy")]
-                        sell_puts = option_data[(option_data["option_type"] == "put") & (option_data["action"] == "sell")]
-                        all_strikes = sorted(set(option_data["strike"]))
-                        buy_calls_data = pd.DataFrame({"strike": all_strikes}).merge(buy_calls[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
-                        sell_calls_data = pd.DataFrame({"strike": all_strikes}).merge(sell_calls[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
-                        buy_puts_data = pd.DataFrame({"strike": all_strikes}).merge(buy_puts[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
-                        sell_puts_data = pd.DataFrame({"strike": all_strikes}).merge(sell_puts[["strike", "open_interest", "volume"]], on="strike", how="left").fillna({"open_interest": 0, "volume": 0})
-                        fig = go.Figure()
-
-                        fig.add_trace(go.Bar(
-                            x=buy_calls_data["strike"],
-                            y=buy_calls_data["open_interest"],
-                            name="Buy Call",
-                            marker_color="green",
-                            width=0.4,
-                            hovertemplate="%{y:,}",
-                            text="Buy Call",
-                            textposition="inside"
-                        ))
-                        fig.add_trace(go.Bar(
-                            x=sell_calls_data["strike"],
-                            y=sell_calls_data["open_interest"],
-                            name="Sell Call",
-                            marker_color="orange",
-                            width=0.4,
-                            hovertemplate="%{y:,}",
-                            text="Sell Call",
-                            textposition="inside"
-                        ))
-                        fig.add_trace(go.Bar(
-                            x=buy_puts_data["strike"],
-                            y=-buy_puts_data["open_interest"],
-                            name="Buy Put",
-                            marker_color="red",
-                            width=0.4,
-                            hovertemplate="%{customdata:,}",
-                            customdata=[abs(oi) for oi in buy_puts_data["open_interest"]],
-                            text="Buy Put",
-                            textposition="inside"
-                        ))
-                        fig.add_trace(go.Bar(
-                            x=sell_puts_data["strike"],
-                            y=-sell_puts_data["open_interest"],
-                            name="Sell Put",
-                            marker_color="purple",
-                            width=0.4,
-                            hovertemplate="%{customdata:,}",
-                            customdata=[abs(oi) for oi in sell_puts_data["open_interest"]],
-                            text="Sell Put",
-                            textposition="inside"
-                        ))
-
-                        fig.update_traces(
-                            hoverlabel=dict(
-                                bgcolor="rgba(0,0,0,0.1)",
-                                bordercolor="rgba(255,255,255,0.3)",
-                                font=dict(color="white", size=12)
-                            )
-                        )
-
-                        max_pain = calculate_max_pain_optimized(option_data_list)
-                        total_call_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "call" and row["strike"] > current_price)
-                        total_put_oi = sum(row["open_interest"] for row in option_data_list if row["option_type"] == "put" and row["strike"] < current_price)
-                        total_oi = total_call_oi + total_put_oi
-                        gamma_calls = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0
-                                          for row in option_data_list if row["option_type"] == "call" and "greeks" in row)
-                        gamma_puts = sum(row["greeks"]["gamma"] * row["open_interest"] if isinstance(row["greeks"], dict) and "gamma" in row["greeks"] else 0
-                                         for row in option_data_list if row["option_type"] == "put" and "greeks" in row)
-                        net_gamma = gamma_calls - gamma_puts
-                        max_pain_factor = -2 if current_price > max_pain else 2 if current_price < max_pain else 0
-                        oi_pressure = (total_call_oi - total_put_oi) / max(total_oi, 1)
-                        gamma_factor = net_gamma / 10000
-                        combined_score = max_pain_factor + oi_pressure + gamma_factor
-                        direction_mm = "Down" if combined_score < 0 else "Up" if combined_score > 0 else "Neutral"
-                        st.write(f"Debug: Current Price = {current_price}, Max Pain = {max_pain}, OI Pressure = {oi_pressure}, Net Gamma = {net_gamma}, Combined Score = {combined_score}, Direction = {direction_mm}")
-
-                        y_max = max(buy_calls_data["open_interest"].max() or 0, sell_calls_data["open_interest"].max() or 0) * 1.1 or 100
-                        y_min = -y_max
-                        fig.add_trace(go.Scatter(
-                            x=[current_price, current_price],
-                            y=[y_min, y_max],
-                            mode="lines",
-                            line=dict(width=1, dash="dash", color="#39FF14"),
-                            name="Current Price",
-                            hovertemplate=(
-                                f"<b>Current Price:</b> ${current_price:.2f}<br>"
-                                f"<b>Max Pain:</b> ${max_pain:.2f}<br>"
-                                f"<b>Total Call OI:</b> {total_call_oi:,}<br>"
-                                f"<b>Total Put OI:</b> {total_put_oi:,}<br>"
-                                f"<b>Net Gamma:</b> {net_gamma:.2f}<br>"
-                                f"<b>MM Direction:</b> {direction_mm}"
-                            ),
-                            showlegend=False,
-                            hoverlabel=dict(
-                                bgcolor="rgba(0,0,0,0)",
-                                bordercolor="rgba(0,0,0,0)",
-                                font=dict(color="#39FF14", size=12)
-                            )
-                        ))
-
-                        fig.add_annotation(
-                            x=current_price,
-                            y=y_max * 0.95,
-                            text=f"Price: ${current_price:.2f}",
-                            showarrow=False,
-                            font=dict(color="#39FF14", size=10),
-                            bgcolor="rgba(0,0,0,0.5)",
-                            bordercolor="#39FF14",
-                            borderwidth=1,
-                            borderpad=4
-                        )
-
-                        score_color = "red" if combined_score < 0 else "green" if combined_score > 0 else "white"
-                        fig.add_annotation(
-                            x=current_price,
-                            y=y_max * 0.9,
-                            text=f"MM Score: <span style='color:{score_color}'>{combined_score:.2f}</span><br>{direction_mm}",
-                            showarrow=True,
-                            arrowhead=2,
-                            arrowsize=1,
-                            arrowwidth=1,
-                            arrowcolor="#39FF14",
-                            font=dict(size=12),
-                            ax=20,
-                            ay=-30,
-                            bgcolor="rgba(0,0,0,0.5)",
-                            bordercolor="#39FF14"
-                        )
-
-                        fig.update_layout(
-                            title=f"| {stock} |  Expiration: {selected_expiration}",
-                            xaxis_title="Strike Price",
-                            yaxis_title="Open Interest",
-                            barmode="relative",
-                            showlegend=True,
-                            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                            xaxis=dict(
-                                tickmode="array",
-                                tickvals=all_strikes,
-                                ticktext=[f"{s:.2f}" for s in all_strikes],
-                                range=[min(all_strikes) - 10, max(all_strikes) + 10],
-                                showgrid=False,
-                                rangeslider=dict(visible=True)
-                            ),
-                            yaxis=dict(showgrid=False),
-                            hovermode="x",
-                            bargap=0.2,
-                            height=600,
-                            template="plotly_dark"
-                        )
-
-                        st.plotly_chart(fig, use_container_width=True, height=600)
-                        order_flow_df = pd.DataFrame({
-                            "Strike": all_strikes,
-                            "Buy_Call_OI": buy_calls_data["open_interest"],
-                            "Sell_Call_OI": sell_calls_data["open_interest"],
-                            "Buy_Put_OI": buy_puts_data["open_interest"],
-                            "Sell_Put_OI": sell_puts_data["open_interest"],
-                            "Max_Pain": [max_pain] * len(all_strikes),
-                            "Total_Call_OI": [total_call_oi] * len(all_strikes),
-                            "Total_Put_OI": [total_put_oi] * len(all_strikes),
-                            "Net_Gamma": [net_gamma] * len(all_strikes),
-                            "MM_Direction": [direction_mm] * len(all_strikes)
-                        })
-                        order_flow_csv = order_flow_df.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download Order Flow Data",
-                            data=order_flow_csv,
-                            file_name=f"{stock}_order_flow_{selected_expiration}.csv",
-                            mime="text/csv",
-                            key="download_tab5"
-                        )
-                        st.markdown("---")
-                        st.markdown("*Developed by Ozy | © 2025*")
+                current_price = get_current_price(stock)
+                if current_price == 0.0:
+                    st.error(f"❌ No se pudo obtener el precio actual para {stock}. Verifica el ticker o la conexión a la API.")
+                    return
+                
+                order_flow_df, total_call_oi, total_put_oi, net_gamma, direction_mm = process_order_flow_data(stock, selected_expiration, current_price)
+                if order_flow_df.empty:
+                    st.error(f"❌ No options data available for {stock} on {selected_expiration}.")
+                    return
+                
+                max_pain = calculate_max_pain_optimized(get_option_data(stock, selected_expiration).to_dict('records'))
+                
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=order_flow_df["Strike"],
+                    y=order_flow_df["Buy_Call_OI"],
+                    name="Buy Call",
+                    marker_color="green",
+                    width=0.4,
+                    hovertemplate="%{y:,}",
+                    text="Buy Call",
+                    textposition="inside"
+                ))
+                fig.add_trace(go.Bar(
+                    x=order_flow_df["Strike"],
+                    y=order_flow_df["Sell_Call_OI"],
+                    name="Sell Call",
+                    marker_color="orange",
+                    width=0.4,
+                    hovertemplate="%{y:,}",
+                    text="Sell Call",
+                    textposition="inside"
+                ))
+                fig.add_trace(go.Bar(
+                    x=order_flow_df["Strike"],
+                    y=-order_flow_df["Buy_Put_OI"],
+                    name="Buy Put",
+                    marker_color="red",
+                    width=0.4,
+                    hovertemplate="%{customdata:,}",
+                    customdata=order_flow_df["Buy_Put_OI"].abs(),
+                    text="Buy Put",
+                    textposition="inside"
+                ))
+                fig.add_trace(go.Bar(
+                    x=order_flow_df["Strike"],
+                    y=-order_flow_df["Sell_Put_OI"],
+                    name="Sell Put",
+                    marker_color="purple",
+                    width=0.4,
+                    hovertemplate="%{customdata:,}",
+                    customdata=order_flow_df["Sell_Put_OI"].abs(),
+                    text="Sell Put",
+                    textposition="inside"
+                ))
+                
+                fig.update_traces(
+                    hoverlabel=dict(
+                        bgcolor="rgba(0,0,0,0.1)",
+                        bordercolor="rgba(255,255,255,0.3)",
+                        font=dict(color="white", size=12)
+                    )
+                )
+                
+                y_max = max(order_flow_df[["Buy_Call_OI", "Sell_Call_OI"]].max().max() or 0, 100) * 1.1
+                y_min = -y_max
+                fig.add_trace(go.Scatter(
+                    x=[current_price, current_price],
+                    y=[y_min, y_max],
+                    mode="lines",
+                    line=dict(width=1, dash="dash", color="#39FF14"),
+                    name="Current Price",
+                    hovertemplate=(
+                        f"<b>Current Price:</b> ${current_price:.2f}<br>"
+                        f"<b>Max Pain:</b> ${max_pain:.2f}<br>"
+                        f"<b>Total Call OI:</b> {total_call_oi:,}<br>"
+                        f"<b>Total Put OI:</b> {total_put_oi:,}<br>"
+                        f"<b>Net Gamma:</b> {net_gamma:.2f}<br>"
+                        f"<b>MM Direction:</b> {direction_mm}"
+                    ),
+                    showlegend=False,
+                    hoverlabel=dict(
+                        bgcolor="rgba(0,0,0,0)",
+                        bordercolor="rgba(0,0,0,0)",
+                        font=dict(color="#39FF14", size=12)
+                    )
+                ))
+                
+                fig.add_annotation(
+                    x=current_price,
+                    y=y_max * 0.95,
+                    text=f"Price: ${current_price:.2f}",
+                    showarrow=False,
+                    font=dict(color="#39FF14", size=10),
+                    bgcolor="rgba(0,0,0,0.5)",
+                    bordercolor="#39FF14",
+                    borderwidth=1,
+                    borderpad=4
+                )
+                
+                score_color = "red" if direction_mm == "Down" else "green" if direction_mm == "Up" else "white"
+                fig.add_annotation(
+                    x=current_price,
+                    y=y_max * 0.9,
+                    text=f"MM Direction: <span style='color:{score_color}'>{direction_mm}</span>",
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1,
+                    arrowwidth=1,
+                    arrowcolor="#39FF14",
+                    font=dict(size=12),
+                    ax=20,
+                    ay=-30,
+                    bgcolor="rgba(0,0,0,0.5)",
+                    bordercolor="#39FF14"
+                )
+                
+                fig.update_layout(
+                    title=f"| {stock} | Expiration: {selected_expiration}",
+                    xaxis_title="Strike Price",
+                    yaxis_title="Open Interest",
+                    barmode="relative",
+                    showlegend=True,
+                    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+                    xaxis=dict(
+                        tickmode="array",
+                        tickvals=order_flow_df["Strike"],
+                        ticktext=[f"{s:.2f}" for s in order_flow_df["Strike"]],
+                        range=[min(order_flow_df["Strike"]) - 10, max(order_flow_df["Strike"]) + 10],
+                        showgrid=False,
+                        rangeslider=dict(visible=True)
+                    ),
+                    yaxis=dict(showgrid=False),
+                    hovermode="x",
+                    bargap=0.2,
+                    height=600,
+                    template="plotly_dark"
+                )
+                
+                st.plotly_chart(fig, use_container_width=True, height=600)
+                st.write(f"**MM Metrics**: Total Call OI: {total_call_oi:,} | Total Put OI: {total_put_oi:,} | Net Gamma: {net_gamma:.2f} | Direction: {direction_mm}")
+                
+                order_flow_csv = order_flow_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Order Flow Data",
+                    data=order_flow_csv,
+                    file_name=f"{stock}_order_flow_{selected_expiration}.csv",
+                    mime="text/csv",
+                    key="download_tab5"
+                )
+                st.markdown("---")
+                st.markdown("*Developed by Ozy | © 2025*")
 
     # Tab 6: Analyst Rating Flow
         # Tab 6: Analyst Rating Flow
     with tab6:
         st.subheader("Rating Flow")
-        col1, col2 = st.columns([1, 3])
         
         # Estilos personalizados
         st.markdown("""
             <style>
-            .rating-flow-container {
-                background: linear-gradient(135deg, #1E1E1E, #2A2A2A);
-                padding: 20px;
-                border-radius: 10px;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            .centered-content {
+                text-align: center;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                width: 100%;
+                max-width: 800px;
+                margin: 0 auto;
+            }
+            .centered-content h3, .centered-content div, .centered-content input, .centered-content select {
+                text-align: center;
+            }
+            .centered-content .stTextInput, .centered-content .stSelectbox, .centered-content .stCheckbox, .centered-content .stPlotlyChart {
+                display: flex;
+                justify-content: center;
+                width: 100%;
+            }
+            .centered-content .stTextInput > div, .centered-content .stSelectbox > div, .centered-content .stCheckbox > div {
+                width: 80%;
+                margin: 0 auto;
+            }
+            .centered-content .stPlotlyChart > div {
+                width: 100%;
+                max-width: 800px;
+                margin: 0 auto;
+            }
+            .centered-content .stDataFrame {
+                width: 100%;
+            }
+            .centered-content .stDataFrame > div {
+                width: 100%;
+                margin: 0 auto;
+            }
+            .hacker-text {
+                background: #1A1A1A;
+                padding: 15px;
+                border-radius: 8px;
+                border: 2px solid #FFD700;
+                font-family: 'Courier New', Courier, monospace;
+                color: #FFD700;
+                font-size: 14px;
+                line-height: 1.5;
+                text-align: left;
+                box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+                white-space: pre-wrap;
+                max-width: 600px;
+                margin: 0 auto;
             }
             .tooltip {
                 position: relative;
@@ -3537,261 +3579,223 @@ def main():
             .tooltip:hover .tooltiptext {
                 visibility: visible;
             }
-            .hacker-text {
-                background: #1A1A1A;
-                padding: 15px;
-                border-radius: 8px;
-                border: 2px solid #FFD700;
-                font-family: 'Courier New', Courier, monospace;
-                color: #FFD700;
-                font-size: 14px;
-                line-height: 1.5;
-                text-align: left;
-                box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
-                white-space: pre-wrap;
-            }
             </style>
         """, unsafe_allow_html=True)
-
-        with col1:
-            st.markdown("### Configuration")
-            ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="alerts_ticker").upper()
-            expiration_dates = get_expiration_dates(ticker)
-            if not expiration_dates:
-                st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
-                return
-            expiration_date = st.selectbox("Expiration Date", expiration_dates, key="alerts_exp_date")
-            with st.spinner("Fetching price..."):
-                current_price = get_current_price(ticker)
-                if current_price == 0.0:
-                    st.error(f"Invalid ticker '{ticker}' or no price data available.")
-                    return
-            
-            # Calcular volatilidad implícita
-            iv = get_implied_volatility(ticker) or 0.3
-            iv_factor = min(max(iv, 0.1), 1.0)
-            
-            # Vol Filter
-            st.markdown("### Vol Filter")
-            volume_options = {
-                "0.1M": 10000,
-                "0.2M": 20000,
-                "0.3M": 30000,
-                "0.4M": 40000,
-                "0.5M": 50000,
-                "1.0M": 100000
-            }
-            auto_oi = int(100000 * (1 + iv_factor * 2))
-            auto_oi_key = next((k for k, v in volume_options.items() if v >= auto_oi), "0.1M")
-            use_auto_oi = st.checkbox("Auto OI (Volatility-Based)", value=False, key="auto_oi")
-            if use_auto_oi:
-                open_interest_threshold = volume_options[auto_oi_key]
-                st.write(f"Auto OI Set: {auto_oi_key} ({volume_options[auto_oi_key]:,})")
-            else:
-                selected_volume = st.selectbox("Min Open Interest (M)", list(volume_options.keys()), index=0, key="alerts_vol")
-                open_interest_threshold = volume_options[selected_volume]
-            
-            # Gamma Filter
-            st.markdown("### Gamma Filter")
-            gamma_options = {
-                "0.001": 0.001,
-                "0.005": 0.005,
-                "0.01": 0.01,
-                "0.02": 0.02,
-                "0.03": 0.03,
-                "0.05": 0.05
-            }
-            auto_gamma = max(0.001, min(0.05, iv_factor / 20))
-            auto_gamma_key = next((k for k, v in gamma_options.items() if v >= auto_gamma), "0.001")
-            use_auto_gamma = st.checkbox("Auto Gamma (Volatility-Based)", value=False, key="auto_gamma")
-            if use_auto_gamma:
-                gamma_threshold = gamma_options[auto_gamma_key]
-                st.write(f"Auto Gamma Set: {auto_gamma_key}")
-            else:
-                selected_gamma = st.selectbox("Min Gamma", list(gamma_options.keys()), index=0, key="alerts_gamma")
-                gamma_threshold = gamma_options[selected_gamma]
-            
-            st.markdown(f"**Current Price:** ${current_price:.2f}  \n*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
         
-        with col2:
-            with st.spinner(f"Generating alerts for {expiration_date}..."):
-                options_data = get_options_data(ticker, expiration_date)
-                if not options_data:
-                    st.error("No options data available for this date.")
-                    return
-                
-                # Calcular Max Pain con suma de pérdidas y ganancia del MM
-                strikes = sorted(set(float(opt["strike"]) for opt in options_data))
-                min_loss = float('inf')
-                max_pain = None
-                call_loss_at_max_pain = 0
-                put_loss_at_max_pain = 0
-                for test_strike in strikes:
-                    call_loss = sum(max(0, float(opt["strike"]) - test_strike) * int(opt["open_interest"]) 
-                                    for opt in options_data if opt.get("option_type", "").upper() == "CALL")
-                    put_loss = sum(max(0, test_strike - float(opt["strike"])) * int(opt["open_interest"]) 
-                                   for opt in options_data if opt.get("option_type", "").upper() == "PUT")
-                    total_loss = call_loss + put_loss
-                    if total_loss < min_loss:
-                        min_loss = total_loss
-                        max_pain = test_strike
-                        call_loss_at_max_pain = call_loss
-                        put_loss_at_max_pain = put_loss
-                
-                # Ganancia del MM en dólares
-                mm_gain = (call_loss_at_max_pain + put_loss_at_max_pain) * 100
-                
-                # Texto estilo hacker
-                hacker_text = f"""
+        st.markdown('<div class="centered-content">', unsafe_allow_html=True)
+        
+        # Configuration Section
+        st.markdown("### Configuration")
+        ticker = st.text_input("Ticker Symbol (e.g., SPY)", "SPY", key="alerts_ticker").upper()
+        expiration_dates = get_expiration_dates(ticker)
+        if not expiration_dates:
+            st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
+            st.markdown('</div>', unsafe_allow_html=True)
+            return
+        expiration_date = st.selectbox("Expiration Date", expiration_dates, key="alerts_exp_date")
+        with st.spinner("Fetching price..."):
+            current_price = get_current_price(ticker)
+            if current_price == 0.0:
+                st.error(f"Invalid ticker '{ticker}' or no price data available.")
+                st.markdown('</div>', unsafe_allow_html=True)
+                return
+        
+        # Calcular volatilidad implícita
+        iv = get_implied_volatility(ticker) or 0.3
+        iv_factor = min(max(iv, 0.1), 1.0)
+        
+        # Vol Filter
+        st.markdown("### Vol Filter")
+        volume_options = {
+            "0.1M": 1000,
+            "0.2M": 2000,
+            "0.3M": 3000,
+            "0.4M": 4000,
+            "0.5M": 5000,
+            "1.0M": 10000
+        }
+        auto_oi = int(10000 * (1 + iv_factor * 2))
+        auto_oi_key = next((k for k, v in volume_options.items() if v >= auto_oi), "0.1M")
+        use_auto_oi = st.checkbox("Auto OI (Volatility-Based)", value=False, key="auto_oi")
+        if use_auto_oi:
+            open_interest_threshold = volume_options[auto_oi_key]
+            st.write(f"Auto OI Set: {auto_oi_key} ({volume_options[auto_oi_key]:,})")
+        else:
+            selected_volume = st.selectbox("Min Open Interest (M)", list(volume_options.keys()), index=0, key="alerts_vol")
+            open_interest_threshold = volume_options[selected_volume]
+        
+        # Gamma Filter
+        st.markdown("### Gamma Filter")
+        gamma_options = {
+            "0.001": 0.0001,
+            "0.005": 0.005,
+            "0.01": 0.01,
+            "0.02": 0.02,
+            "0.03": 0.03,
+            "0.05": 0.05
+        }
+        auto_gamma = max(0.001, min(0.05, iv_factor / 20))
+        auto_gamma_key = next((k for k, v in gamma_options.items() if v >= auto_gamma), "0.001")
+        use_auto_gamma = st.checkbox("Auto Gamma (Volatility-Based)", value=False, key="auto_gamma")
+        if use_auto_gamma:
+            gamma_threshold = gamma_options[auto_gamma_key]
+            st.write(f"Auto Gamma Set: {auto_gamma_key}")
+        else:
+            selected_gamma = st.selectbox("Min Gamma", list(gamma_options.keys()), index=0, key="alerts_gamma")
+            gamma_threshold = gamma_options[selected_gamma]
+        
+        st.markdown(f"**Current Price:** ${current_price:.2f}  \n*Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
+        
+        # Charts and Table Section
+        with st.spinner(f"Generating alerts for {expiration_date}..."):
+            options_data, max_pain, mm_gain = process_rating_flow_data(ticker, expiration_date, current_price)
+            if not options_data:
+                st.error("No options data available for this date.")
+                st.markdown('</div>', unsafe_allow_html=True)
+                return
+            
+            # Texto estilo hacker
+            max_pain_display = f"{max_pain:.2f}" if max_pain is not None else "N/A"
+            mm_gain_display = f"{mm_gain:,.2f}" if mm_gain is not None else "0.0"
+            hacker_text = f"""
 >>> Current_Price = ${current_price:.2f}
 >>> Updated = "{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
->>> Max_Pain_Strike = ${max_pain:.2f}
->>> CALL_Loss = ${call_loss_at_max_pain * 100:,.2f}
->>> PUT_Loss = ${put_loss_at_max_pain * 100:,.2f}
->>> MM_Potential_Gain = ${mm_gain:,.2f}
+>>> Max_Pain_Strike = ${max_pain_display}
+>>> MM_Potential_Gain = ${mm_gain_display}
 """
-                st.markdown(f'<div class="hacker-text">{hacker_text}</div>', unsafe_allow_html=True)
-
-                # Función para generar sugerencias
-                def generate_contract_suggestions(ticker, options_data, current_price, oi_threshold, gamma_threshold, max_pain, mm_gain):
-                    suggestions = []
-                    valid_contracts = 0
-                    for opt in options_data:
-                        if not isinstance(opt, dict):
-                            continue
-                        strike = float(opt.get("strike", 0))
-                        opt_type = opt.get("option_type", "").upper()
-                        oi = int(opt.get("open_interest", 0))
-                        greeks = opt.get("greeks", {})
-                        gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
-                        iv = float(greeks.get("smv_vol", 0)) if isinstance(greeks, dict) else 0
-                        delta = float(greeks.get("delta", 0)) if isinstance(greeks, dict) else 0
-                        volume = int(opt.get("volume", 0) or 0)
-                        last = opt.get("last")
-                        bid = opt.get("bid")
-                        last_price = float(last) if last is not None and isinstance(last, (int, float, str)) else float(bid) if bid is not None and isinstance(bid, (int, float, str)) else 0
-                        
-                        if oi >= oi_threshold and gamma >= gamma_threshold:
-                            valid_contracts += 1
-                            buy_ratio = 0.5 + iv_factor * 0.2 if opt_type == "CALL" else 0.5 - iv_factor * 0.2
-                            buy_volume = int(volume * buy_ratio)
-                            sell_volume = volume - buy_volume
-                            avg_buy_price = last_price * (1 + iv_factor * 0.02) if last_price else 0
-                            avg_sell_price = last_price * (1 - iv_factor * 0.02) if last_price else 0
-                            total_buy = buy_volume * avg_buy_price * 100
-                            total_sell = sell_volume * avg_sell_price * 100
-                            action = "SELL" if (opt_type == "CALL" and strike > current_price) or (opt_type == "PUT" and strike < current_price) else "BUY"
-                            rr = abs(strike - current_price) / (last_price + 0.01) if last_price else 0
-                            prob_otm = 1 - abs(delta) if delta else 0
-                            profit = (strike - current_price) * 100 if action == "BUY" and opt_type == "CALL" else (current_price - strike) * 100 if action == "BUY" and opt_type == "PUT" else last_price * 100
-                            is_max_pain = strike == max_pain
-                            mm_gain_at_strike = mm_gain if is_max_pain else 0
-                            
-                            suggestions.append({
-                                "Strike": strike, "Action": action, "Type": opt_type, "Gamma": gamma, "IV": iv, "Delta": delta,
-                                "RR": rr, "Prob OTM": prob_otm, "Profit": profit, "Open Interest": oi, "IsMaxPain": is_max_pain,
-                                "Buy Volume": buy_volume, "Sell Volume": sell_volume, "Avg Buy Price": avg_buy_price,
-                                "Avg Sell Price": avg_sell_price, "Total Buy ($)": total_buy, "Total Sell ($)": total_sell,
-                                "MM Gain ($)": mm_gain_at_strike
-                            })
-                    
-                    st.write(f"Max Found {valid_contracts} contracts  >= {oi_threshold:,} and GM >= {gamma_threshold}")
-                    return suggestions
-
-                suggestions = generate_contract_suggestions(ticker, options_data, current_price, open_interest_threshold, gamma_threshold, max_pain, mm_gain)
-                if suggestions:
-                    df = pd.DataFrame(suggestions)
-                    df['Contract'] = df.apply(lambda row: f"{ticker} {row['Action']} {row['Type']} {row['Strike']}", axis=1)
-                    df = df[['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'RR', 'Prob OTM', 'Profit', 'Open Interest', 
-                             'Buy Volume', 'Sell Volume', 'Avg Buy Price', 'Avg Sell Price', 'Total Buy ($)', 'Total Sell ($)', 'MM Gain ($)', 'IsMaxPain']]
-                    df.columns = ['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'R/R', 'Prob OTM', 'Profit ($)', 'Open Int.', 
-                                  'Buy Vol.', 'Sell Vol.', 'Avg Buy ($)', 'Avg Sell ($)', 'Total Buy ($)', 'Total Sell ($)', 'MM Gain ($)', 'Max Pain']
-
-                    def color_row(row):
-                        if row['Max Pain']:
-                            return ['color: #FFD700'] * len(row)
-                        elif row['Type'] == "CALL":
-                            return ['color: #228B22' if row['Action'] == "SELL" and row['Strike'] > current_price else 'color: #006400'] * len(row)
-                        elif row['Type'] == "PUT":
-                            return ['color: #CD5C5C' if row['Action'] == "SELL" and row['Strike'] < current_price else 'color: #8B0000'] * len(row)
-                        return [''] * len(row)
-
-                    styled_df = df.style.apply(color_row, axis=1).format({
-                        'Strike': '{:.1f}', 'Gamma': '{:.4f}', 'IV': '{:.2f}', 'Delta': '{:.2f}', 'R/R': '{:.2f}',
-                        'Prob OTM': '{:.2%}', 'Profit ($)': '${:.2f}', 'Open Int.': '{:,.0f}',
-                        'Buy Vol.': '{:,.0f}', 'Sell Vol.': '{:,.0f}', 'Avg Buy ($)': '${:.2f}', 'Avg Sell ($)': '${:.2f}',
-                        'Total Buy ($)': '${:,.2f}', 'Total Sell ($)': '${:,.2f}', 'MM Gain ($)': lambda x: '${:,.2f}'.format(x) if x > 0 else '-'
-                    })
-                    st.dataframe(styled_df, height=400)
-                    
-                    # Gráfico de burbujas
-                    fig = go.Figure()
-                    call_df = df[df['Type'] == 'CALL']
-                    if not call_df.empty:
-                        # Reemplazar NaN con 0 y manejar división por cero
-                        total_buy = call_df['Total Buy ($)'].fillna(0)
-                        max_total_buy = total_buy.max() if total_buy.max() > 0 else 1  # Evitar división por cero
-                        sizes = np.nan_to_num(total_buy / max_total_buy * 50, nan=0, posinf=0, neginf=0)
-                        sizes = np.maximum(sizes, 5)  # Asegurar un tamaño mínimo para visibilidad
-                        fig.add_trace(go.Scatter(
-                            x=call_df['Strike'], 
-                            y=call_df['Avg Buy ($)'], 
-                            mode='markers', 
-                            name='CALL Buy ($)', 
-                            marker=dict(
-                                size=sizes, 
-                                color='#228B22', 
-                                opacity=0.7
-                            ),
-                            text=call_df['Contract'] + '<br>Total: $' + call_df['Total Buy ($)'].astype(str)
-                        ))
-                    put_df = df[df['Type'] == 'PUT']
-                    if not put_df.empty:
-                        # Reemplazar NaN con 0 y manejar división por cero
-                        total_sell = put_df['Total Sell ($)'].fillna(0)
-                        max_total_sell = total_sell.max() if total_sell.max() > 0 else 1  # Evitar división por cero
-                        sizes = np.nan_to_num(total_sell / max_total_sell * 50, nan=0, posinf=0, neginf=0)
-                        sizes = np.maximum(sizes, 5)  # Asegurar un tamaño mínimo para visibilidad
-                        fig.add_trace(go.Scatter(
-                            x=put_df['Strike'], 
-                            y=-put_df['Avg Sell ($)'], 
-                            mode='markers', 
-                            name='PUT Sell ($)', 
-                            marker=dict(
-                                size=sizes, 
-                                color='#CD5C5C', 
-                                opacity=0.7
-                            ),
-                            text=put_df['Contract'] + '<br>Total: $' + put_df['Total Sell ($)'].astype(str)
-                        ))
-                    if mm_gain > 0:
-                        fig.add_trace(go.Scatter(x=[max_pain], 
-                                               y=[0], 
-                                               mode='markers+text', name='MM Gain', 
-                                               marker=dict(size=50, color='#FFD700', opacity=0.9, 
-                                                         line=dict(width=2, color='#FFFFFF')),
-                                               text=[f"MM Gain: ${mm_gain:,.2f}"],
-                                               textposition="middle center"))
-                    fig.add_vline(x=max_pain, line=dict(color="#FFD700", width=2, dash="dash"), annotation_text="Max Pain", annotation_position="top right")
-                    fig.add_hline(y=0, line=dict(color="#FFFFFF", width=1))
-                    fig.update_layout(title="AverageS", 
-                                    xaxis_title="Strike", yaxis_title="Avg Price ($)", 
-                                    template="plotly_dark", height=400)
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download Rating Flow Data",
-                        data=csv,
-                        file_name=f"{ticker}_rating_flow_{expiration_date}.csv",
-                        mime="text/csv",
-                        key="download_tab6"
-                    )
-                else:
-                    st.error(f"No alerts generated with Open Interest ≥ {open_interest_threshold:,}, Gamma ≥ {gamma_threshold}. Check logs.")
+            st.markdown(f'<div class="hacker-text">{hacker_text}</div>', unsafe_allow_html=True)
+            
+            # Simplified suggestion generation with tolerance for max pain
+            suggestions = []
+            valid_contracts = 0
+            for opt in options_data:
+                if not isinstance(opt, dict):
+                    continue
+                strike = float(opt.get("strike", 0))
+                opt_type = opt.get("option_type", "").upper()
+                oi = int(opt.get("open_interest", 0))
+                greeks = opt.get("greeks", {})
+                gamma = float(greeks.get("gamma", 0)) if isinstance(greeks, dict) else 0
+                iv = float(greeks.get("smv_vol", 0)) if isinstance(greeks, dict) else 0
+                delta = float(greeks.get("delta", 0)) if isinstance(greeks, dict) else 0
+                volume = int(opt.get("volume", 0) or 0)
+                last = opt.get("last")
+                bid = opt.get("bid")
+                last_price = float(last) if last is not None and isinstance(last, (int, float, str)) else float(bid) if bid is not None and isinstance(bid, (int, float, str)) else 0
                 
-                st.markdown("---")
-                st.markdown("*Developed by Ozy | © 2025*")
+                if oi >= open_interest_threshold and gamma >= gamma_threshold:
+                    valid_contracts += 1
+                    action = "SELL" if (opt_type == "CALL" and strike > current_price) or (opt_type == "PUT" and strike < current_price) else "BUY"
+                    rr = abs(strike - current_price) / (last_price + 0.01) if last_price else 0
+                    prob_otm = 1 - abs(delta) if delta else 0
+                    profit = (strike - current_price) * 100 if action == "BUY" and opt_type == "CALL" else (current_price - strike) * 100 if action == "BUY" and opt_type == "PUT" else last_price * 100
+                    is_max_pain = abs(strike - max_pain) < 0.01 if max_pain is not None else False
+                    mm_gain_at_strike = mm_gain * 100 if is_max_pain else 0
+                    
+                    suggestions.append({
+                        "Strike": strike, "Action": action, "Type": opt_type, "Gamma": gamma, "IV": iv, "Delta": delta,
+                        "RR": rr, "Prob OTM": prob_otm, "Profit": profit, "Open Interest": oi, "IsMaxPain": is_max_pain,
+                        "MM Gain ($)": mm_gain_at_strike
+                    })
+            
+            if suggestions:
+                df = pd.DataFrame(suggestions)
+                df['Contract'] = df.apply(lambda row: f"{ticker} {row['Action']} {row['Type']} {row['Strike']}", axis=1)
+                df = df[['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'RR', 'Prob OTM', 'Profit', 'Open Interest', 'IsMaxPain', 'MM Gain ($)']]
+                df.columns = ['Contract', 'Strike', 'Action', 'Type', 'Gamma', 'IV', 'Delta', 'R/R', 'Prob OTM', 'Profit ($)', 'Open Int.', 'Max Pain', 'MM Gain ($)']
+                
+                def color_row(row):
+                    if row['Max Pain'] is True:
+                        return ['color: #FFD700; font-weight: bold'] * len(row)
+                    elif row['Type'] == "CALL":
+                        return ['color: #228B22'] * len(row)
+                    elif row['Type'] == "PUT":
+                        return ['color: #CD5C5C'] * len(row)
+                    return [''] * len(row)
+                
+                styled_df = df.style.apply(color_row, axis=1).format({
+                    'Strike': '{:.1f}',
+                    'Profit ($)': '${:.2f}',
+                    'Open Int.': '{:,.0f}',
+                    'MM Gain ($)': '{:.2f}'
+                })
+                st.write(f"Found {valid_contracts} contracts with OI ≥ {open_interest_threshold:,} and Gamma ≥ {gamma_threshold}")
+                st.dataframe(styled_df, use_container_width=True, height=400)
+                
+                # Gráfico de burbujas
+                fig = go.Figure()
+                call_df = df[df['Type'] == 'CALL']
+                if not call_df.empty:
+                    total_profit = call_df['Profit ($)'].fillna(0)
+                    max_total_profit = total_profit.max() if total_profit.max() > 0 else 1
+                    sizes = np.nan_to_num(total_profit / max_total_profit * 50, nan=0, posinf=0, neginf=0)
+                    sizes = np.maximum(sizes, 5)
+                    fig.add_trace(go.Scatter(
+                        x=call_df['Strike'], 
+                        y=call_df['Profit ($)'], 
+                        mode='markers', 
+                        name='CALL Profit ($)', 
+                        marker=dict(
+                            size=sizes, 
+                            color='#228B22', 
+                            opacity=0.7
+                        ),
+                        text=call_df['Contract'] + '<br>Profit: $' + call_df['Profit ($)'].astype(str)
+                    ))
+                put_df = df[df['Type'] == 'PUT']
+                if not put_df.empty:
+                    total_profit = put_df['Profit ($)'].fillna(0)
+                    max_total_profit = total_profit.max() if total_profit.max() > 0 else 1
+                    sizes = np.nan_to_num(total_profit / max_total_profit * 50, nan=0, posinf=0, neginf=0)
+                    sizes = np.maximum(sizes, 5)
+                    fig.add_trace(go.Scatter(
+                        x=put_df['Strike'], 
+                        y=-put_df['Profit ($)'], 
+                        mode='markers', 
+                        name='PUT Profit ($)', 
+                        marker=dict(
+                            size=sizes, 
+                            color='#CD5C5C', 
+                            opacity=0.7
+                        ),
+                        text=put_df['Contract'] + '<br>Profit: $' + put_df['Profit ($)'].astype(str)
+                    ))
+                if mm_gain > 0 and max_pain is not None:
+                    fig.add_trace(go.Scatter(
+                        x=[max_pain], 
+                        y=[0], 
+                        mode='markers+text', 
+                        name='MM Gain', 
+                        marker=dict(size=50, color='#FFD700', opacity=0.9, line=dict(width=2, color='#FFFFFF')),
+                        text=[f"MM Gain: ${mm_gain:,.2f}"],
+                        textposition="middle center"
+                    ))
+                if max_pain is not None:
+                    fig.add_vline(x=max_pain, line=dict(color="#FFD700", width=2, dash="dash"), annotation_text="Max Pain", annotation_position="top right")
+                fig.add_hline(y=0, line=dict(color="#FFFFFF", width=1))
+                fig.update_layout(
+                    title="Average Profit by Strike", 
+                    xaxis_title="Strike", 
+                    yaxis_title="Profit ($)", 
+                    template="plotly_dark", 
+                    height=400
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Rating Flow Data",
+                    data=csv,
+                    file_name=f"{ticker}_rating_flow_{expiration_date}.csv",
+                    mime="text/csv",
+                    key="download_tab6"
+                )
+            else:
+                st.error(f"No alerts generated with Open Interest ≥ {open_interest_threshold:,}, Gamma ≥ {gamma_threshold}. Check logs.")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("---")
+            st.markdown("*Developed by Ozy | © 2025*")
 
     # Tab 7: Elliott Pulse
     with tab7:
