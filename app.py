@@ -4,7 +4,6 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import numpy as np
-import os
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
@@ -26,6 +25,9 @@ import streamlit.components.v1 as components
 import krakenex
 import base64
 import threading
+import os
+from datetime import timezone
+os.environ["TZ"] = "UTC"
 
 
 
@@ -38,7 +40,7 @@ retry_strategy = Retry(total=5, backoff_factor=1, status_forcelist=[429, 500, 50
 adapter = HTTPAdapter(max_retries=retry_strategy)
 session_fmp.mount("https://", adapter)
 session_tradier.mount("https://", adapter)
-num_workers = min(100, multiprocessing.cpu_count() * 2)
+num_workers = min(10, multiprocessing.cpu_count())
 
 # API Keys and Constants
 API_KEY = "kyFpw+5fbrFIMDuWJmtkbbbr/CgH/MS63wv7dRz3rndamK/XnjNOVkgP"
@@ -507,9 +509,20 @@ def get_metaverse_stocks() -> List[str]:
 
 @st.cache_data(ttl=CACHE_TTL)
 def get_options_data(ticker: str, expiration_date: str) -> List[Dict]:
+    """
+    Fetch options chain data from Tradier API with strict validation.
+    
+    Args:
+        ticker (str): Stock ticker symbol (e.g., 'SPY').
+        expiration_date (str): Expiration date in YYYY-MM-DD format.
+    
+    Returns:
+        List[Dict]: List of valid option contracts.
+    """
     url = f"{TRADIER_BASE_URL}/markets/options/chains"
     params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
     try:
+        time.sleep(0.1)  # Add delay to avoid rate-limiting
         response = session_tradier.get(url, params=params, headers=HEADERS_TRADIER, timeout=5)
         response.raise_for_status()
         data = response.json()
@@ -520,7 +533,18 @@ def get_options_data(ticker: str, expiration_date: str) -> List[Dict]:
         if 'options' not in data or 'option' not in data['options']:
             logger.warning(f"No valid options data for {ticker} on {expiration_date}: {data}")
             return []
-        return data['options']['option']
+        valid_options = []
+        for opt in data['options']['option']:
+            if (opt.get("bid") is not None and opt.get("ask") is not None and
+                isinstance(opt.get("bid"), (int, float)) and isinstance(opt.get("ask"), (int, float)) and
+                opt.get("bid") > 0 and opt.get("ask") > 0):
+                valid_options.append(opt)
+            else:
+                logger.warning(f"Skipping option for {ticker} on {expiration_date}: Invalid bid/ask - {opt}")
+        logger.info(f"Fetched {len(valid_options)} valid option contracts for {ticker} on {expiration_date}")
+        if valid_options:
+            logger.debug(f"Sample contract: {valid_options[0]}")
+        return valid_options
     except requests.RequestException as e:
         logger.error(f"Network error fetching options for {ticker}: {str(e)} - Response: {getattr(e.response, 'text', 'No response')}")
         return []
@@ -656,26 +680,43 @@ def select_best_contracts(df, current_price):
     return closest_contract, economic_contract
 
 # Versión original para opciones (usada en Tab 1)
-def calculate_max_pain(df):
-    """Calcula el Max Pain para opciones."""
-    if df.empty or 'strike' not in df.columns:
-        logger.error("DataFrame vacío o sin columna 'strike' en calculate_max_pain")
-        return None, pd.DataFrame(columns=['strike', 'total_loss'])
-    strikes = df['strike'].unique()
-    max_pain_data = []
-    for strike in strikes:
-        call_losses = ((strike - df[df['option_type'] == 'call']['strike']).clip(lower=0) * 
-                       df[df['option_type'] == 'call']['open_interest']).sum()
-        put_losses = ((df[df['option_type'] == 'put']['strike'] - strike).clip(lower=0) * 
-                      df[df['option_type'] == 'put']['open_interest']).sum()
-        total_loss = call_losses + put_losses
-        max_pain_data.append({'strike': strike, 'total_loss': total_loss})
-    max_pain_df = pd.DataFrame(max_pain_data)
-    if max_pain_df.empty:
-        logger.warning("No se generaron datos de Max Pain")
-        return None, max_pain_df
-    max_pain_strike = max_pain_df.loc[max_pain_df['total_loss'].idxmin()]
-    return max_pain_strike, max_pain_df.sort_values(by='total_loss', ascending=True)
+def calculate_max_pain(options_data: List[Dict]) -> Optional[float]:
+    """
+    Calculate the Max Pain strike price for a list of option contracts.
+    
+    Args:
+        options_data (List[Dict]): List of option contracts with strike, open_interest, and option_type.
+    
+    Returns:
+        Optional[float]: Max Pain strike price, or None if no valid data.
+    """
+    if not options_data:
+        logger.warning("No options data provided for Max Pain calculation")
+        return None
+    strikes = {}
+    for opt in options_data:
+        try:
+            strike = float(opt.get("strike", 0))
+            oi = int(opt.get("open_interest", 0) or 0)
+            opt_type = opt.get("option_type", "").upper()
+            if strike not in strikes:
+                strikes[strike] = {"CALL": 0, "PUT": 0}
+            strikes[strike][opt_type] += oi
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Invalid option data: {opt} - {str(e)}")
+            continue
+    strike_prices = sorted(strikes.keys())
+    total_losses = {}
+    for strike in strike_prices:
+        call_loss = sum(strikes[s]["CALL"] * max(0, s - strike) for s in strike_prices)
+        put_loss = sum(strikes[s]["PUT"] * max(0, strike - s) for s in strike_prices)
+        total_losses[strike] = call_loss + put_loss
+    if not total_losses:
+        logger.warning("No valid strike prices for Max Pain calculation")
+        return None
+    max_pain = min(total_losses, key=total_losses.get)
+    logger.debug(f"Calculated Max Pain: ${max_pain:.2f}")
+    return max_pain
 
 def calculate_support_resistance_mid(max_pain_table, current_price):
     """Calcula niveles de soporte y resistencia basados en Max Pain."""
@@ -2559,7 +2600,195 @@ def process_rating_flow_data(ticker: str, expiration_date: str, current_price: f
     return options_data, max_pain, mm_gain
 
 
+
+from datetime import timezone  # Add this import at the top of generate_signals
+
+def generate_signals(ticker: str, expiration_date: str, current_price: float, options_data: List[Dict], sentiment: float, daily_range: float, momentum: float) -> Dict[str, List[Dict]]:
+    """
+    Generate trading signals for options contracts with relaxed criteria and debugging.
     
+    Args:
+        ticker (str): Stock ticker symbol (e.g., 'SPY').
+        expiration_date (str): Option expiration date in YYYY-MM-DD format.
+        current_price (float): Current stock price.
+        options_data (List[Dict]): List of option contracts data.
+        sentiment (float): Web sentiment score (0 to 1).
+        daily_range (float): Expected daily price movement as a fraction.
+        momentum (float): Daily price change as a fraction.
+    
+    Returns:
+        Dict[str, List[Dict]]: Dictionary with signals for Daily, Weekly, Monthly contracts.
+    """
+    max_pain = calculate_max_pain(options_data)
+    iv = get_implied_volatility(options_data) or 0.3
+    current_date = datetime.now(timezone.utc).date()
+    try:
+        exp_date = datetime.strptime(expiration_date, "%Y-%m-%d").date()
+    except ValueError as e:
+        logger.error(f"Invalid expiration date format for {ticker}: {expiration_date} - {str(e)}")
+        return {"Daily": [], "Weekly": [], "Monthly": []}
+    days_to_expiry = (exp_date - current_date).days
+
+    # Clasificar el tipo de contrato con criterios relajados
+    if days_to_expiry <= 2:
+        contract_type = "Daily"
+        iv_target = 0.35
+        score_threshold = 0.2  # Reducido de 0.5
+        oi_threshold = 20     # Reducido de 50
+        delta_min, delta_max = 0.1, 0.9  # Ampliado
+    elif days_to_expiry <= 14:
+        contract_type = "Weekly"
+        iv_target = 0.25
+        score_threshold = 0.2  # Reducido de 0.5
+        oi_threshold = 20     # Reducido de 50
+        delta_min, delta_max = 0.1, 0.9  # Ampliado
+    else:
+        contract_type = "Monthly"
+        iv_target = 0.20
+        score_threshold = 0.1  # Reducido de 0.3
+        oi_threshold = 10     # Reducido de 30
+        delta_min, delta_max = 0.05, 0.95  # Ampliado
+
+    signals = {"Daily": [], "Weekly": [], "Monthly": []}
+    rejected_reasons = []
+    total_contracts = len(options_data)
+    valid_contracts = 0
+
+    logger.info(f"Processing {total_contracts} options for {ticker} on {expiration_date} (Type: {contract_type})")
+    
+    for opt in options_data:
+        try:
+            strike = float(opt.get("strike", 0))
+            opt_type = opt.get("option_type", "").upper()
+            oi = int(opt.get("open_interest", 0) or 0)
+            bid = float(opt.get("bid", 0) or 0)
+            ask = float(opt.get("ask", 0) or 0)
+            mid_price = (bid + ask) / 2 if bid > 0 and ask > 0 else max(bid, ask, 0.01)  # Fallback para evitar mid_price=0
+            delta = float(opt.get("greeks", {}).get("delta", 0.5) or 0.5)
+            opt_iv = float(opt.get("implied_volatility", iv) or iv)
+
+            valid_contracts += 1
+
+            # Validaciones con logging
+            if oi < oi_threshold:
+                rejected_reasons.append(f"Strike {strike} {opt_type}: Low OI ({oi} < {oi_threshold})")
+                continue
+            if mid_price <= 0.01:
+                rejected_reasons.append(f"Strike {strike} {opt_type}: Invalid price ({mid_price})")
+                continue
+            if abs(delta) < delta_min or abs(delta) > delta_max:
+                rejected_reasons.append(f"Strike {strike} {opt_type}: Delta out of range ({delta} not in [{delta_min}, {delta_max}])")
+                continue
+
+            prob_otm = 1 - abs(delta)
+            rr_ratio = abs(strike - current_price) / mid_price if mid_price > 0 else 0
+            volatility_factor = min(opt_iv / iv_target, 2.0)
+            time_factor = 1 / (1 + days_to_expiry / 60) if contract_type == "Daily" else 1
+            max_pain_factor = 1 / (1 + abs(strike - max_pain) / current_price) if max_pain else 1
+            sentiment_factor = 1 + (sentiment - 0.5) * 0.3
+            momentum_factor = (1 + abs(momentum) * 3) if (opt_type == "CALL" and momentum > 0) or (opt_type == "PUT" and momentum < 0) else 1
+            range_factor = 1 + daily_range * 10 if opt_iv > iv_target else 1
+            score = (oi / 1000) * prob_otm * rr_ratio * volatility_factor * time_factor * max_pain_factor * sentiment_factor * momentum_factor * range_factor
+
+            logger.debug(f"Strike {strike} {opt_type}: OI={oi}, MidPrice={mid_price:.2f}, Delta={delta:.2f}, Score={score:.2f}, R/R={rr_ratio:.2f}")
+
+            if score > score_threshold and rr_ratio > 0.5:  # R/R reducido de 1.0 a 0.5
+                action = "BUY" if (opt_type == "CALL" and strike > current_price) or (opt_type == "PUT" and strike < current_price) else "SELL"
+                signals[contract_type].append({
+                    "Action": action,
+                    "Type": opt_type,
+                    "Strike": strike,
+                    "Expiration": expiration_date,
+                    "Price": mid_price,
+                    "OI": oi,
+                    "IV": opt_iv,
+                    "Prob OTM": prob_otm,
+                    "R/R": rr_ratio,
+                    "Score": score,
+                    "Max Pain Distance": abs(strike - max_pain) if max_pain else 0,
+                    "Contract Type": contract_type
+                })
+            else:
+                rejected_reasons.append(f"Strike {strike} {opt_type}: Low score ({score:.2f} < {score_threshold}) or R/R ({rr_ratio:.2f} < 0.5)")
+        except Exception as e:
+            rejected_reasons.append(f"Strike {strike} {opt_type}: Error processing ({str(e)})")
+            continue
+
+    for key in signals:
+        signals[key] = sorted(signals[key], key=lambda x: x["Score"], reverse=True)[:5]
+
+    # Logging de resultados
+    logger.info(f"Processed {valid_contracts}/{total_contracts} valid contracts for {ticker}. Generated signals: Daily={len(signals['Daily'])}, Weekly={len(signals['Weekly'])}, Monthly={len(signals['Monthly'])}")
+    if not any(signals.values()) and rejected_reasons:
+        logger.warning(f"No signals for {ticker} on {expiration_date}. Top rejection reasons: {set(rejected_reasons[:10])}")
+
+    return signals
+
+@st.cache_data(ttl=300)
+def fetch_web_sentiment(ticker: str) -> float:
+    """
+    Fetch web sentiment for a ticker based on recent news articles.
+    
+    Args:
+        ticker (str): The stock ticker symbol (e.g., 'SPY').
+    
+    Returns:
+        float: Sentiment score between 0 (bearish) and 1 (bullish), defaulting to 0.5 (neutral).
+    """
+    try:
+        keywords = [ticker]
+        news = fetch_google_news(keywords)
+        if not news:
+            logger.warning(f"No news found for {ticker}. Returning neutral sentiment.")
+            return 0.5
+        
+        sentiment_score, _ = calculate_retail_sentiment(news)
+        logger.info(f"Sentiment for {ticker}: {sentiment_score:.2f}")
+        return sentiment_score
+    
+    except Exception as e:
+        logger.error(f"Error fetching sentiment for {ticker}: {str(e)}")
+        return 0.5  # Neutral fallback
+
+@st.cache_data(ttl=60)
+def get_daily_movement(ticker: str) -> Tuple[float, float]:
+    """
+    Calculate the daily price range and momentum for a given ticker.
+    
+    Args:
+        ticker (str): The stock ticker symbol (e.g., 'SPY').
+    
+    Returns:
+        Tuple[float, float]: (daily_range, momentum)
+            - daily_range: Expected daily price movement as a fraction (e.g., 0.02 for 2%).
+            - momentum: Daily price change as a fraction (e.g., 0.005 for +0.5%).
+    """
+    try:
+        # Fetch historical prices for the last 5 days to estimate daily movement
+        prices, _ = get_historical_prices_combined(ticker, period="daily", limit=5)
+        if not prices or len(prices) < 2:
+            logger.warning(f"Insufficient historical data for {ticker}. Using default values.")
+            return 0.02, 0.0  # Default values: 2% range, 0% momentum
+        
+        # Calculate daily returns
+        prices = np.array(prices)
+        daily_returns = np.diff(prices) / prices[:-1]
+        
+        # Daily range: Standard deviation of returns, annualized and scaled to daily
+        daily_range = np.std(daily_returns) * np.sqrt(252) / np.sqrt(252)  # Daily volatility
+        daily_range = max(0.005, min(0.1, daily_range))  # Clamp between 0.5% and 10%
+        
+        # Momentum: Most recent daily return
+        momentum = daily_returns[-1] if len(daily_returns) > 0 else 0.0
+        momentum = max(-0.05, min(0.05, momentum))  # Clamp between -5% and +5%
+        
+        logger.info(f"Calculated for {ticker}: daily_range={daily_range:.4f}, momentum={momentum:.4f}")
+        return daily_range, momentum
+    
+    except Exception as e:
+        logger.error(f"Error calculating daily movement for {ticker}: {str(e)}")
+        return 0.02, 0.0  # Fallback values
+
 
 
 # --- Main App --
@@ -2768,10 +2997,10 @@ def main():
     """, unsafe_allow_html=True)
 
     # Definición de los tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,tab11, tab12 = st.tabs([
-        "Gummy Data Bubbles® |", "Market Scanner |", "News |", "Institutional Holders |",
-        "Options Order Flow |", "Analyst Rating Flow |", "Elliott Pulse® |", "Crypto Insights |",
-        "Projection |", "Performance Map |"
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,tab9, tab10,tab11 = st.tabs([
+        "| Gummy Data Bubbles® |", "| Market Scanner |", "| News |", "| Institutional Holders |",
+        "| Options Order Flow |", "| Analyst Rating Flow |", "| Elliott Pulse® |", "| Crypto Insights |",
+        "| Projection |", "| Performance Map |", "| SOptions Signals |"
     ])
 
     # Tab 1: Gummy Data Bubbles®
@@ -4077,7 +4306,7 @@ def main():
     
     
     # Tab 11: Projection
-    with tab11:
+    with tab9:
         # Estilo CSS
         st.markdown("""
             <style>
@@ -4479,7 +4708,7 @@ def main():
  
         # Tab 12: Performance Map
         # Tab 12: Performance Map
-    with tab12:
+    with tab10:
         
         st.markdown("""
             <style>
@@ -4808,6 +5037,333 @@ def main():
             )
 
             st.markdown(f'<div class="footer-text">> LAST_UPDATED: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | POWERED_BY_OZY_ANALYTICS_</div>', unsafe_allow_html=True)
+
+
+    with tab11:
+        # Estilo CSS personalizado (idéntico al original)
+        st.markdown("""
+            <style>
+            .stApp {
+                background-color: #0A0A0A;
+                color: #FFFFFF;
+            }
+            .main-title {
+                font-size: 32px;
+                font-weight: 700;
+                color: #39FF14;
+                text-align: center;
+                text-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
+                font-family: 'Courier New', Courier, monospace;
+                margin-bottom: 20px;
+            }
+            .section-header {
+                font-size: 24px;
+                font-weight: 600;
+                color: #00FFFF;
+                border-bottom: 2px solid #FFD700;
+                padding-bottom: 5px;
+                font-family: 'Courier New', Courier, monospace;
+            }
+            .signal-box {
+                background-color: #1E1E1E;
+                padding: 15px;
+                border-radius: 8px;
+                border: 2px solid #39FF14;
+                margin: 10px 0;
+                font-family: 'Courier New', Courier, monospace;
+                color: #FFFFFF;
+            }
+            .stButton>button {
+                background: linear-gradient(90deg, #39FF14, #00FFFF);
+                color: #0A0A0A;
+                border: none;
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-family: 'Courier New', Courier, monospace;
+                font-weight: 600;
+                transition: all 0.3s ease;
+            }
+            .stButton>button:hover {
+                box-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
+            }
+            .instructions-box {
+                background-color: #1E1E1E;
+                padding: 15px;
+                border-radius: 8px;
+                border: 2px solid #00FFFF;
+                margin: 10px 0;
+                font-family: 'Courier New', Courier, monospace;
+                color: #FFFFFF;
+            }
+            .debug-box {
+                background-color: #1E1E1E;
+                padding: 15px;
+                border-radius: 8px;
+                border: 2px solid #FF4500;
+                margin: 10px 0;
+                font-family: 'Courier New', Courier, monospace;
+                color: #FFFFFF;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Título de la pestaña
+        st.markdown('<div class="main-title"> Options  🚀</div>', unsafe_allow_html=True)
+       
+
+        # Entrada de usuario
+        ticker = st.text_input("Ticker (e.g., SPY, AAPL, JBLU)", value="SPY", key="ticker_input_tab11").upper()
+
+        # Botón de actualización
+        if st.button("🔄 Refresh Data", key="refresh_data_tab11"):
+            st.cache_data.clear()
+            st.rerun()
+
+        with st.spinner(f"Analyzing {ticker} for contracts up to 2 months..."):
+            current_price = get_current_price(ticker)
+            if current_price == 0.0:
+                st.error(f"Failed to fetch price for '{ticker}'.")
+                logger.error(f"Price fetch failed for {ticker}")
+                st.stop()
+
+            daily_range, momentum = get_daily_movement(ticker)
+            expiration_dates = get_expiration_dates(ticker)
+            if not expiration_dates:
+                st.error(f"No expiration dates for '{ticker}'. Try a valid ticker.")
+                logger.error(f"No expiration dates found for {ticker}")
+                st.stop()
+
+            # Procesar señales para todas las fechas en paralelo
+            all_signals = {"Daily": [], "Weekly": [], "Monthly": []}
+            sentiment = fetch_web_sentiment(ticker)
+            debug_info = {"total_contracts": 0, "valid_contracts": 0, "rejections": []}
+
+            def process_date(exp_date):
+                try:
+                    options_data = get_options_data(ticker, exp_date)
+                    debug_info["total_contracts"] += len(options_data)
+                    if not options_data:
+                        logger.warning(f"No valid options data for {ticker} on {exp_date}")
+                        debug_info["rejections"].append(f"No options data for {exp_date}")
+                        return None
+                    signals = generate_signals(ticker, exp_date, current_price, options_data, sentiment, daily_range, momentum)
+                    debug_info["valid_contracts"] += sum(1 for opt in options_data if int(opt.get("open_interest", 0) or 0) >= 10)
+                    return signals
+                except Exception as e:
+                    logger.error(f"Error processing {ticker} for {exp_date}: {str(e)}")
+                    debug_info["rejections"].append(f"Error for {exp_date}: {str(e)}")
+                    return None
+
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = [executor.submit(process_date, exp_date) for exp_date in expiration_dates[:15]]
+                for future in futures:
+                    try:
+                        signals = future.result()
+                        if signals:
+                            for contract_type in ["Daily", "Weekly", "Monthly"]:
+                                all_signals[contract_type].extend(signals[contract_type])
+                    except Exception as e:
+                        logger.error(f"ThreadPoolExecutor error: {str(e)}")
+                        debug_info["rejections"].append(f"ThreadPool error: {str(e)}")
+                        continue
+
+            # Visualizaciones
+            st.markdown('<div class="section-header">Market Maker Target</div>', unsafe_allow_html=True)
+            daily_change = current_price * momentum
+            st.markdown(f"**Price**: ${current_price:.2f} | **Daily Change**: ${daily_change:.2f} ({momentum:.2%}) | **Daily Range**: {daily_range:.2%}")
+            st.markdown(f"**Sentiment**: {'Bullish' if sentiment > 0.6 else 'Bearish' if sentiment < 0.4 else 'Neutral'}")
+            st.markdown(f"**Analyzed Dates**: {len(expiration_dates)} dates up to {datetime.strptime(expiration_dates[-1], '%Y-%m-%d').strftime('%m/%d/%Y') if expiration_dates else 'N/A'}")
+
+            # Gráfico de Open Interest con Gamma
+            if expiration_dates:
+                options_data = get_options_data(ticker, expiration_dates[0])
+                if options_data:
+                    max_pain = calculate_max_pain(options_data)
+                    iv = get_implied_volatility(options_data) or 0.3
+                    st.markdown(f"**IV (Nearest Expiry)**: {iv:.2%} | **Max Pain (Nearest Expiry)**: ${max_pain:.2f}" if max_pain else "**Max Pain (Nearest Expiry)**: N/A")
+                    
+                    # Procesar datos por strike
+                    strikes = sorted(set(float(opt["strike"]) for opt in options_data))
+                    buy_call_oi = [0] * len(strikes)
+                    sell_call_oi = [0] * len(strikes)
+                    buy_put_oi = [0] * len(strikes)
+                    sell_put_oi = [0] * len(strikes)
+                    total_oi = [0] * len(strikes)
+                    iv_by_strike = [0] * len(strikes)
+                    gamma_by_strike = [0] * len(strikes)
+                    max_pain_distances = [abs(s - max_pain) if max_pain else 0 for s in strikes]
+                    
+                    # Obtener señales para determinar Buy/Sell
+                    try:
+                        signals = generate_signals(ticker, expiration_dates[0], current_price, options_data, sentiment, daily_range, momentum)
+                        signal_dict = {(s["Strike"], s["Type"], s["Action"]) for s in signals["Daily"] + signals["Weekly"] + signals["Monthly"]}
+                    except Exception as e:
+                        logger.error(f"Error generating signals for chart: {str(e)}")
+                        signal_dict = set()
+                    
+                    for i, strike in enumerate(strikes):
+                        for opt in options_data:
+                            try:
+                                if float(opt["strike"]) == strike:
+                                    opt_type = opt["option_type"].upper()
+                                    oi = int(opt["open_interest"] or 0)
+                                    iv = float(opt.get("implied_volatility", 0) or 0)
+                                    gamma = float(opt.get("greeks", {}).get("gamma", 0) or 0)
+                                    action = "BUY" if (strike, opt_type, "BUY") in signal_dict else "SELL"
+                                    
+                                    if opt_type == "CALL":
+                                        if action == "BUY":
+                                            buy_call_oi[i] += oi
+                                        else:
+                                            sell_call_oi[i] += oi
+                                    else:  # PUT
+                                        if action == "BUY":
+                                            buy_put_oi[i] += oi
+                                        else:
+                                            sell_put_oi[i] += oi
+                                    total_oi[i] += oi
+                                    iv_by_strike[i] += iv * oi
+                                    gamma_by_strike[i] += gamma * oi
+                            except Exception as e:
+                                logger.error(f"Error processing option at strike {strike}: {str(e)}")
+                                continue
+                        
+                        iv_by_strike[i] = iv_by_strike[i] / total_oi[i] if total_oi[i] > 0 else 0
+                        gamma_by_strike[i] = gamma_by_strike[i] / 1000 if total_oi[i] > 0 else 0
+                    
+                    fig = go.Figure()
+                    # Barras Calls (arriba)
+                    fig.add_trace(go.Bar(
+                        x=strikes,
+                        y=buy_call_oi,
+                        name="Buy Calls",
+                        marker_color="#32CD32",
+                        hovertemplate="<b>Strike</b>: $%{x:.2f}<br><b>Buy Call OI</b>: %{y:,}<br><b>Sell Call OI</b>: %{customdata[0]:,}<br><b>Buy Put OI</b>: %{customdata[1]:,}<br><b>Sell Put OI</b>: %{customdata[2]:,}<br><b>Total OI</b>: %{customdata[3]:,}<br><b>IV</b>: %{customdata[4]:.2%}<br><b>Max Pain Distance</b>: $%{customdata[5]:.2f}<br><b>Strike</b>: $%{x:.2f}",
+                        customdata=list(zip(sell_call_oi, buy_put_oi, sell_put_oi, total_oi, iv_by_strike, max_pain_distances)),
+                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1)
+                    ))
+                    fig.add_trace(go.Bar(
+                        x=strikes,
+                        y=sell_call_oi,
+                        name="Sell Calls",
+                        marker_color="#00B7EB",
+                        hovertemplate="<b>Strike</b>: $%{x:.2f}<br><b>Buy Call OI</b>: %{customdata[0]:,}<br><b>Sell Call OI</b>: %{y:,}<br><b>Buy Put OI</b>: %{customdata[1]:,}<br><b>Sell Put OI</b>: %{customdata[2]:,}<br><b>Total OI</b>: %{customdata[3]:,}<br><b>IV</b>: %{customdata[4]:.2%}<br><b>Max Pain Distance</b>: $%{customdata[5]:.2f}<br><b>Strike</b>: $%{x:.2f}",
+                        customdata=list(zip(buy_call_oi, buy_put_oi, sell_put_oi, total_oi, iv_by_strike, max_pain_distances)),
+                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1)
+                    ))
+                    # Barras Puts (abajo, negativo)
+                    fig.add_trace(go.Bar(
+                        x=strikes,
+                        y=[-x for x in buy_put_oi],
+                        name="Buy Puts",
+                        marker_color="#FF4500",
+                        hovertemplate="<b>Strike</b>: $%{x:.2f}<br><b>Buy Call OI</b>: %{customdata[0]:,}<br><b>Sell Call OI</b>: %{customdata[1]:,}<br><b>Buy Put OI</b>: %{customdata[2]:,}<br><b>Sell Put OI</b>: %{customdata[3]:,}<br><b>Total OI</b>: %{customdata[4]:,}<br><b>IV</b>: %{customdata[5]:.2%}<br><b>Max Pain Distance</b>: $%{customdata[6]:.2f}<br><b>Strike</b>: $%{x:.2f}",
+                        customdata=list(zip(buy_call_oi, sell_call_oi, buy_put_oi, sell_put_oi, total_oi, iv_by_strike, max_pain_distances)),
+                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1)
+                    ))
+                    fig.add_trace(go.Bar(
+                        x=strikes,
+                        y=[-x for x in sell_put_oi],
+                        name="Sell Puts",
+                        marker_color="#C71585",
+                        hovertemplate="<b>Strike</b>: $%{x:.2f}<br><b>Buy Call OI</b>: %{customdata[0]:,}<br><b>Sell Call OI</b>: %{customdata[1]:,}<br><b>Buy Put OI</b>: %{customdata[2]:,}<br><b>Sell Put OI</b>: %{customdata[3]:,}<br><b>Total OI</b>: %{customdata[4]:,}<br><b>IV</b>: %{customdata[5]:.2%}<br><b>Max Pain Distance</b>: $%{customdata[6]:.2f}<br><b>Strike</b>: $%{x:.2f}",
+                        customdata=list(zip(buy_call_oi, sell_call_oi, buy_put_oi, sell_put_oi, total_oi, iv_by_strike, max_pain_distances)),
+                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1)
+                    ))
+                    # Línea de Gamma
+                    fig.add_trace(go.Scatter(
+                        x=strikes,
+                        y=gamma_by_strike,
+                        name="Gamma Exposure",
+                        line=dict(color="rgba(255, 193, 7, 0.5)", width=2),
+                        yaxis="y2",
+                        hovertemplate="<b>Strike</b>: $%{x:.2f}<br><b>Gamma Exposure</b>: %{y:.4f}<br><b>Strike</b>: $%{x:.2f}",
+                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                    ))
+                    if max_pain:
+                        fig.add_vline(x=max_pain, line=dict(color="#FFC107", dash="dash"), 
+                                      annotation_text=f"Max Pain: ${max_pain:.2f}", 
+                                      annotation_position="top", 
+                                      annotation_font=dict(color="#FFC107", size=12))
+                    
+                    fig.update_layout(
+                        title="Open Interest and Gamma by Strike (Nearest Expiry)",
+                        xaxis_title="Strike Price",
+                        yaxis_title="Open Interest",
+                        yaxis2=dict(title="Gamma Exposure", overlaying="y", side="right", showgrid=False),
+                        template="plotly_dark",
+                        barmode="stack",
+                        hovermode="x unified",
+                        showlegend=True,
+                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning(f"No options data available for {ticker} on nearest expiration date.")
+
+            # Señales de Entrada
+            st.markdown('<div class="section-header">Entry Signals (Up to 2 Months)</div>', unsafe_allow_html=True)
+            for contract_type in ["Daily", "Weekly", "Monthly"]:
+                if all_signals[contract_type]:
+                    st.markdown(f'<div class="section-header">{contract_type} Signals</div>', unsafe_allow_html=True)
+                    for signal in all_signals[contract_type]:
+                        exp_date_short = datetime.strptime(signal["Expiration"], "%Y-%m-%d").strftime("%m/%d")
+                        st.markdown(f"""
+                            <div class="signal-box">
+                                <b>{ticker}${signal['Strike']:.0f} {signal['Type']} {exp_date_short}</b><br>
+                                Price: ${signal['Price']:.2f} | OI: {signal['OI']:,} | IV: {signal['IV']:.2%}<br>
+                                Prob OTM: {signal['Prob OTM']:.2%} | R/R: {signal['R/R']:.2f}<br>
+                                Max Pain Distance: ${signal['Max Pain Distance']:.2f}<br>
+                                <i>Score: {signal['Score']:.2f}</i>
+                            </div>
+                        """, unsafe_allow_html=True)
+                    signals_df = pd.DataFrame(all_signals[contract_type])
+                    signals_csv = signals_df.to_csv(index=False)
+                    st.download_button(
+                        label=f"📥 Download {contract_type} Signals",
+                        data=signals_csv,
+                        file_name=f"{ticker}_{contract_type.lower()}_signals.csv",
+                        mime="text/csv",
+                        key=f"download_signals_{contract_type.lower()}_tab11"
+                    )
+                else:
+                    st.warning(f"No high-confidence {contract_type.lower()} signals found. Try a higher-liquidity ticker or adjust criteria.")
+                    # Mostrar información de depuración
+                    if debug_info["total_contracts"] > 0:
+                        st.markdown(f"""
+                            <div class="debug-box">
+                                <b>Debug Info for {contract_type} Signals</b><br>
+                                Total Contracts Processed: {debug_info["total_contracts"]}<br>
+                                Valid Contracts (OI >= 10): {debug_info["valid_contracts"]}<br>
+                                Top Rejection Reasons:<br>
+                                {'<br>'.join(set(debug_info["rejections"][:5]))}
+                            </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                            <div class="debug-box">
+                                <b>Debug Info for {contract_type} Signals</b><br>
+                                No contracts were processed. Check Tradier API connectivity or ticker validity.
+                            </div>
+                        """, unsafe_allow_html=True)
+
+            # Sección de Instrucciones y Métricas Clave (idéntica al original)
+            st.markdown("""
+                <div class="instructions-box">
+                    <h2 style="color: #00FFFF; font-family: 'Courier New', Courier, monospace;">Instrucciones y Métricas Clave</h2>
+                    <ul style="color: #FFFFFF; font-family: 'Courier New', Courier, monospace;">
+                        <li><b>Prob OTM</b>: Indica la probabilidad de que el contrato expire sin valor (e.g., 77.93% OTM → ~22% probabilidad ITM).</li>
+                        <li><b>R/R</b>: Relación riesgo/recompensa. Un R/R alto (e.g., 6.15) significa que las ganancias potenciales superan el riesgo.</li>
+                        <li><b>Score</b>: Puntajes más altos (e.g., 59.98 vs. 0.73) reflejan mayor confianza en la señal.</li>
+                        <li><b>Max Pain Distance</b>: Cero o bajo (e.g., $0.00) sugiere alta probabilidad de que el precio cierre cerca de ese strike.</li>
+                    </ul>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Pie de página
+            st.markdown("---")
+            st.markdown("*Developed by Ozytarget.com | © 2025*", unsafe_allow_html=True)
+
 
 if __name__ == "__main__":
     main()
