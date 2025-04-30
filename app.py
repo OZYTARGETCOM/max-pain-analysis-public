@@ -3000,7 +3000,7 @@ def main():
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,tab9, tab10,tab11 = st.tabs([
         "| Gummy Data Bubbles® |", "| Market Scanner |", "| News |", "| Institutional Holders |",
         "| Options Order Flow |", "| Analyst Rating Flow |", "| Elliott Pulse® |", "| Crypto Insights |",
-        "| Projection |", "| Performance Map |", "| SOptions Signals |"
+        "| Projection |", "| Performance Map |", "| Options Signals |"
     ])
 
     # Tab 1: Gummy Data Bubbles®
