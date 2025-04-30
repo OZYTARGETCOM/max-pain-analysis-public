@@ -27,6 +27,8 @@ import krakenex
 import base64
 import threading
 
+
+
 logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 # API Sessions and Configurations
@@ -413,27 +415,30 @@ def get_current_price(ticker: str) -> float:
     logger.error(f"Unable to fetch current price for {ticker} from any API")
     return 0.0
 
+
+
+
 @st.cache_data(ttl=86400)
 def get_expiration_dates(ticker: str) -> List[str]:
-    """
-    Obtiene las fechas de vencimiento de opciones para un ticker dado usando la API de Tradier.
-    """
-    url = f"{TRADIER_BASE_URL}/markets/options/expirations"
-    params = {"symbol": ticker}
-    try:
-        response = session_tradier.get(url, params=params, headers=HEADERS_TRADIER, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-        if data and "expirations" in data and "date" in data["expirations"]:
-            expiration_dates = data["expirations"]["date"]
-            logger.info(f"Fetched {len(expiration_dates)} expiration dates for {ticker}")
-            return expiration_dates
-        logger.warning(f"No expiration dates found for {ticker}")
-        return []
-    except Exception as e:
-        logger.error(f"Error fetching expiration dates for {ticker}: {str(e)}")
-        return []
+     url = f"{TRADIER_BASE_URL}/markets/options/expirations"
+     params = {"symbol": ticker}
+     try:
+         response = session_tradier.get(url, params=params, headers=HEADERS_TRADIER, timeout=5)
+         response.raise_for_status()
+         data = response.json()
+         if data and "expirations" in data and "date" in data["expirations"]:
+             expiration_dates = data["expirations"]["date"]
+             current_date = datetime.now().date()
+             valid_dates = [date for date in expiration_dates if datetime.strptime(date, "%Y-%m-%d").date() >= current_date]
+             logger.info(f"Fetched {len(valid_dates)} valid expiration dates for {ticker}")
+             return valid_dates
+         logger.warning(f"No expiration dates found for {ticker}")
+         return []
+     except Exception as e:
+         logger.error(f"Error fetching expiration dates for {ticker}: {str(e)}")
+         return []
 
+         
 @st.cache_data(ttl=60)
 def get_current_prices(tickers: List[str]) -> Dict[str, float]:
     """
@@ -504,10 +509,24 @@ def get_metaverse_stocks() -> List[str]:
 def get_options_data(ticker: str, expiration_date: str) -> List[Dict]:
     url = f"{TRADIER_BASE_URL}/markets/options/chains"
     params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
-    data = fetch_api_data(url, params, HEADERS_TRADIER, "Tradier")
-    if data and 'options' in data and 'option' in data['options']:
+    try:
+        response = session_tradier.get(url, params=params, headers=HEADERS_TRADIER, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        logger.debug(f"Tradier response for {ticker} {expiration_date}: {data}")
+        if data is None or not isinstance(data, dict):
+            logger.error(f"Invalid JSON response for {ticker}: {response.text}")
+            return []
+        if 'options' not in data or 'option' not in data['options']:
+            logger.warning(f"No valid options data for {ticker} on {expiration_date}: {data}")
+            return []
         return data['options']['option']
-    return []
+    except requests.RequestException as e:
+        logger.error(f"Network error fetching options for {ticker}: {str(e)} - Response: {getattr(e.response, 'text', 'No response')}")
+        return []
+    except ValueError as e:
+        logger.error(f"JSON parsing error for {ticker}: {str(e)} - Response: {response.text}")
+        return []
 
 @st.cache_data(ttl=CACHE_TTL)
 def get_historical_prices_combined(symbol, period="daily", limit=30):
@@ -2419,7 +2438,6 @@ def fetch_earnings_data(start_date: str, end_date: str) -> List[Dict]:
 
 @st.cache_data(ttl=300)
 def process_options_data(ticker: str, expiration_date: str) -> Tuple[Dict, set, float, pd.DataFrame]:
-    """Process options data for Tab 1 with caching, including detailed max pain DataFrame."""
     options_data = get_options_data(ticker, expiration_date)
     if not options_data:
         return {}, set(), None, pd.DataFrame(columns=["strike", "total_loss"])
@@ -2762,8 +2780,8 @@ def main():
         
         expiration_dates = get_expiration_dates(ticker)
         if not expiration_dates:
-            st.error(f"What were you thinking, '{ticker}'? You're a trader and you mess this up? If you trade like this, you're doomed!")
-            return
+            st.error(f"No future expiration dates found for '{ticker}'. Please enter a valid ticker (e.g., SPY, AAPL).")
+            st.stop()
         
         expiration_date = st.selectbox("Expiration Date", expiration_dates, key="expiration_date")
         
@@ -2772,17 +2790,25 @@ def main():
             if current_price == 0.0:
                 st.error(f"Unable to fetch current price for '{ticker}'. Check ticker validity, API keys, or internet connection.")
                 logger.error(f"Price fetch failed for {ticker}")
-                return
+                st.stop()
         
         st.markdown(f"**Current Price:** ${current_price:.2f}")
         
         with st.spinner(f"Fetching data for {expiration_date}..."):
             processed_data, touched_strikes, max_pain, max_pain_df = process_options_data(ticker, expiration_date)
             if not processed_data:
-                st.error("No valid data to display.")
-                return
+                next_expiration = expiration_dates[expiration_dates.index(expiration_date) + 1] if expiration_date != expiration_dates[-1] else None
+                if next_expiration:
+                    st.warning(f"No data for {expiration_date}. Trying next expiration: {next_expiration}")
+                    processed_data, touched_strikes, max_pain, max_pain_df = process_options_data(ticker, next_expiration)
+                    if not processed_data:
+                        st.error(f"No valid options data for {ticker} on {next_expiration} either.")
+                        st.stop()
+                else:
+                    st.error(f"No valid options data for {ticker} on {expiration_date}.")
+                    st.stop()
             
-            options_data = get_options_data(ticker, expiration_date)  # Needed for skew analysis
+            options_data = get_options_data(ticker, expiration_date)
             if max_pain_df.empty:
                 st.warning("No max pain data available for this ticker and expiration date.")
             
@@ -2847,20 +2873,16 @@ def main():
             call_df = pd.DataFrame([d for d in call_data if d["option_type"] == "call"])
             put_df = pd.DataFrame([d for d in call_data if d["option_type"] == "put"])
             
-            # Limpiar open_interest para evitar nan
             call_df['open_interest'] = call_df['open_interest'].fillna(0).astype(int).clip(lower=0)
             put_df['open_interest'] = put_df['open_interest'].fillna(0).astype(int).clip(lower=0)
             
-            # Crear figura combinada
             fig_options = go.Figure()
-            
-            # Agregar CALLs
             fig_options.add_trace(go.Scatter(
                 x=call_df['strike'],
                 y=call_df['bid'],
                 mode='markers',
                 marker=dict(
-                    size=call_df['open_interest'].apply(lambda x: max(5, min(30, x / 1000))),  # Escalar tamaño
+                    size=call_df['open_interest'].apply(lambda x: max(5, min(30, x / 1000))),
                     color='blue',
                     opacity=0.7
                 ),
@@ -2868,14 +2890,12 @@ def main():
                 hovertemplate="<b>Strike:</b> %{x:.2f}<br><b>Bid:</b> ${%y:.2f}<br><b>Open Interest:</b> %{customdata:,}",
                 customdata=call_df['open_interest']
             ))
-            
-            # Agregar PUTs
             fig_options.add_trace(go.Scatter(
                 x=put_df['strike'],
                 y=put_df['bid'],
                 mode='markers',
                 marker=dict(
-                    size=put_df['open_interest'].apply(lambda x: max(5, min(30, x / 1000))),  # Escalar tamaño
+                    size=put_df['open_interest'].apply(lambda x: max(5, min(30, x / 1000))),
                     color='red',
                     opacity=0.7
                 ),
@@ -2883,8 +2903,6 @@ def main():
                 hovertemplate="<b>Strike:</b> %{x:.2f}<br><b>Bid:</b> ${%y:.2f}<br><b>Open Interest:</b> %{customdata:,}",
                 customdata=put_df['open_interest']
             ))
-            
-            # Configurar diseño
             fig_options.update_layout(
                 title=f"CALL and PUT Options for {ticker}",
                 xaxis_title="Strike Price",
@@ -2898,7 +2916,6 @@ def main():
                 ),
                 hovermode="closest"
             )
-            
             st.plotly_chart(fig_options, use_container_width=True)
             
             st.markdown("---")
