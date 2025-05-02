@@ -27,7 +27,26 @@ import base64
 import threading
 import os
 from datetime import timezone
-os.environ["TZ"] = "UTC"
+import pytz
+import threading
+
+
+
+db_lock = threading.Lock()
+AUTO_UPDATE_INTERVAL = 15
+db_lock = threading.Lock()
+DB_TIMEOUT = 20  # Segundos de espera para desbloqueo de base de datos
+DB_RETRIES = 5   # Número de reintentos para operaciones de base de datos
+DB_RETRY_DELAY = 2  # Segundos de espera entre reintentos
+# Configurar zona horaria del mercado
+MARKET_TIMEZONE = pytz.timezone("America/New_York")
+
+# Funciones para obtener fecha y hora en la zona horaria del mercado
+def get_current_date():
+    return datetime.now(MARKET_TIMEZONE).date()
+
+def get_current_datetime():
+    return datetime.now(MARKET_TIMEZONE)
 
 
 
@@ -40,7 +59,7 @@ retry_strategy = Retry(total=5, backoff_factor=1, status_forcelist=[429, 500, 50
 adapter = HTTPAdapter(max_retries=retry_strategy)
 session_fmp.mount("https://", adapter)
 session_tradier.mount("https://", adapter)
-num_workers = min(10, multiprocessing.cpu_count())
+num_workers = min(100, multiprocessing.cpu_count())
 
 # API Keys and Constants
 API_KEY = "kyFpw+5fbrFIMDuWJmtkbbbr/CgH/MS63wv7dRz3rndamK/XnjNOVkgP"
@@ -2790,6 +2809,217 @@ def get_daily_movement(ticker: str) -> Tuple[float, float]:
         return 0.02, 0.0  # Fallback values
 
 
+# --- Funciones de Base de Datos para Tab 11 ---
+def init_db():
+    with db_lock:
+        with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")  # Habilitar Write-Ahead Logging
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='assigned_contracts'")
+            table_exists = cursor.fetchone()
+            
+            if table_exists:
+                cursor.execute("PRAGMA table_info(assigned_contracts)")
+                columns = [info[1] for info in cursor.fetchall()]
+                if 'preference' in columns:
+                    cursor.execute("""
+                        CREATE TABLE assigned_contracts_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            ticker TEXT NOT NULL,
+                            strike REAL NOT NULL,
+                            option_type TEXT NOT NULL,
+                            expiration_date TEXT NOT NULL,
+                            assigned_price REAL NOT NULL,
+                            current_price REAL,
+                            assigned_at TIMESTAMP NOT NULL,
+                            profit_loss_percent REAL,
+                            last_updated TIMESTAMP,
+                            closed BOOLEAN DEFAULT FALSE
+                        )
+                    """)
+                    cursor.execute("""
+                        INSERT INTO assigned_contracts_new (
+                            id, ticker, strike, option_type, expiration_date, assigned_price,
+                            current_price, assigned_at, profit_loss_percent, last_updated, closed
+                        )
+                        SELECT id, ticker, strike, option_type, expiration_date, assigned_price,
+                               current_price, assigned_at, profit_loss_percent, last_updated, closed
+                        FROM assigned_contracts
+                    """)
+                    cursor.execute("DROP TABLE assigned_contracts")
+                    cursor.execute("ALTER TABLE assigned_contracts_new RENAME TO assigned_contracts")
+                    conn.commit()
+                    logger.info("Migrated assigned_contracts table to remove preference column")
+            else:
+                cursor.execute("""
+                    CREATE TABLE assigned_contracts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ticker TEXT NOT NULL,
+                        strike REAL NOT NULL,
+                        option_type TEXT NOT NULL,
+                        expiration_date TEXT NOT NULL,
+                        assigned_price REAL NOT NULL,
+                        current_price REAL,
+                        assigned_at TIMESTAMP NOT NULL,
+                        profit_loss_percent REAL,
+                        last_updated TIMESTAMP,
+                        closed BOOLEAN DEFAULT FALSE
+                    )
+                """)
+                conn.commit()
+                logger.info("Created assigned_contracts table")
+
+def assign_contract(ticker: str, strike: float, option_type: str, expiration_date: str, assigned_price: float):
+    retries = DB_RETRIES
+    for attempt in range(retries):
+        try:
+            with db_lock:
+                with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT id FROM assigned_contracts 
+                        WHERE ticker = ? AND strike = ? AND option_type = ? AND expiration_date = ? AND closed = FALSE
+                    """, (ticker, strike, option_type, expiration_date))
+                    existing = cursor.fetchone()
+                    
+                    if not existing:
+                        assigned_at = datetime.now(timezone.utc).isoformat()
+                        cursor.execute("""
+                            INSERT INTO assigned_contracts (
+                                ticker, strike, option_type, expiration_date, assigned_price, assigned_at, closed
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (ticker, strike, option_type, expiration_date, assigned_price, assigned_at, False))
+                        conn.commit()
+                        logger.info(f"Assigned contract: {ticker} {strike} {option_type} expiring {expiration_date}")
+                    else:
+                        logger.info(f"Contract already exists: {ticker} {strike} {option_type} expiring {expiration_date}")
+                    return
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e) and attempt < retries - 1:
+                logger.warning(f"Database locked in assign_contract, retrying ({attempt + 1}/{retries})...")
+                time.sleep(DB_RETRY_DELAY)
+            else:
+                logger.error(f"Failed to assign contract: {e}")
+                raise
+
+def update_contract_prices():
+    retries = DB_RETRIES
+    for attempt in range(retries):
+        try:
+            with db_lock:
+                with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
+                    cursor = conn.cursor()
+                    current_date = datetime.now(timezone.utc).date()
+                    cursor.execute("""
+                        SELECT id, ticker, strike, option_type, expiration_date, assigned_price 
+                        FROM assigned_contracts 
+                        WHERE date(expiration_date) >= ? AND closed = FALSE
+                    """, (current_date.isoformat(),))
+                    contracts = cursor.fetchall()
+                    
+                    pl_data = {}
+                    updates = []
+                    for contract in contracts:
+                        contract_id, ticker, strike, option_type, expiration_date, assigned_price = contract
+                        options_data = get_options_data(ticker, expiration_date)
+                        current_price = None
+                        gamma = None
+                        theta = None
+                        for opt in options_data:
+                            if (float(opt["strike"]) == strike and 
+                                opt["option_type"].upper() == option_type.upper()):
+                                bid = float(opt.get("bid", 0) or 0)
+                                ask = float(opt.get("ask", 0) or 0)
+                                current_price = (bid + ask) / 2 if bid > 0 and ask > 0 else None
+                                gamma = float(opt.get("greeks", {}).get("gamma", 0) or 0)
+                                theta = float(opt.get("greeks", {}).get("theta", 0) or 0)
+                                break
+                        
+                        if current_price is not None:
+                            profit_loss_percent = ((current_price - assigned_price) / assigned_price) * 100
+                            last_updated = datetime.now(timezone.utc).isoformat()
+                            updates.append((current_price, profit_loss_percent, last_updated, contract_id))
+                            logger.info(f"Updated contract ID {contract_id}: Current Price ${current_price:.2f}, P/L {profit_loss_percent:.2f}%")
+                            pl_data[f"{ticker}_{strike}_{option_type}_{expiration_date}"] = {
+                                "pl": profit_loss_percent,
+                                "gamma": gamma,
+                                "theta": theta
+                            }
+                        else:
+                            pl_data[f"{ticker}_{strike}_{option_type}_{expiration_date}"] = {
+                                "pl": None,
+                                "gamma": None,
+                                "theta": None
+                            }
+                    
+                    if updates:
+                        cursor.executemany("""
+                            UPDATE assigned_contracts 
+                            SET current_price = ?, profit_loss_percent = ?, last_updated = ?
+                            WHERE id = ?
+                        """, updates)
+                        conn.commit()
+                    return pl_data
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e) and attempt < retries - 1:
+                logger.warning(f"Database locked in update_contract_prices, retrying ({attempt + 1}/{retries})...")
+                time.sleep(DB_RETRY_DELAY)
+            else:
+                logger.error(f"Failed to update contract prices: {e}")
+                raise
+
+def close_contract(ticker: str, strike: float, option_type: str, expiration_date: str):
+    retries = DB_RETRIES
+    for attempt in range(retries):
+        try:
+            with db_lock:
+                with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT closed FROM assigned_contracts 
+                        WHERE ticker = ? AND strike = ? AND option_type = ? AND expiration_date = ?
+                    """, (ticker, strike, option_type, expiration_date))
+                    result = cursor.fetchone()
+                    if result and result[0]:
+                        logger.info(f"Contract already closed: {ticker} {strike} {option_type} {expiration_date}")
+                        return
+                    
+                    cursor.execute("""
+                        UPDATE assigned_contracts 
+                        SET closed = TRUE 
+                        WHERE ticker = ? AND strike = ? AND option_type = ? AND expiration_date = ? AND closed = FALSE
+                    """, (ticker, strike, option_type, expiration_date))
+                    conn.commit()
+                    logger.info(f"Closed contract: {ticker} {strike} {option_type} {expiration_date}")
+                    return
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e) and attempt < retries - 1:
+                logger.warning(f"Database locked in close_contract, retrying ({attempt + 1}/{retries})...")
+                time.sleep(DB_RETRY_DELAY)
+            else:
+                logger.error(f"Failed to close contract: {e}")
+                st.error(f"Failed to close contract for {ticker} ${strike:.0f} {option_type}. Please try again.")
+                raise
+
+def auto_update_prices():
+    if "last_update" not in st.session_state:
+        st.session_state.last_update = time.time()
+    
+    current_time = time.time()
+    if current_time - st.session_state.last_update >= AUTO_UPDATE_INTERVAL:
+        try:
+            pl_data = update_contract_prices()
+            for key, data in pl_data.items():
+                st.session_state[f"pl_{key}"] = data["pl"]
+                st.session_state[f"gamma_{key}"] = data["gamma"]
+                st.session_state[f"theta_{key}"] = data["theta"]
+            st.session_state.last_update = current_time
+            st.rerun()
+        except sqlite3.OperationalError as e:
+            logger.error(f"Error updating prices: {e}")
+            st.session_state.last_update = current_time
+            st.warning("Database temporarily locked. Retrying in next update cycle.")
+
 
 # --- Main App --
 # --- Main App ---
@@ -5040,31 +5270,52 @@ def main():
 
 
     with tab11:
-        # Estilo CSS personalizado (idéntico al original)
+        # Estilo CSS personalizado adaptado al tema del código
         st.markdown("""
             <style>
+            /* Fondo oscuro para consistencia */
             .stApp {
-                background-color: #0A0A0A;
-                color: #FFFFFF;
+                background-color: #000000;
             }
+            /* Título principal con vibe de código */
             .main-title {
-                font-size: 32px;
+                font-size: 28px;
                 font-weight: 700;
-                color: #39FF14;
+                color: #39FF14; /* Verde neón */
                 text-align: center;
                 text-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
                 font-family: 'Courier New', Courier, monospace;
                 margin-bottom: 20px;
             }
+            /* Subtítulo con azul eléctrico */
             .section-header {
-                font-size: 24px;
+                font-size: 20px;
                 font-weight: 600;
-                color: #00FFFF;
-                border-bottom: 2px solid #FFD700;
+                color: #00FFFF; /* Azul eléctrico */
+                border-bottom: 1px dashed #FFD700; /* Borde amarillo mostaza */
                 padding-bottom: 5px;
                 font-family: 'Courier New', Courier, monospace;
             }
-            .signal-box {
+            /* Caja de señales con borde neón */
+            .signal-box-positive {
+                background-color: rgba(57, 255, 20, 0.2);
+                padding: 15px;
+                border-radius: 8px;
+                border: 2px solid #39FF14;
+                margin: 10px 0;
+                font-family: 'Courier New', Courier, monospace;
+                color: #FFFFFF;
+            }
+            .signal-box-negative {
+                background-color: rgba(255, 69, 0, 0.2);
+                padding: 15px;
+                border-radius: 8px;
+                border: 2px solid #FF4500;
+                margin: 10px 0;
+                font-family: 'Courier New', Courier, monospace;
+                color: #FFFFFF;
+            }
+            .signal-box-neutral {
                 background-color: #1E1E1E;
                 padding: 15px;
                 border-radius: 8px;
@@ -5073,8 +5324,20 @@ def main():
                 font-family: 'Courier New', Courier, monospace;
                 color: #FFFFFF;
             }
+            /* Caja de estado */
+            .status-box {
+                background-color: #1E1E1E;
+                padding: 15px;
+                border-radius: 8px;
+                border: 2px solid #00FFFF;
+                margin: 10px 0;
+                font-family: 'Courier New', Courier, monospace;
+                color: #FFFFFF;
+                text-align: left;
+            }
+            /* Botones con estilo neón */
             .stButton>button {
-                background: linear-gradient(90deg, #39FF14, #00FFFF);
+                background: linear-gradient(90deg, #39FF14, #00FFFF); /* Verde a azul */
                 color: #0A0A0A;
                 border: none;
                 border-radius: 5px;
@@ -5086,6 +5349,16 @@ def main():
             .stButton>button:hover {
                 box-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
             }
+            .stButton>button:disabled {
+                background: #2D2D2D;
+                color: #666666;
+                cursor: not-allowed;
+            }
+            .close-button {
+                background: linear-gradient(90deg, #FF4500, #FF0000); /* Rojo neón */
+                color: #FFFFFF;
+            }
+            /* Caja de instrucciones */
             .instructions-box {
                 background-color: #1E1E1E;
                 padding: 15px;
@@ -5095,6 +5368,7 @@ def main():
                 font-family: 'Courier New', Courier, monospace;
                 color: #FFFFFF;
             }
+            /* Caja de depuración */
             .debug-box {
                 background-color: #1E1E1E;
                 padding: 15px;
@@ -5104,19 +5378,32 @@ def main():
                 font-family: 'Courier New', Courier, monospace;
                 color: #FFFFFF;
             }
+            .highlight {
+                color: #FFD700; /* Amarillo mostaza */
+                font-weight: 600;
+            }
             </style>
         """, unsafe_allow_html=True)
 
-        # Título de la pestaña
-        st.markdown('<div class="main-title"> Options  🚀</div>', unsafe_allow_html=True)
-       
+        # Título
+        st.markdown('<div class="main-title">Options Monster 🚀</div>', unsafe_allow_html=True)
+        st.markdown("Built by Ozy, powered by xAI. Let’s hunt those options!", unsafe_allow_html=True)
+
+        # Inicializar base de datos
+        init_db()
 
         # Entrada de usuario
         ticker = st.text_input("Ticker (e.g., SPY, AAPL, JBLU)", value="SPY", key="ticker_input_tab11").upper()
 
-        # Botón de actualización
+        # Botones de acción
         if st.button("🔄 Refresh Data", key="refresh_data_tab11"):
             st.cache_data.clear()
+            st.session_state.clear()
+            st.rerun()
+
+        auto_update_prices()
+        if st.button("🔄 Update Prices Now", key="update_prices_tab11"):
+            update_contract_prices()
             st.rerun()
 
         with st.spinner(f"Analyzing {ticker} for contracts up to 2 months..."):
@@ -5133,7 +5420,18 @@ def main():
                 logger.error(f"No expiration dates found for {ticker}")
                 st.stop()
 
-            # Procesar señales para todas las fechas en paralelo
+            # Obtener contratos cerrados para filtrar
+            with db_lock:
+                with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT ticker, strike, option_type, expiration_date 
+                        FROM assigned_contracts 
+                        WHERE closed = TRUE
+                    """)
+                    closed_contracts = {(row[0], row[1], row[2], row[3]) for row in cursor.fetchall()}
+
+            # Procesar señales
             all_signals = {"Daily": [], "Weekly": [], "Monthly": []}
             sentiment = fetch_web_sentiment(ticker)
             debug_info = {"total_contracts": 0, "valid_contracts": 0, "rejections": []}
@@ -5181,7 +5479,7 @@ def main():
                     max_pain = calculate_max_pain(options_data)
                     iv = get_implied_volatility(options_data) or 0.3
                     st.markdown(f"**IV (Nearest Expiry)**: {iv:.2%} | **Max Pain (Nearest Expiry)**: ${max_pain:.2f}" if max_pain else "**Max Pain (Nearest Expiry)**: N/A")
-                    
+
                     # Procesar datos por strike
                     strikes = sorted(set(float(opt["strike"]) for opt in options_data))
                     buy_call_oi = [0] * len(strikes)
@@ -5192,7 +5490,7 @@ def main():
                     iv_by_strike = [0] * len(strikes)
                     gamma_by_strike = [0] * len(strikes)
                     max_pain_distances = [abs(s - max_pain) if max_pain else 0 for s in strikes]
-                    
+
                     # Obtener señales para determinar Buy/Sell
                     try:
                         signals = generate_signals(ticker, expiration_dates[0], current_price, options_data, sentiment, daily_range, momentum)
@@ -5200,7 +5498,7 @@ def main():
                     except Exception as e:
                         logger.error(f"Error generating signals for chart: {str(e)}")
                         signal_dict = set()
-                    
+
                     for i, strike in enumerate(strikes):
                         for opt in options_data:
                             try:
@@ -5210,7 +5508,7 @@ def main():
                                     iv = float(opt.get("implied_volatility", 0) or 0)
                                     gamma = float(opt.get("greeks", {}).get("gamma", 0) or 0)
                                     action = "BUY" if (strike, opt_type, "BUY") in signal_dict else "SELL"
-                                    
+
                                     if opt_type == "CALL":
                                         if action == "BUY":
                                             buy_call_oi[i] += oi
@@ -5227,10 +5525,10 @@ def main():
                             except Exception as e:
                                 logger.error(f"Error processing option at strike {strike}: {str(e)}")
                                 continue
-                        
+
                         iv_by_strike[i] = iv_by_strike[i] / total_oi[i] if total_oi[i] > 0 else 0
                         gamma_by_strike[i] = gamma_by_strike[i] / 1000 if total_oi[i] > 0 else 0
-                    
+
                     fig = go.Figure()
                     # Barras Calls (arriba)
                     fig.add_trace(go.Bar(
@@ -5281,11 +5579,11 @@ def main():
                         hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
                     ))
                     if max_pain:
-                        fig.add_vline(x=max_pain, line=dict(color="#FFC107", dash="dash"), 
-                                      annotation_text=f"Max Pain: ${max_pain:.2f}", 
-                                      annotation_position="top", 
+                        fig.add_vline(x=max_pain, line=dict(color="#FFC107", dash="dash"),
+                                      annotation_text=f"Max Pain: ${max_pain:.2f}",
+                                      annotation_position="top",
                                       annotation_font=dict(color="#FFC107", size=12))
-                    
+
                     fig.update_layout(
                         title="Open Interest and Gamma by Strike (Nearest Expiry)",
                         xaxis_title="Strike Price",
@@ -5307,16 +5605,88 @@ def main():
                 if all_signals[contract_type]:
                     st.markdown(f'<div class="section-header">{contract_type} Signals</div>', unsafe_allow_html=True)
                     for signal in all_signals[contract_type]:
+                        # Filtrar contratos cerrados
+                        if (ticker, signal["Strike"], signal["Type"], signal["Expiration"]) in closed_contracts:
+                            continue
+
                         exp_date_short = datetime.strptime(signal["Expiration"], "%Y-%m-%d").strftime("%m/%d")
-                        st.markdown(f"""
-                            <div class="signal-box">
-                                <b>{ticker}${signal['Strike']:.0f} {signal['Type']} {exp_date_short}</b><br>
-                                Price: ${signal['Price']:.2f} | OI: {signal['OI']:,} | IV: {signal['IV']:.2%}<br>
-                                Prob OTM: {signal['Prob OTM']:.2%} | R/R: {signal['R/R']:.2f}<br>
-                                Max Pain Distance: ${signal['Max Pain Distance']:.2f}<br>
-                                <i>Score: {signal['Score']:.2f}</i>
-                            </div>
-                        """, unsafe_allow_html=True)
+                        signal_key = f"{ticker}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}"
+
+                        # Inicializar estado de activación
+                        if signal_key not in st.session_state:
+                            st.session_state[signal_key] = True
+                            assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
+
+                        # Obtener métricas
+                        pl_key = f"pl_{signal_key}"
+                        gamma_key = f"gamma_{signal_key}"
+                        theta_key = f"theta_{signal_key}"
+                        pl_value = st.session_state.get(pl_key, None)
+                        gamma_value = st.session_state.get(gamma_key, None)
+                        theta_value = st.session_state.get(theta_key, None)
+                        pl_display = f"{pl_value:.2f}%" if pl_value is not None else "N/A"
+                        gamma_display = f"{gamma_value:.4f}" if gamma_value is not None else "N/A"
+                        theta_display = f"{theta_value:.4f}" if theta_value is not None else "N/A"
+
+                        # Determinar estado del contrato
+                        with db_lock:
+                            with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
+                                cursor = conn.cursor()
+                                cursor.execute("""
+                                    SELECT closed FROM assigned_contracts 
+                                    WHERE ticker = ? AND strike = ? AND option_type = ? AND expiration_date = ?
+                                """, (ticker, signal["Strike"], signal["Type"], signal["Expiration"]))
+                                status_result = cursor.fetchone()
+                        is_closed = status_result and status_result[0]
+                        status = "Closed" if is_closed else "Active" if st.session_state[signal_key] else "Closed"
+
+                        # Sincronizar session_state
+                        if is_closed:
+                            st.session_state[signal_key] = False
+
+                        # Determinar clase CSS según % P/L
+                        signal_class = "signal-box-neutral"
+                        if pl_value is not None:
+                            signal_class = "signal-box-positive" if pl_value > 0 else "signal-box-negative" if pl_value < 0 else "signal-box-neutral"
+
+                        # Dividir ticket en columnas
+                        col_signal, col_status = st.columns([3, 1])
+                        with col_signal:
+                            st.markdown(f"""
+                                <div class="{signal_class}">
+                                    <b>{ticker}${signal['Strike']:.0f} {signal['Type']} {exp_date_short}</b><br>
+                                    Price: ${signal['Price']:.2f} | OI: {signal['OI']:,} | IV: {signal['IV']:.2%}<br>
+                                    Prob OTM: {signal['Prob OTM']:.2%} | <span class="highlight">R/R: {signal['R/R']:.2f}</span><br>
+                                    Max Pain Distance: ${signal['Max Pain Distance']:.2f}<br>
+                                    <b>P/L (%): {pl_display}</b><br>
+                                    <i>Score: {signal['Score']:.2f}</i>
+                                </div>
+                            """, unsafe_allow_html=True)
+
+                            # Controles
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("Activate", key=f"activate_{contract_type}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}_tab11", help="Assign this contract", disabled=st.session_state[signal_key]):
+                                    st.session_state[signal_key] = True
+                                    assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
+                                    st.rerun()
+                            with col2:
+                                if st.button("Close", key=f"close_{contract_type}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}_tab11", help="Close this contract", disabled=is_closed, type="primary"):
+                                    st.session_state[signal_key] = False
+                                    close_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"])
+                                    st.rerun()
+
+                        with col_status:
+                            st.markdown(f"""
+                                <div class="status-box">
+                                    <b>Contract Status</b><br>
+                                    Status: {status}<br>
+                                    Gamma: {gamma_display}<br>
+                                    Theta: {theta_display}<br>
+                                    P/L (%): {pl_display}
+                                </div>
+                            """, unsafe_allow_html=True)
+
                     signals_df = pd.DataFrame(all_signals[contract_type])
                     signals_csv = signals_df.to_csv(index=False)
                     st.download_button(
@@ -5328,7 +5698,6 @@ def main():
                     )
                 else:
                     st.warning(f"No high-confidence {contract_type.lower()} signals found. Try a higher-liquidity ticker or adjust criteria.")
-                    # Mostrar información de depuración
                     if debug_info["total_contracts"] > 0:
                         st.markdown(f"""
                             <div class="debug-box">
@@ -5347,7 +5716,7 @@ def main():
                             </div>
                         """, unsafe_allow_html=True)
 
-            # Sección de Instrucciones y Métricas Clave (idéntica al original)
+            # Instrucciones y métricas clave
             st.markdown("""
                 <div class="instructions-box">
                     <h2 style="color: #00FFFF; font-family: 'Courier New', Courier, monospace;">Instrucciones y Métricas Clave</h2>
@@ -5356,14 +5725,17 @@ def main():
                         <li><b>R/R</b>: Relación riesgo/recompensa. Un R/R alto (e.g., 6.15) significa que las ganancias potenciales superan el riesgo.</li>
                         <li><b>Score</b>: Puntajes más altos (e.g., 59.98 vs. 0.73) reflejan mayor confianza en la señal.</li>
                         <li><b>Max Pain Distance</b>: Cero o bajo (e.g., $0.00) sugiere alta probabilidad de que el precio cierre cerca de ese strike.</li>
+                        <li><b>P/L (%)</b>: Porcentaje de ganancia/pérdida desde la asignación, actualizado cada 15 segundos. Fondo verde para ganancias, rojo para pérdidas.</li>
+                        <li><b>Gamma</b>: Mide la tasa de cambio del delta, indicando sensibilidad al movimiento del precio.</li>
+                        <li><b>Theta</b>: Mide la pérdida de valor del contrato por el paso del tiempo.</li>
+                        <li><b>Activate/Close</b>: Las señales se activan automáticamente. Use el botón verde (Activate) para asignar, o el rojo (Close) para cerrar el contrato.</li>
+                        <li><b>Status</b>: Indica si el contrato está activo ("Active") o cerrado ("Closed").</li>
                     </ul>
                 </div>
             """, unsafe_allow_html=True)
 
             # Pie de página
             st.markdown("---")
-            st.markdown("*Developed by Ozytarget.com | © 2025*", unsafe_allow_html=True)
-
-
+            st.markdown("*Developed by Ozy | © 2025*")
 if __name__ == "__main__":
     main()
