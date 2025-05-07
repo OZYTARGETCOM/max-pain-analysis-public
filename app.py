@@ -30,7 +30,7 @@ from datetime import timezone
 import pytz
 import threading
 
-#OPEN CODE BUT RECORDING YOUR IP  WE CAN'T SAVE PASSCODE AT  FOLDER .env 
+
 
 db_lock = threading.Lock()
 AUTO_UPDATE_INTERVAL = 15
@@ -100,7 +100,7 @@ def initialize_passwords_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS passwords 
                  (password TEXT PRIMARY KEY, usage_count INTEGER DEFAULT 0, ip1 TEXT DEFAULT '', ip2 TEXT DEFAULT '')''')
-    #open code but we recording your IP
+    
     # Check if passwords already exist to avoid redundant inserts
     c.execute("SELECT COUNT(*) FROM passwords")
     if c.fetchone()[0] == 0:  # Only insert if table is empty
@@ -5399,6 +5399,13 @@ def main():
         if st.button("🔄 Refresh Data", key="refresh_data_tab11"):
             st.cache_data.clear()
             st.session_state.clear()
+            # Clear specific caches
+            get_options_data.clear()
+            generate_signals.clear()
+            get_current_price.clear()
+            get_daily_movement.clear()
+            get_expiration_dates.clear()
+            fetch_web_sentiment.clear()
             st.rerun()
 
         auto_update_prices()
@@ -5445,6 +5452,16 @@ def main():
                         debug_info["rejections"].append(f"No options data for {exp_date}")
                         return None
                     signals = generate_signals(ticker, exp_date, current_price, options_data, sentiment, daily_range, momentum)
+                    # Deduplicate signals
+                    for key in signals:
+                        unique_signals = []
+                        seen = set()
+                        for signal in signals[key]:
+                            signal_tuple = (ticker, signal["Strike"], signal["Type"], signal["Expiration"])
+                            if signal_tuple not in seen:
+                                seen.add(signal_tuple)
+                                unique_signals.append(signal)
+                        signals[key] = unique_signals
                     debug_info["valid_contracts"] += sum(1 for opt in options_data if int(opt.get("open_interest", 0) or 0) >= 10)
                     return signals
                 except Exception as e:
@@ -5464,6 +5481,13 @@ def main():
                         logger.error(f"ThreadPoolExecutor error: {str(e)}")
                         debug_info["rejections"].append(f"ThreadPool error: {str(e)}")
                         continue
+
+            # Forzar actualización inicial de precios para nuevos contratos
+            try:
+                update_contract_prices()
+            except Exception as e:
+                logger.error(f"Initial price update failed: {str(e)}")
+                st.warning("Failed to update contract prices initially. Metrics may be unavailable.")
 
             # Visualizaciones
             st.markdown('<div class="section-header">Market Maker Target</div>', unsafe_allow_html=True)
@@ -5603,8 +5627,17 @@ def main():
             st.markdown('<div class="section-header">Entry Signals (Up to 2 Months)</div>', unsafe_allow_html=True)
             for contract_type in ["Daily", "Weekly", "Monthly"]:
                 if all_signals[contract_type]:
-                    st.markdown(f'<div class="section-header">{contract_type} Signals</div>', unsafe_allow_html=True)
+                    # Deduplicate signals based on ticker, strike, type, and expiration
+                    unique_signals = []
+                    seen = set()
                     for signal in all_signals[contract_type]:
+                        signal_tuple = (ticker, signal["Strike"], signal["Type"], signal["Expiration"])
+                        if signal_tuple not in seen:
+                            seen.add(signal_tuple)
+                            unique_signals.append(signal)
+                    
+                    st.markdown(f'<div class="section-header">{contract_type} Signals</div>', unsafe_allow_html=True)
+                    for idx, signal in enumerate(unique_signals):
                         # Filtrar contratos cerrados
                         if (ticker, signal["Strike"], signal["Type"], signal["Expiration"]) in closed_contracts:
                             continue
@@ -5616,6 +5649,11 @@ def main():
                         if signal_key not in st.session_state:
                             st.session_state[signal_key] = True
                             assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
+                            # Forzar actualización inmediata para este contrato
+                            try:
+                                update_contract_prices()
+                            except Exception as e:
+                                logger.error(f"Immediate price update failed for {signal_key}: {str(e)}")
 
                         # Obtener métricas
                         pl_key = f"pl_{signal_key}"
@@ -5627,6 +5665,10 @@ def main():
                         pl_display = f"{pl_value:.2f}%" if pl_value is not None else "N/A"
                         gamma_display = f"{gamma_value:.4f}" if gamma_value is not None else "N/A"
                         theta_display = f"{theta_value:.4f}" if theta_value is not None else "N/A"
+
+                        # Debug: Mostrar estado de las métricas
+                        if pl_value is None or gamma_value is None or theta_value is None:
+                            logger.warning(f"Metrics missing for {signal_key}: P/L={pl_value}, Gamma={gamma_value}, Theta={theta_value}")
 
                         # Determinar estado del contrato
                         with db_lock:
@@ -5664,17 +5706,16 @@ def main():
                             """, unsafe_allow_html=True)
 
                             # Controles
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                if st.button("Activate", key=f"activate_{contract_type}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}_tab11", help="Assign this contract", disabled=st.session_state[signal_key]):
-                                    st.session_state[signal_key] = True
-                                    assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
-                                    st.rerun()
-                            with col2:
-                                if st.button("Close", key=f"close_{contract_type}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}_tab11", help="Close this contract", disabled=is_closed, type="primary"):
-                                    st.session_state[signal_key] = False
-                                    close_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"])
-                                    st.rerun()
+                            # Solo el botón Activate
+                            if st.button("Activate", key=f"activate_{contract_type}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}_tab11_{idx}", help="Assign this contract", disabled=st.session_state[signal_key]):
+                                st.session_state[signal_key] = True
+                                assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
+                                # Forzar actualización inmediata
+                                try:
+                                    update_contract_prices()
+                                except Exception as e:
+                                    logger.error(f"Price update after activation failed for {signal_key}: {str(e)}")
+                                st.rerun()
 
                         with col_status:
                             st.markdown(f"""
@@ -5682,12 +5723,12 @@ def main():
                                     <b>Contract Status</b><br>
                                     Status: {status}<br>
                                     Gamma: {gamma_display}<br>
-                                    Theta: {theta_display}<br>
+                                    Theta: {gamma_display}<br>
                                     P/L (%): {pl_display}
                                 </div>
                             """, unsafe_allow_html=True)
 
-                    signals_df = pd.DataFrame(all_signals[contract_type])
+                    signals_df = pd.DataFrame(unique_signals)
                     signals_csv = signals_df.to_csv(index=False)
                     st.download_button(
                         label=f"📥 Download {contract_type} Signals",
@@ -5728,7 +5769,7 @@ def main():
                         <li><b>P/L (%)</b>: Porcentaje de ganancia/pérdida desde la asignación, actualizado cada 15 segundos. Fondo verde para ganancias, rojo para pérdidas.</li>
                         <li><b>Gamma</b>: Mide la tasa de cambio del delta, indicando sensibilidad al movimiento del precio.</li>
                         <li><b>Theta</b>: Mide la pérdida de valor del contrato por el paso del tiempo.</li>
-                        <li><b>Activate/Close</b>: Las señales se activan automáticamente. Use el botón verde (Activate) para asignar, o el rojo (Close) para cerrar el contrato.</li>
+                        <li><b>Activate</b>: Las señales se activan automáticamente. Use el botón verde (Activate) para asignar un contrato.</li>
                         <li><b>Status</b>: Indica si el contrato está activo ("Active") o cerrado ("Closed").</li>
                     </ul>
                 </div>
