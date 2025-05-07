@@ -30,7 +30,7 @@ from datetime import timezone
 import pytz
 import threading
 
-
+#OPEN CODE BUT RECORDING YOUR IP  WE CAN'T SAVE PASSCODE AT  FOLDER .env 
 
 db_lock = threading.Lock()
 AUTO_UPDATE_INTERVAL = 15
@@ -100,7 +100,7 @@ def initialize_passwords_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS passwords 
                  (password TEXT PRIMARY KEY, usage_count INTEGER DEFAULT 0, ip1 TEXT DEFAULT '', ip2 TEXT DEFAULT '')''')
-    
+    #open code but we recording your IP
     # Check if passwords already exist to avoid redundant inserts
     c.execute("SELECT COUNT(*) FROM passwords")
     if c.fetchone()[0] == 0:  # Only insert if table is empty
