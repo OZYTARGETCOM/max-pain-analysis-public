@@ -2920,12 +2920,31 @@ def update_contract_prices():
                     
                     pl_data = {}
                     updates = []
+                    get_options_data.clear()  # Clear cache for fresh data
                     for contract in contracts:
                         contract_id, ticker, strike, option_type, expiration_date, assigned_price = contract
+                        if assigned_price == 0:
+                            logger.warning(f"Invalid assigned_price=0 for contract ID {contract_id}")
+                            pl_data[f"{ticker}_{strike}_{option_type}_{expiration_date}"] = {
+                                "pl": 0.0,
+                                "gamma": 0.0,
+                                "theta": 0.0
+                            }
+                            continue
+                        
                         options_data = get_options_data(ticker, expiration_date)
+                        if not options_data:
+                            logger.warning(f"No options data for {ticker} on {expiration_date}")
+                            pl_data[f"{ticker}_{strike}_{option_type}_{expiration_date}"] = {
+                                "pl": 0.0,
+                                "gamma": 0.0,
+                                "theta": 0.0
+                            }
+                            continue
+                        
                         current_price = None
-                        gamma = None
-                        theta = None
+                        gamma = 0.0
+                        theta = 0.0
                         for opt in options_data:
                             if (float(opt["strike"]) == strike and 
                                 opt["option_type"].upper() == option_type.upper()):
@@ -2947,10 +2966,11 @@ def update_contract_prices():
                                 "theta": theta
                             }
                         else:
+                            logger.warning(f"No matching option for contract ID {contract_id}: {ticker} {strike} {option_type} {expiration_date}")
                             pl_data[f"{ticker}_{strike}_{option_type}_{expiration_date}"] = {
-                                "pl": None,
-                                "gamma": None,
-                                "theta": None
+                                "pl": 0.0,
+                                "gamma": 0.0,
+                                "theta": 0.0
                             }
                     
                     if updates:
@@ -3008,21 +3028,20 @@ def auto_update_prices():
         st.session_state.last_update = time.time()
     
     current_time = time.time()
-    if current_time - st.session_state.last_update >= AUTO_UPDATE_INTERVAL:
+    interval = 15  # Fixed interval, removed app_start_time logic for simplicity
+    if current_time - st.session_state.last_update >= interval:
         try:
             pl_data = update_contract_prices()
             for key, data in pl_data.items():
-                st.session_state[f"pl_{key}"] = data["pl"]
-                st.session_state[f"gamma_{key}"] = data["gamma"]
-                st.session_state[f"theta_{key}"] = data["theta"]
+                st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
+                st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
+                st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
             st.session_state.last_update = current_time
-            st.rerun()
+            logger.info("Auto-update completed without full app refresh")
         except sqlite3.OperationalError as e:
             logger.error(f"Error updating prices: {e}")
             st.session_state.last_update = current_time
             st.warning("Database temporarily locked. Retrying in next update cycle.")
-
-
 # --- Main App --
 # --- Main App ---
 # --- Main App ---
@@ -5394,16 +5413,20 @@ def main():
         ticker = st.text_input("Ticker (e.g., SPY, AAPL, JBLU)", value="SPY", key="ticker_input_tab11").upper()
 
         # Botón de actualización
-        auto_update_prices()
+        auto_update_prices()  # Run in background to update session_state
         if st.button("🔄 Update Prices Now", key="update_prices_tab11"):
             try:
-                update_contract_prices()
+                pl_data = update_contract_prices()
+                for key, data in pl_data.items():
+                    st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
+                    st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
+                    st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
                 get_options_data.clear()  # Clear cache to ensure fresh data
                 st.success("Prices updated successfully!")
+                st.rerun()  # Only rerun on manual update
             except Exception as e:
                 logger.error(f"Manual price update failed: {str(e)}")
                 st.error(f"Failed to update prices: {str(e)}")
-            st.rerun()
 
         with st.spinner(f"Analyzing {ticker} for contracts up to 2 months..."):
             current_price = get_current_price(ticker)
@@ -5747,7 +5770,7 @@ def main():
                                             st.session_state[f"gamma_{signal_key}"] = 0.0
                                             st.session_state[f"theta_{signal_key}"] = 0.0
                                             logger.warning(f"Set default metrics after activation for {signal_key}: P/L=0.0, Gamma=0.0, Theta=0.0")
-                                st.rerun()
+                                st.rerun()  # Rerun only on activation
 
                         with col_status:
                             st.markdown(f"""
@@ -5798,7 +5821,7 @@ def main():
                         <li><b>R/R</b>: Relación riesgo/recompensa. Un R/R alto (e.g., 6.15) significa que las ganancias potenciales superan el riesgo.</li>
                         <li><b>Score</b>: Puntajes más altos (e.g., 59.98 vs. 0.73) reflejan mayor confianza en la señal.</li>
                         <li><b>Max Pain Distance</b>: Cero o bajo (e.g., $0.00) sugiere alta probabilidad de que el precio cierre cerca de ese strike.</li>
-                        <li><b>P/L (%)</b>: Porcentaje de ganancia/pérdida desde la asignación, actualizado cada 15 segundos. Fondo verde para ganancias, rojo para pérdidas.</li>
+                        <li><b>P/L (%)</b>: Porcentaje de ganancia/pérdida desde la asignación, actualizado al hacer clic en "Update Prices Now". Fondo verde para ganancias, rojo para pérdidas.</li>
                         <li><b>Gamma</b>: Mide la tasa de cambio del delta, indicando sensibilidad al movimiento del precio.</li>
                         <li><b>Theta</b>: Mide la pérdida de valor del contrato por el paso del tiempo.</li>
                         <li><b>Activate</b>: Las señales se activan automáticamente. Use el botón verde (Activate) para asignar un contrato.</li>
@@ -5811,5 +5834,7 @@ def main():
             # Pie de página
             st.markdown("---")
             st.markdown("*Developed by Ozy | © 2025*")
+
+            
 if __name__ == "__main__":
     main()
