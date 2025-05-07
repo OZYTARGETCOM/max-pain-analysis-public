@@ -2822,6 +2822,7 @@ def init_db():
                 cursor.execute("PRAGMA table_info(assigned_contracts)")
                 columns = [info[1] for info in cursor.fetchall()]
                 if 'preference' in columns:
+                    # Migration logic to remove 'preference' column
                     cursor.execute("""
                         CREATE TABLE assigned_contracts_new (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2967,6 +2968,7 @@ def update_contract_prices():
             else:
                 logger.error(f"Failed to update contract prices: {e}")
                 raise
+
 
 def close_contract(ticker: str, strike: float, option_type: str, expiration_date: str):
     retries = DB_RETRIES
@@ -5354,10 +5356,6 @@ def main():
                 color: #666666;
                 cursor: not-allowed;
             }
-            .close-button {
-                background: linear-gradient(90deg, #FF4500, #FF0000); /* Rojo neón */
-                color: #FFFFFF;
-            }
             /* Caja de instrucciones */
             .instructions-box {
                 background-color: #1E1E1E;
@@ -5395,22 +5393,16 @@ def main():
         # Entrada de usuario
         ticker = st.text_input("Ticker (e.g., SPY, AAPL, JBLU)", value="SPY", key="ticker_input_tab11").upper()
 
-        # Botones de acción
-        if st.button("🔄 Refresh Data", key="refresh_data_tab11"):
-            st.cache_data.clear()
-            st.session_state.clear()
-            # Clear specific caches
-            get_options_data.clear()
-            generate_signals.clear()
-            get_current_price.clear()
-            get_daily_movement.clear()
-            get_expiration_dates.clear()
-            fetch_web_sentiment.clear()
-            st.rerun()
-
+        # Botón de actualización
         auto_update_prices()
         if st.button("🔄 Update Prices Now", key="update_prices_tab11"):
-            update_contract_prices()
+            try:
+                update_contract_prices()
+                get_options_data.clear()  # Clear cache to ensure fresh data
+                st.success("Prices updated successfully!")
+            except Exception as e:
+                logger.error(f"Manual price update failed: {str(e)}")
+                st.error(f"Failed to update prices: {str(e)}")
             st.rerun()
 
         with st.spinner(f"Analyzing {ticker} for contracts up to 2 months..."):
@@ -5482,12 +5474,22 @@ def main():
                         debug_info["rejections"].append(f"ThreadPool error: {str(e)}")
                         continue
 
-            # Forzar actualización inicial de precios para nuevos contratos
-            try:
-                update_contract_prices()
-            except Exception as e:
-                logger.error(f"Initial price update failed: {str(e)}")
-                st.warning("Failed to update contract prices initially. Metrics may be unavailable.")
+            # Forzar actualización inicial de precios con reintentos
+            for attempt in range(DB_RETRIES):
+                try:
+                    pl_data = update_contract_prices()
+                    for key, data in pl_data.items():
+                        st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
+                        st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
+                        st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
+                    logger.info("Initial price update successful")
+                    break
+                except Exception as e:
+                    logger.error(f"Initial price update attempt {attempt + 1} failed: {str(e)}")
+                    if attempt < DB_RETRIES - 1:
+                        time.sleep(DB_RETRY_DELAY)
+                    else:
+                        st.warning("Failed to update contract prices initially. Using default metrics.")
 
             # Visualizaciones
             st.markdown('<div class="section-header">Market Maker Target</div>', unsafe_allow_html=True)
@@ -5649,26 +5651,41 @@ def main():
                         if signal_key not in st.session_state:
                             st.session_state[signal_key] = True
                             assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
-                            # Forzar actualización inmediata para este contrato
-                            try:
-                                update_contract_prices()
-                            except Exception as e:
-                                logger.error(f"Immediate price update failed for {signal_key}: {str(e)}")
+                            # Forzar actualización inmediata con reintentos
+                            for attempt in range(DB_RETRIES):
+                                try:
+                                    pl_data = update_contract_prices()
+                                    for key, data in pl_data.items():
+                                        st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
+                                        st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
+                                        st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
+                                    logger.info(f"Price update successful for {signal_key}")
+                                    break
+                                except Exception as e:
+                                    logger.error(f"Price update attempt {attempt + 1} failed for {signal_key}: {str(e)}")
+                                    if attempt < DB_RETRIES - 1:
+                                        time.sleep(DB_RETRY_DELAY)
+                                    else:
+                                        # Asignar valores predeterminados temporales
+                                        st.session_state[f"pl_{signal_key}"] = 0.0
+                                        st.session_state[f"gamma_{signal_key}"] = 0.0
+                                        st.session_state[f"theta_{signal_key}"] = 0.0
+                                        logger.warning(f"Set default metrics for {signal_key}: P/L=0.0, Gamma=0.0, Theta=0.0")
 
                         # Obtener métricas
                         pl_key = f"pl_{signal_key}"
                         gamma_key = f"gamma_{signal_key}"
                         theta_key = f"theta_{signal_key}"
-                        pl_value = st.session_state.get(pl_key, None)
-                        gamma_value = st.session_state.get(gamma_key, None)
-                        theta_value = st.session_state.get(theta_key, None)
-                        pl_display = f"{pl_value:.2f}%" if pl_value is not None else "N/A"
-                        gamma_display = f"{gamma_value:.4f}" if gamma_value is not None else "N/A"
-                        theta_display = f"{theta_value:.4f}" if theta_value is not None else "N/A"
+                        pl_value = st.session_state.get(pl_key, 0.0)  # Default a 0.0 si None
+                        gamma_value = st.session_state.get(gamma_key, 0.0)
+                        theta_value = st.session_state.get(theta_key, 0.0)
+                        pl_display = f"{pl_value:.2f}%" if pl_value is not None else "0.00%"
+                        gamma_display = f"{gamma_value:.4f}" if gamma_value is not None else "0.0000"
+                        theta_display = f"{theta_value:.4f}" if theta_value is not None else "0.0000"
 
                         # Debug: Mostrar estado de las métricas
-                        if pl_value is None or gamma_value is None or theta_value is None:
-                            logger.warning(f"Metrics missing for {signal_key}: P/L={pl_value}, Gamma={gamma_value}, Theta={theta_value}")
+                        if pl_value == 0.0 and gamma_value == 0.0 and theta_value == 0.0:
+                            logger.warning(f"Metrics defaulted for {signal_key}: P/L={pl_value}, Gamma={gamma_value}, Theta={theta_value}")
 
                         # Determinar estado del contrato
                         with db_lock:
@@ -5710,11 +5727,26 @@ def main():
                             if st.button("Activate", key=f"activate_{contract_type}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}_tab11_{idx}", help="Assign this contract", disabled=st.session_state[signal_key]):
                                 st.session_state[signal_key] = True
                                 assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
-                                # Forzar actualización inmediata
-                                try:
-                                    update_contract_prices()
-                                except Exception as e:
-                                    logger.error(f"Price update after activation failed for {signal_key}: {str(e)}")
+                                # Forzar actualización inmediata con reintentos
+                                for attempt in range(DB_RETRIES):
+                                    try:
+                                        pl_data = update_contract_prices()
+                                        for key, data in pl_data.items():
+                                            st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
+                                            st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
+                                            st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
+                                        logger.info(f"Price update successful after activation for {signal_key}")
+                                        break
+                                    except Exception as e:
+                                        logger.error(f"Price update attempt {attempt + 1} failed after activation for {signal_key}: {str(e)}")
+                                        if attempt < DB_RETRIES - 1:
+                                            time.sleep(DB_RETRY_DELAY)
+                                        else:
+                                            # Asignar valores predeterminados temporales
+                                            st.session_state[f"pl_{signal_key}"] = 0.0
+                                            st.session_state[f"gamma_{signal_key}"] = 0.0
+                                            st.session_state[f"theta_{signal_key}"] = 0.0
+                                            logger.warning(f"Set default metrics after activation for {signal_key}: P/L=0.0, Gamma=0.0, Theta=0.0")
                                 st.rerun()
 
                         with col_status:
@@ -5723,7 +5755,7 @@ def main():
                                     <b>Contract Status</b><br>
                                     Status: {status}<br>
                                     Gamma: {gamma_display}<br>
-                                    Theta: {gamma_display}<br>
+                                    Theta: {theta_display}<br>
                                     P/L (%): {pl_display}
                                 </div>
                             """, unsafe_allow_html=True)
@@ -5770,6 +5802,7 @@ def main():
                         <li><b>Gamma</b>: Mide la tasa de cambio del delta, indicando sensibilidad al movimiento del precio.</li>
                         <li><b>Theta</b>: Mide la pérdida de valor del contrato por el paso del tiempo.</li>
                         <li><b>Activate</b>: Las señales se activan automáticamente. Use el botón verde (Activate) para asignar un contrato.</li>
+                        <li><b>Update Prices Now</b>: Actualiza manualmente los precios y métricas de los contratos activos.</li>
                         <li><b>Status</b>: Indica si el contrato está activo ("Active") o cerrado ("Closed").</li>
                     </ul>
                 </div>
