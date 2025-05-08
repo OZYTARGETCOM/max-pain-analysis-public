@@ -5403,8 +5403,7 @@ def main():
         """, unsafe_allow_html=True)
 
         # Título
-        st.markdown('<div class="main-title">Options Monster 🚀</div>', unsafe_allow_html=True)
-        st.markdown("Built by Ozy, powered by xAI. Let’s hunt those options!", unsafe_allow_html=True)
+        
 
         # Inicializar base de datos
         init_db()
