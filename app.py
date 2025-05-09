@@ -417,7 +417,7 @@ def get_current_price(ticker: str) -> float:
                 logger.info(f"Fetched current price for {ticker} from Tradier: ${price:.2f}")
                 return price
     except Exception as e:
-        logger.warning(f"Failed to fetch price for {ticker}: {str(e)}")
+        logger.warning(f"Did you really put; {ticker}: {str(e)}")
 
     url_fmp = f"{FMP_BASE_URL}/quote/{ticker}"
     params_fmp = {"apikey": FMP_API_KEY}
@@ -529,47 +529,84 @@ def get_metaverse_stocks() -> List[str]:
 @st.cache_data(ttl=CACHE_TTL)
 def get_options_data(ticker: str, expiration_date: str) -> List[Dict]:
     """
-    Fetch options chain data from Tradier API with strict validation.
+    Fetch options chain data from Tradier API with strict validation and retry logic.
     
     Args:
         ticker (str): Stock ticker symbol (e.g., 'SPY').
         expiration_date (str): Expiration date in YYYY-MM-DD format.
     
     Returns:
-        List[Dict]: List of valid option contracts.
+        List[Dict]: List of valid option contracts, or empty list if data is invalid.
     """
     url = f"{TRADIER_BASE_URL}/markets/options/chains"
     params = {"symbol": ticker, "expiration": expiration_date, "greeks": "true"}
+    
+    # Validate expiration date
     try:
-        time.sleep(0.1)  # Add delay to avoid rate-limiting
-        response = session_tradier.get(url, params=params, headers=HEADERS_TRADIER, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-        logger.debug(f"Tradier response for {ticker} {expiration_date}: {data}")
-        if data is None or not isinstance(data, dict):
-            logger.error(f"Invalid JSON response for {ticker}: {response.text}")
+        exp_date = datetime.strptime(expiration_date, "%Y-%m-%d").date()
+        current_date = get_current_date()  # Using MARKET_TIMEZONE
+        if exp_date < current_date:
+            logger.warning(f"Expiration date {expiration_date} is in the past for {ticker}")
             return []
-        if 'options' not in data or 'option' not in data['options']:
-            logger.warning(f"No valid options data for {ticker} on {expiration_date}: {data}")
-            return []
-        valid_options = []
-        for opt in data['options']['option']:
-            if (opt.get("bid") is not None and opt.get("ask") is not None and
-                isinstance(opt.get("bid"), (int, float)) and isinstance(opt.get("ask"), (int, float)) and
-                opt.get("bid") > 0 and opt.get("ask") > 0):
-                valid_options.append(opt)
-            else:
-                logger.warning(f"Skipping option for {ticker} on {expiration_date}: Invalid bid/ask - {opt}")
-        logger.info(f"Fetched {len(valid_options)} valid option contracts for {ticker} on {expiration_date}")
-        if valid_options:
-            logger.debug(f"Sample contract: {valid_options[0]}")
-        return valid_options
-    except requests.RequestException as e:
-        logger.error(f"Network error fetching options for {ticker}: {str(e)} - Response: {getattr(e.response, 'text', 'No response')}")
-        return []
     except ValueError as e:
-        logger.error(f"JSON parsing error for {ticker}: {str(e)} - Response: {response.text}")
+        logger.error(f"Invalid expiration date format for {ticker}: {expiration_date} - {str(e)}")
         return []
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            time.sleep(0.1 * (2 ** attempt))  # Exponential backoff to avoid rate limits
+            response = session_tradier.get(url, params=params, headers=HEADERS_TRADIER, timeout=5)
+            response.raise_for_status()
+            
+            # Attempt to parse JSON
+            try:
+                data = response.json()
+            except ValueError as e:
+                logger.error(f"JSON parsing failed for {ticker} on {expiration_date}: {str(e)} - Response: {response.text}")
+                return []
+
+            # Validate response structure
+            if data is None or not isinstance(data, dict):
+                logger.error(f"Invalid response for {ticker} on {expiration_date}: {response.text}")
+                return []
+            
+            if 'options' not in data or not isinstance(data['options'], dict) or 'option' not in data['options']:
+                logger.warning(f"No valid options data for {ticker} on {expiration_date}: {data}")
+                return []
+            
+            valid_options = []
+            for opt in data['options']['option']:
+                if (opt.get("bid") is not None and opt.get("ask") is not None and
+                    isinstance(opt.get("bid"), (int, float)) and isinstance(opt.get("ask"), (int, float)) and
+                    opt.get("bid") > 0 and opt.get("ask") > 0):
+                    valid_options.append(opt)
+                else:
+                    logger.warning(f"Skipping invalid option for {ticker} on {expiration_date}: {opt}")
+            
+            logger.info(f"Fetched {len(valid_options)} valid option contracts for {ticker} on {expiration_date}")
+            if valid_options:
+                logger.debug(f"Sample contract: {valid_options[0]}")
+            return valid_options
+        
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 429:
+                logger.warning(f"Rate limit hit for {ticker} on attempt {attempt + 1}/{MAX_RETRIES}. Retrying...")
+                if attempt == MAX_RETRIES - 1:
+                    logger.error(f"Max retries reached for {ticker}: {str(e)}")
+                    st.error(f"Rate limit exceeded for Tradier API. Please try again later.")
+                    return []
+                continue
+            else:
+                logger.error(f"HTTP error for {ticker} on {expiration_date}: {str(e)} - Response: {getattr(e.response, 'text', 'No response')}")
+                return []
+        except requests.RequestException as e:
+            logger.error(f"Network error for {ticker} on {expiration_date}: {str(e)} - Response: {getattr(e.response, 'text', 'No response')}")
+            if attempt == MAX_RETRIES - 1:
+                st.error(f"Network error fetching options for {ticker}. Check your connection or try again.")
+                return []
+            continue
+    
+    return []
 
 @st.cache_data(ttl=CACHE_TTL)
 def get_historical_prices_combined(symbol, period="daily", limit=30):
@@ -5399,17 +5436,22 @@ def main():
                 color: #FFD700; /* Amarillo mostaza */
                 font-weight: 600;
             }
+            /* Separador para métricas */
+            .metric-divider {
+                border-top: 1px solid #00FFFF;
+                margin: 10px 0;
+            }
             </style>
         """, unsafe_allow_html=True)
 
         # Título
         
-
+        
         # Inicializar base de datos
         init_db()
 
         # Entrada de usuario
-        ticker = st.text_input("Ticker (e.g., SPY, AAPL, JBLU)", value="SPY", key="ticker_input_tab11").upper()
+        ticker = st.text_input("Ticker (SPY, Pereira)", value="SPY", key="ticker_input_tab11").upper()
 
         # Botón de actualización
         auto_update_prices()  # Run in background to update session_state
@@ -5427,7 +5469,7 @@ def main():
                 logger.error(f"Manual price update failed: {str(e)}")
                 st.error(f"Failed to update prices: {str(e)}")
 
-        with st.spinner(f"Analyzing {ticker} for contracts up to 2 months..."):
+        with st.spinner(f"Analyzing {ticker} for monthly contracts up to 2 months..."):
             current_price = get_current_price(ticker)
             if current_price == 0.0:
                 st.error(f"Failed to fetch price for '{ticker}'.")
@@ -5441,6 +5483,16 @@ def main():
                 logger.error(f"No expiration dates found for {ticker}")
                 st.stop()
 
+            # Filtrar solo fechas de expiración mensuales (>14 días)
+            current_date = datetime.now(timezone.utc).date()
+            monthly_expiration_dates = [
+                date for date in expiration_dates
+                if (datetime.strptime(date, "%Y-%m-%d").date() - current_date).days > 14
+            ]
+            if not monthly_expiration_dates:
+                st.warning(f"No monthly expiration dates (more than 14 days away) found for {ticker}.")
+                logger.warning(f"No monthly expiration dates for {ticker}")
+
             # Obtener contratos cerrados para filtrar
             with db_lock:
                 with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
@@ -5452,8 +5504,8 @@ def main():
                     """)
                     closed_contracts = {(row[0], row[1], row[2], row[3]) for row in cursor.fetchall()}
 
-            # Procesar señales
-            all_signals = {"Daily": [], "Weekly": [], "Monthly": []}
+            # Procesar señales solo para fechas mensuales (máximo 5 para optimizar)
+            all_signals = {"Monthly": []}
             sentiment = fetch_web_sentiment(ticker)
             debug_info = {"total_contracts": 0, "valid_contracts": 0, "rejections": []}
 
@@ -5483,18 +5535,21 @@ def main():
                     debug_info["rejections"].append(f"Error for {exp_date}: {str(e)}")
                     return None
 
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                futures = [executor.submit(process_date, exp_date) for exp_date in expiration_dates[:15]]
-                for future in futures:
+            # Optimizar procesamiento de señales con barra de progreso
+            progress_bar = st.progress(0)
+            with ThreadPoolExecutor(max_workers=min(num_workers, 5)) as executor:
+                futures = [executor.submit(process_date, exp_date) for exp_date in monthly_expiration_dates[:5]]
+                for i, future in enumerate(futures):
                     try:
                         signals = future.result()
                         if signals:
-                            for contract_type in ["Daily", "Weekly", "Monthly"]:
-                                all_signals[contract_type].extend(signals[contract_type])
+                            all_signals["Monthly"].extend(signals["Monthly"])
+                        progress_bar.progress((i + 1) / len(futures))
                     except Exception as e:
                         logger.error(f"ThreadPoolExecutor error: {str(e)}")
                         debug_info["rejections"].append(f"ThreadPool error: {str(e)}")
                         continue
+            progress_bar.empty()
 
             # Forzar actualización inicial de precios con reintentos
             for attempt in range(DB_RETRIES):
@@ -5515,162 +5570,545 @@ def main():
 
             # Visualizaciones
             st.markdown('<div class="section-header">Market Maker Target</div>', unsafe_allow_html=True)
-            daily_change = current_price * momentum
-            st.markdown(f"**Price**: ${current_price:.2f} | **Daily Change**: ${daily_change:.2f} ({momentum:.2%}) | **Daily Range**: {daily_range:.2%}")
-            st.markdown(f"**Sentiment**: {'Bullish' if sentiment > 0.6 else 'Bearish' if sentiment < 0.4 else 'Neutral'}")
-            st.markdown(f"**Analyzed Dates**: {len(expiration_dates)} dates up to {datetime.strptime(expiration_dates[-1], '%Y-%m-%d').strftime('%m/%d/%Y') if expiration_dates else 'N/A'}")
 
-            # Gráfico de Open Interest con Gamma
+            # Sección: Resumen del Mercado
+            daily_change = current_price * momentum
+            
+            st.markdown(f"""
+                - **Price**: ${current_price:.2f} | **Daily Change**: ${daily_change:.2f} ({momentum:.2%}) | **Daily Range**: {daily_range:.2%}
+                - **Sentiment**: {'Bullish' if sentiment > 0.6 else 'Bearish' if sentiment < 0.4 else 'Neutral'}
+                - **Analyzed Monthly Dates**: {len(monthly_expiration_dates)} dates up to {datetime.strptime(monthly_expiration_dates[-1], '%Y-%m-%d').strftime('%m/%d/%Y') if monthly_expiration_dates else 'N/A'}
+                - **IV (Nearest Expiry)**: {iv:.2%} | **Max Pain (Nearest Expiry)**: {'N/A' if max_pain is None else f'${max_pain:.2f}'}
+            """, unsafe_allow_html=True)
+            st.markdown('<div class="metric-divider"></div>', unsafe_allow_html=True)
+
+            # Sección: Primas y Contratos Totales (para la expiración más cercana)
             if expiration_dates:
                 options_data = get_options_data(ticker, expiration_dates[0])
                 if options_data:
+                    logger.debug(f"Options data for {ticker} on {expiration_dates[0]}: {len(options_data)} options")
                     max_pain = calculate_max_pain(options_data)
+                    logger.debug(f"Max Pain calculated: {max_pain}")
                     iv = get_implied_volatility(options_data) or 0.3
-                    st.markdown(f"**IV (Nearest Expiry)**: {iv:.2%} | **Max Pain (Nearest Expiry)**: ${max_pain:.2f}" if max_pain else "**Max Pain (Nearest Expiry)**: N/A")
+                    total_call_premium = 0.0
+                    total_put_premium = 0.0
+                    total_call_contracts = 0
+                    total_put_contracts = 0
+                    itm_call_premium = 0.0
+                    otm_call_premium = 0.0
+                    itm_put_premium = 0.0
+                    otm_put_premium = 0.0
+                    itm_call_contracts = 0
+                    otm_call_contracts = 0
+                    itm_put_contracts = 0
+                    otm_put_contracts = 0
 
-                    # Procesar datos por strike
-                    strikes = sorted(set(float(opt["strike"]) for opt in options_data))
-                    buy_call_oi = [0] * len(strikes)
-                    sell_call_oi = [0] * len(strikes)
-                    buy_put_oi = [0] * len(strikes)
-                    sell_put_oi = [0] * len(strikes)
-                    total_oi = [0] * len(strikes)
-                    iv_by_strike = [0] * len(strikes)
-                    gamma_by_strike = [0] * len(strikes)
-                    max_pain_distances = [abs(s - max_pain) if max_pain else 0 for s in strikes]
+                    for opt in options_data:
+                        try:
+                            opt_type = opt.get("option_type", "").upper()
+                            oi = int(opt.get("open_interest", 0) or 0)
+                            bid = float(opt.get("bid", opt.get("last", 0)) or 0)
+                            ask = float(opt.get("ask", opt.get("last", 0)) or 0)
+                            strike = float(opt.get("strike", 0))
+                            if bid == 0 and ask == 0 or oi == 0:
+                                logger.debug(f"Skipping option: {opt_type}, Strike: {strike}, Bid: {bid}, Ask: {ask}, OI: {oi}")
+                                continue  # Skip options with no valid bid/ask or OI
+                            premium = (bid + ask) / 2 * oi * 100  # Premium per contract * number of contracts
+                            is_itm = (opt_type == "CALL" and strike < current_price) or (opt_type == "PUT" and strike > current_price)
 
-                    # Obtener señales para determinar Buy/Sell
-                    try:
-                        signals = generate_signals(ticker, expiration_dates[0], current_price, options_data, sentiment, daily_range, momentum)
-                        signal_dict = {(s["Strike"], s["Type"], s["Action"]) for s in signals["Daily"] + signals["Weekly"] + signals["Monthly"]}
-                    except Exception as e:
-                        logger.error(f"Error generating signals for chart: {str(e)}")
-                        signal_dict = set()
-
-                    for i, strike in enumerate(strikes):
-                        for opt in options_data:
-                            try:
-                                if float(opt["strike"]) == strike:
-                                    opt_type = opt["option_type"].upper()
-                                    oi = int(opt["open_interest"] or 0)
-                                    iv = float(opt.get("implied_volatility", 0) or 0)
-                                    gamma = float(opt.get("greeks", {}).get("gamma", 0) or 0)
-                                    action = "BUY" if (strike, opt_type, "BUY") in signal_dict else "SELL"
-
-                                    if opt_type == "CALL":
-                                        if action == "BUY":
-                                            buy_call_oi[i] += oi
-                                        else:
-                                            sell_call_oi[i] += oi
-                                    else:  # PUT
-                                        if action == "BUY":
-                                            buy_put_oi[i] += oi
-                                        else:
-                                            sell_put_oi[i] += oi
-                                    total_oi[i] += oi
-                                    iv_by_strike[i] += iv * oi
-                                    gamma_by_strike[i] += gamma * oi
-                            except Exception as e:
-                                logger.error(f"Error processing option at strike {strike}: {str(e)}")
-                                continue
-
-                        iv_by_strike[i] = iv_by_strike[i] / total_oi[i] if total_oi[i] > 0 else 0
-                        gamma_by_strike[i] = gamma_by_strike[i] / 1000 if total_oi[i] > 0 else 0
-
-                    fig = go.Figure()
-                    # Barras Calls (arriba)
-                    fig.add_trace(go.Bar(
-                        x=strikes,
-                        y=buy_call_oi,
-                        name="Buy Calls",
-                        marker_color="#32CD32",
-                        hovertemplate="<b>Strike</b>: $%{x:.2f}<br><b>Buy Call OI</b>: %{y:,}<br><b>Sell Call OI</b>: %{customdata[0]:,}<br><b>Buy Put OI</b>: %{customdata[1]:,}<br><b>Sell Put OI</b>: %{customdata[2]:,}<br><b>Total OI</b>: %{customdata[3]:,}<br><b>IV</b>: %{customdata[4]:.2%}<br><b>Max Pain Distance</b>: $%{customdata[5]:.2f}<br><b>Strike</b>: $%{x:.2f}",
-                        customdata=list(zip(sell_call_oi, buy_put_oi, sell_put_oi, total_oi, iv_by_strike, max_pain_distances)),
-                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1)
-                    ))
-                    fig.add_trace(go.Bar(
-                        x=strikes,
-                        y=sell_call_oi,
-                        name="Sell Calls",
-                        marker_color="#00B7EB",
-                        hovertemplate="<b>Strike</b>: $%{x:.2f}<br><b>Buy Call OI</b>: %{customdata[0]:,}<br><b>Sell Call OI</b>: %{y:,}<br><b>Buy Put OI</b>: %{customdata[1]:,}<br><b>Sell Put OI</b>: %{customdata[2]:,}<br><b>Total OI</b>: %{customdata[3]:,}<br><b>IV</b>: %{customdata[4]:.2%}<br><b>Max Pain Distance</b>: $%{customdata[5]:.2f}<br><b>Strike</b>: $%{x:.2f}",
-                        customdata=list(zip(buy_call_oi, buy_put_oi, sell_put_oi, total_oi, iv_by_strike, max_pain_distances)),
-                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1)
-                    ))
-                    # Barras Puts (abajo, negativo)
-                    fig.add_trace(go.Bar(
-                        x=strikes,
-                        y=[-x for x in buy_put_oi],
-                        name="Buy Puts",
-                        marker_color="#FF4500",
-                        hovertemplate="<b>Strike</b>: $%{x:.2f}<br><b>Buy Call OI</b>: %{customdata[0]:,}<br><b>Sell Call OI</b>: %{customdata[1]:,}<br><b>Buy Put OI</b>: %{customdata[2]:,}<br><b>Sell Put OI</b>: %{customdata[3]:,}<br><b>Total OI</b>: %{customdata[4]:,}<br><b>IV</b>: %{customdata[5]:.2%}<br><b>Max Pain Distance</b>: $%{customdata[6]:.2f}<br><b>Strike</b>: $%{x:.2f}",
-                        customdata=list(zip(buy_call_oi, sell_call_oi, buy_put_oi, sell_put_oi, total_oi, iv_by_strike, max_pain_distances)),
-                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1)
-                    ))
-                    fig.add_trace(go.Bar(
-                        x=strikes,
-                        y=[-x for x in sell_put_oi],
-                        name="Sell Puts",
-                        marker_color="#C71585",
-                        hovertemplate="<b>Strike</b>: $%{x:.2f}<br><b>Buy Call OI</b>: %{customdata[0]:,}<br><b>Sell Call OI</b>: %{customdata[1]:,}<br><b>Buy Put OI</b>: %{customdata[2]:,}<br><b>Sell Put OI</b>: %{customdata[3]:,}<br><b>Total OI</b>: %{customdata[4]:,}<br><b>IV</b>: %{customdata[5]:.2%}<br><b>Max Pain Distance</b>: $%{customdata[6]:.2f}<br><b>Strike</b>: $%{x:.2f}",
-                        customdata=list(zip(buy_call_oi, sell_call_oi, buy_put_oi, sell_put_oi, total_oi, iv_by_strike, max_pain_distances)),
-                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1)
-                    ))
-                    # Línea de Gamma
-                    fig.add_trace(go.Scatter(
-                        x=strikes,
-                        y=gamma_by_strike,
-                        name="Gamma Exposure",
-                        line=dict(color="rgba(255, 193, 7, 0.5)", width=2),
-                        yaxis="y2",
-                        hovertemplate="<b>Strike</b>: $%{x:.2f}<br><b>Gamma Exposure</b>: %{y:.4f}<br><b>Strike</b>: $%{x:.2f}",
-                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
-                    ))
-                    if max_pain:
-                        fig.add_vline(x=max_pain, line=dict(color="#FFC107", dash="dash"),
-                                      annotation_text=f"Max Pain: ${max_pain:.2f}",
-                                      annotation_position="top",
-                                      annotation_font=dict(color="#FFC107", size=12))
-
-                    fig.update_layout(
-                        title="Open Interest and Gamma by Strike (Nearest Expiry)",
-                        xaxis_title="Strike Price",
-                        yaxis_title="Open Interest",
-                        yaxis2=dict(title="Gamma Exposure", overlaying="y", side="right", showgrid=False),
-                        template="plotly_dark",
-                        barmode="stack",
-                        hovermode="x unified",
-                        showlegend=True,
-                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1)
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning(f"No options data available for {ticker} on nearest expiration date.")
-
-            # Señales de Entrada
-            st.markdown('<div class="section-header">Entry Signals (Up to 2 Months)</div>', unsafe_allow_html=True)
-            for contract_type in ["Daily", "Weekly", "Monthly"]:
-                if all_signals[contract_type]:
-                    # Deduplicate signals based on ticker, strike, type, and expiration
-                    unique_signals = []
-                    seen = set()
-                    for signal in all_signals[contract_type]:
-                        signal_tuple = (ticker, signal["Strike"], signal["Type"], signal["Expiration"])
-                        if signal_tuple not in seen:
-                            seen.add(signal_tuple)
-                            unique_signals.append(signal)
-                    
-                    st.markdown(f'<div class="section-header">{contract_type} Signals</div>', unsafe_allow_html=True)
-                    for idx, signal in enumerate(unique_signals):
-                        # Filtrar contratos cerrados
-                        if (ticker, signal["Strike"], signal["Type"], signal["Expiration"]) in closed_contracts:
+                            if opt_type == "CALL":
+                                total_call_premium += premium
+                                total_call_contracts += oi
+                                if is_itm:
+                                    itm_call_premium += premium
+                                    itm_call_contracts += oi
+                                else:
+                                    otm_call_premium += premium
+                                    otm_call_contracts += oi
+                            elif opt_type == "PUT":
+                                total_put_premium += premium
+                                total_put_contracts += oi
+                                if is_itm:
+                                    itm_put_premium += premium
+                                    itm_put_contracts += oi
+                                else:
+                                    otm_put_premium += premium
+                                    otm_put_contracts += oi
+                            logger.debug(f"Processed {opt_type} option: Strike {strike}, Bid {bid}, Ask {ask}, OI {oi}, Premium ${premium:,.2f}")
+                        except Exception as e:
+                            logger.warning(f"Skipping option for premium/contract calculation: {str(e)}")
                             continue
 
-                        exp_date_short = datetime.strptime(signal["Expiration"], "%Y-%m-%d").strftime("%m/%d")
-                        signal_key = f"{ticker}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}"
+                    # Calcular primas promedio por contrato
+                    avg_call_premium = total_call_premium / total_call_contracts if total_call_contracts > 0 else 0.0
+                    avg_put_premium = total_put_premium / total_put_contracts if total_put_contracts > 0 else 0.0
 
-                        # Inicializar estado de activación
-                        if signal_key not in st.session_state:
+                    logger.info(f"Premiums for {ticker} on {expiration_dates[0]}: Calls ${total_call_premium:,.2f} (ITM ${itm_call_premium:,.2f}, OTM ${otm_call_premium:,.2f}), Puts ${total_put_premium:,.2f} (ITM ${itm_put_premium:,.2f}, OTM ${otm_put_premium:,.2f})")
+                    logger.info(f"Contracts for {ticker} on {expiration_dates[0]}: Calls {total_call_contracts:,} (ITM {itm_call_contracts:,}, OTM {otm_call_contracts:,}), Puts {total_put_contracts:,} (ITM {itm_put_contracts:,}, OTM {otm_put_contracts:,})")
+                    logger.info(f"Average Premium per Contract: Calls ${avg_call_premium:,.2f}, Puts ${avg_put_premium:,.2f}")
+
+                    
+                    if total_call_contracts == 0 and total_put_contracts == 0:
+                        st.warning("No valid option contracts found for premium or contract calculations.")
+                    else:
+                        st.markdown(f"""
+                            - <span style="color: #39FF14">**Total Call Premium**</span>: ${total_call_premium:,.2f} ({total_call_contracts:,} contracts)
+                            - <span style="color: #FF4500">**Total Put Premium**</span>: ${total_put_premium:,.2f} ({total_put_contracts:,} contracts)
+                            - <span style="color: #39FF14">**Avg. Call Premium per Contract**</span>: ${avg_call_premium:,.2f}
+                            - <span style="color: #FF4500">**Avg. Put Premium per Contract**</span>: ${avg_put_premium:,.2f}
+                        """, unsafe_allow_html=True)
+                        st.markdown('<div class="metric-divider"></div>', unsafe_allow_html=True)
+                        with st.markdown("ITM/OTM Breakdown"):
+                            st.markdown(f"""
+                                - <span style="color: #39FF14">ITM Calls</span>: ${itm_call_premium:,.2f} ({itm_call_contracts:,} contracts)
+                                - <span style="color: #39FF14">OTM Calls</span>: ${otm_call_premium:,.2f} ({otm_call_contracts:,} contracts)
+                                - <span style="color: #FF4500">ITM Puts</span>: ${itm_put_premium:,.2f} ({itm_put_contracts:,} contracts)
+                                - <span style="color: #FF4500">OTM Puts</span>: ${otm_put_premium:,.2f} ({otm_put_contracts:,} contracts)
+                            """, unsafe_allow_html=True)
+
+                    # Calcular el objetivo de precio del Market Maker
+                    
+                    if total_call_contracts > 0 and total_put_contracts > 0:
+                        # OI Imbalance
+                        oi_imbalance = (total_call_contracts - total_put_contracts) / (total_call_contracts + total_put_contracts)
+                        premium_ratio = min(total_call_premium / total_put_premium if total_put_premium > 0 else 1.0, 10.0)  # Cap at 10
+                        daily_range_dollars = current_price * daily_range
+                        oi_adjustment = -daily_range_dollars * oi_imbalance * premium_ratio * 2  # Doble peso para quemar calls
+                        # Volatilidad como factor
+                        volatility_factor = (iv / 100) * (daily_range / 0.01)  # Escalar por daily range
+                        # Gamma Adjustment
+                        itm_call_oi_est = itm_call_contracts if itm_call_contracts > 0 else total_call_contracts * 0.4  # Usar real o estimar 40%
+                        itm_put_oi_est = itm_put_contracts if itm_put_contracts > 0 else total_put_contracts * 0.4
+                        gamma_adjustment = iv * (itm_call_oi_est - itm_put_oi_est) / (itm_call_oi_est + itm_put_oi_est + 1)
+                        # Theta Adjustment
+                        theta_adjustment = -daily_range_dollars * (total_call_contracts / (total_call_contracts + total_put_contracts)) * 2
+                        # Base Price
+                        base_price = max_pain if max_pain is not None and current_price * 0.5 <= max_pain <= current_price * 1.5 else current_price
+                        # Calcular el precio objetivo
+                        target_price = base_price + (oi_adjustment * volatility_factor) - gamma_adjustment + theta_adjustment
+                        # Limitar dentro del rango diario
+                        target_price = max(current_price - daily_range_dollars, min(current_price + daily_range_dollars, target_price))
+                        # Determinar dirección
+                        direction = "Bearish" if target_price < current_price else "Bullish"
+                        st.markdown(f"""
+                            - <span style="color: #FFD700">**Target Price**</span>: ${target_price:.2f}
+                            - <span style="color: #FFD700">**Direction**</span>: {direction}
+                        """, unsafe_allow_html=True)
+                        logger.info(f"MM Price Target: ${target_price:.2f}, Direction: {direction}, Base Price: ${base_price:.2f}, OI Adjustment: ${oi_adjustment:.2f}, Volatility Factor: {volatility_factor:.2f}, Gamma Adjustment: ${gamma_adjustment:.2f}, Theta Adjustment: ${theta_adjustment:.2f}")
+                    else:
+                        st.warning("Insufficient contract data to calculate Market Maker price target.")
+                        logger.warning("No valid contracts for MM price target calculation")
+                    st.markdown('<div class="metric-divider"></div>', unsafe_allow_html=True)
+                else:
+                    st.warning(f"No options data available for {ticker} on nearest expiration date.")
+                    logger.error(f"No options data returned for {ticker} on {expiration_dates[0]}")
+                    total_call_premium = 0.0
+                    total_put_premium = 0.0
+                    total_call_contracts = 0
+                    total_put_contracts = 0
+                    itm_call_premium = 0.0
+                    otm_call_premium = 0.0
+                    itm_put_premium = 0.0
+                    otm_put_premium = 0.0
+                    itm_call_contracts = 0
+                    otm_call_contracts = 0
+                    itm_put_contracts = 0
+                    otm_put_contracts = 0
+                    avg_call_premium = 0.0
+                    avg_put_premium = 0.0
+            else:
+                st.warning(f"No options data available for {ticker} on nearest expiration date.")
+                logger.error(f"No expiration dates found for {ticker}")
+                total_call_premium = 0.0
+                total_put_premium = 0.0
+                total_call_contracts = 0
+                total_put_contracts = 0
+                itm_call_premium = 0.0
+                otm_call_premium = 0.0
+                itm_put_premium = 0.0
+                otm_put_premium = 0.0
+                itm_call_contracts = 0
+                otm_call_contracts = 0
+                itm_put_contracts = 0
+                otm_put_contracts = 0
+                avg_call_premium = 0.0
+                avg_put_premium = 0.0
+
+            # Gráfico de Open Interest con Gamma, Volume, Delta para todas las expiraciones
+            @st.cache_resource
+            def create_chart(ticker, expiration_dates, current_price, max_pain, sentiment, daily_range, momentum):
+                # Procesar datos por strike para todas las expiraciones
+                strike_data = {}
+                with ThreadPoolExecutor(max_workers=min(num_workers, len(expiration_dates))) as executor:
+                    futures = [executor.submit(get_options_data, ticker, exp_date) for exp_date in expiration_dates]
+                    for i, future in enumerate(futures):
+                        try:
+                            options_data = future.result()
+                            if not options_data:
+                                logger.warning(f"No options data for {ticker} on {expiration_dates[i]}")
+                                continue
+                            for opt in options_data:
+                                try:
+                                    strike = float(opt.get("strike", 0))
+                                    # Filtrar strikes dentro de ±15% del precio actual
+                                    if not (current_price * 0.85 <= strike <= current_price * 1.15):
+                                        continue
+                                    opt_type = opt.get("option_type", "").upper()
+                                    oi = int(opt.get("open_interest", 0) or 0)
+                                    volume = int(opt.get("volume", 0) or 0)
+                                    iv = float(opt.get("implied_volatility", 0) or 0) if opt.get("implied_volatility") is not None else 0.0
+                                    gamma = float(opt.get("greeks", {}).get("gamma", 0) or 0)
+                                    delta = float(opt.get("greeks", {}).get("delta", 0) or 0)
+
+                                    if strike not in strike_data:
+                                        strike_data[strike] = {
+                                            "buy_call_oi": 0, "sell_call_oi": 0,
+                                            "buy_put_oi": 0, "sell_put_oi": 0,
+                                            "total_oi": 0, "volume": 0,
+                                            "iv": 0, "gamma": 0, "delta": 0
+                                        }
+                                    strike_data[strike]["total_oi"] += oi
+                                    strike_data[strike]["volume"] += volume
+                                    strike_data[strike]["iv"] += iv * oi
+                                    strike_data[strike]["gamma"] += gamma * oi
+                                    strike_data[strike]["delta"] += delta * oi
+                                    action = "BUY" if (strike, opt_type, "BUY") in signal_dict else "SELL"
+                                    if opt_type == "CALL":
+                                        if action == "BUY":
+                                            strike_data[strike]["buy_call_oi"] += oi
+                                        else:
+                                            strike_data[strike]["sell_call_oi"] += oi
+                                    elif opt_type == "PUT":
+                                        if action == "BUY":
+                                            strike_data[strike]["buy_put_oi"] += oi
+                                        else:
+                                            strike_data[strike]["sell_put_oi"] += oi
+                                except Exception as e:
+                                    logger.warning(f"Skipping option at strike {strike} for {ticker}: {str(e)}")
+                                    continue
+                        except Exception as e:
+                            logger.error(f"Error fetching options data for {ticker} on {expiration_dates[i]}: {str(e)}")
+                            continue
+
+                # Convertir a listas para Plotly
+                strikes = sorted(strike_data.keys())
+                buy_call_oi = [strike_data[s]["buy_call_oi"] for s in strikes]
+                sell_call_oi = [strike_data[s]["sell_call_oi"] for s in strikes]
+                buy_put_oi = [strike_data[s]["buy_put_oi"] for s in strikes]
+                sell_put_oi = [strike_data[s]["sell_put_oi"] for s in strikes]
+                total_oi = [strike_data[s]["total_oi"] for s in strikes]
+                volume = [strike_data[s]["volume"] for s in strikes]
+                iv_by_strike = [strike_data[s]["iv"] / total_oi[i] if total_oi[i] >= 10 else 0 for i, s in enumerate(strikes)]  # Filter low OI
+                gamma_by_strike = [strike_data[s]["gamma"] / total_oi[i] if total_oi[i] >= 10 else 0 for i, s in enumerate(strikes)]
+                delta_by_strike = [strike_data[s]["delta"] / total_oi[i] if total_oi[i] >= 10 else 0 for i, s in enumerate(strikes)]
+
+                logger.debug(f"Strikes: {strikes[:5]}...")
+                logger.debug(f"Buy Call OI: {buy_call_oi[:5]}...")
+                logger.debug(f"IV by Strike: {iv_by_strike[:5]}...")
+                logger.debug(f"Gamma by Strike: {gamma_by_strike[:5]}...")
+                logger.debug(f"Delta by Strike: {delta_by_strike[:5]}...")
+
+                logger.info(f"Chart data for {ticker} across {len(expiration_dates)} expirations: {len(strikes)} strikes, Total Volume: {sum(volume)}")
+
+                # Validar IV data
+                valid_iv_count = len([iv for iv in iv_by_strike if iv > 0])
+                iv_variance = max(iv_by_strike) - min(iv_by_strike) if valid_iv_count > 0 else 0
+                iv_valid = valid_iv_count >= len(strikes) * 0.1 and iv_variance > 0.01
+                logger.debug(f"IV Valid: {iv_valid}, Non-zero IV count: {valid_iv_count}, IV Variance: {iv_variance:.4f}")
+
+                # Encontrar el strike ATM más cercano
+                atm_strike = min(strikes, key=lambda x: abs(x - current_price)) if strikes else current_price
+
+                # Calcular y_min y y_max antes de usarlos
+                y_min = min(min([min(buy_call_oi), min(sell_call_oi), min([-x for x in buy_put_oi]), min([-x for x in sell_put_oi])]), -100) * 1.1
+                y_max = max(max([sum(x) for x in zip(buy_call_oi, sell_call_oi)]), 100) * 1.1
+
+                fig = go.Figure()
+                # Barras Calls (arriba)
+                fig.add_trace(go.Bar(
+                    x=strikes,
+                    y=buy_call_oi,
+                    name="Buy Calls OI",
+                    marker_color="#32CD32",
+                    hovertemplate="<b>Buy Call OI</b>: %{y:,}<extra></extra>",
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                ))
+                fig.add_trace(go.Bar(
+                    x=strikes,
+                    y=sell_call_oi,
+                    name="Sell Calls OI",
+                    marker_color="#00B7EB",
+                    hovertemplate="<b>Sell Call OI</b>: %{y:,}<extra></extra>",
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                ))
+                # Barras Puts (abajo, negativo)
+                fig.add_trace(go.Bar(
+                    x=strikes,
+                    y=[-x for x in buy_put_oi],
+                    name="Buy Puts OI",
+                    marker_color="#FF4500",
+                    hovertemplate="<b>Buy Put OI</b>: %{customdata[0]:,}<extra></extra>",
+                    customdata=list(zip(buy_put_oi)),
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                ))
+                fig.add_trace(go.Bar(
+                    x=strikes,
+                    y=[-x for x in sell_put_oi],
+                    name="Sell Puts OI",
+                    marker_color="#C71585",
+                    hovertemplate="<b>Sell Put OI</b>: %{customdata[0]:,}<extra></extra>",
+                    customdata=list(zip(sell_put_oi)),
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                ))
+                # Barras de Volume (semi-transparentes)
+                fig.add_trace(go.Bar(
+                    x=strikes,
+                    y=volume,
+                    name="Volume",
+                    marker_color="rgba(255, 255, 255, 0.3)",
+                    yaxis="y",
+                    hovertemplate="<b>Volume</b>: %{y:,}<extra></extra>",
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                ))
+                # Línea de Gamma
+                fig.add_trace(go.Scatter(
+                    x=strikes,
+                    y=gamma_by_strike,
+                    name="Gamma Exposure",
+                    line=dict(color="rgba(255, 193, 7, 0.5)", width=2),
+                    yaxis="y2",
+                    hovertemplate="<b>Gamma</b>: %{y:.4f}<extra></extra>",
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                ))
+                # Línea de IV (solo si es válida)
+                if iv_valid:
+                    fig.add_trace(go.Scatter(
+                        x=strikes,
+                        y=iv_by_strike,
+                        name="Implied Volatility",
+                        line=dict(color="rgba(0, 255, 255, 0.8)", width=2),  # Aumentar opacidad
+                        yaxis="y3",
+                        hovertemplate="<b>IV</b>: %{y:.2%}<extra></extra>",
+                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                    ))
+                # Línea de Delta
+                fig.add_trace(go.Scatter(
+                    x=strikes,
+                    y=delta_by_strike,
+                    name="Delta Exposure",
+                    line=dict(color="rgba(255, 69, 0, 0.5)", width=2),
+                    yaxis="y4",
+                    hovertemplate="<b>Delta</b>: %{y:.4f}<extra></extra>",
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                ))
+                # Líneas de referencia
+                # Current Price (Dotted)
+                fig.add_vline(
+                    x=current_price,
+                    line=dict(color="#39FF14", width=1, dash="dot"),
+                    annotation_text=f"Price: ${current_price:.2f}",
+                    annotation_position="top left",
+                    annotation_font=dict(color="#39FF14", size=10),
+                    annotation_bgcolor="rgba(0,0,0,0.5)",
+                    annotation_bordercolor="#39FF14",
+                    annotation_borderwidth=1
+                )
+                # Max Pain (Thinner)
+                if max_pain is not None:
+                    fig.add_vline(
+                        x=max_pain,
+                        line=dict(color="#FFC107", width=0.5, dash="dash"),
+                        annotation_text=f"Max Pain: ${max_pain:.2f}",
+                        annotation_position="top right",
+                        annotation_font=dict(color="#FFC107", size=10)
+                    )
+                # ATM Strike (Cyan, Solid)
+                fig.add_vline(
+                    x=atm_strike,
+                    line=dict(color="#00FFFF", width=0.5, dash="solid"),
+                    annotation_text=f"ATM: ${atm_strike:.2f}",
+                    annotation_position="bottom left",
+                    annotation_font=dict(color="#00FFFF", size=10),
+                    annotation_bgcolor="rgba(0,0,0,0.5)",
+                    annotation_bordercolor="#00FFFF",
+                    annotation_borderwidth=1
+                )
+
+                # Configurar layout
+                layout_dict = {
+                    "title": "Data",
+                    "xaxis_title": "Strike Price",
+                    "yaxis_title": "Open Interest / Volume",
+                    "yaxis2": dict(title="Gamma Exposure", overlaying="y", side="right", showgrid=False, range=[0, max(gamma_by_strike) * 1.1] if max(gamma_by_strike) > 0 else [0, 1], anchor="free", position=0.92),
+                    "template": "plotly_dark",
+                    "barmode": "stack",
+                    "hovermode": "x unified",
+                    "showlegend": True,
+                    "hoverlabel": dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1),
+                    "height": 600,
+                    "dragmode": "zoom"
+                }
+                # Agregar yaxis3 solo si IV es válido
+                if iv_valid:
+                    layout_dict["yaxis3"] = dict(title="Implied Volatility", overlaying="y", side="right", showgrid=False, range=[0, max(iv_by_strike) * 1.1] if max(iv_by_strike) > 0 else [0, 1], anchor="free", position=0.95)
+                    layout_dict["yaxis4"] = dict(title="Delta Exposure", overlaying="y", side="right", showgrid=False, range=[0, max(delta_by_strike) * 1.1] if max(delta_by_strike) > 0 else [0, 1], anchor="free", position=0.98)
+                else:
+                    layout_dict["yaxis4"] = dict(title="Delta Exposure", overlaying="y", side="right", showgrid=False, range=[0, max(delta_by_strike) * 1.1] if max(delta_by_strike) > 0 else [0, 1], anchor="free", position=0.95)
+
+                fig.update_layout(**layout_dict)
+                return fig
+
+            if expiration_dates:
+                # Obtener señales para determinar Buy/Sell (usando primera expiración para consistencia)
+                try:
+                    signals = generate_signals(ticker, expiration_dates[0], current_price, options_data, sentiment, daily_range, momentum)
+                    signal_dict = {(s["Strike"], s["Type"], s["Action"]) for s in signals["Daily"] + signals["Weekly"] + signals["Monthly"]}
+                except Exception as e:
+                    logger.error(f"Error generating signals for chart: {str(e)}")
+                    signal_dict = set()
+
+                # Crear y mostrar gráfico con todas las expiraciones
+                fig = create_chart(ticker, expiration_dates, current_price, max_pain, sentiment, daily_range, momentum)
+                st.plotly_chart(fig, use_container_width=True)
+
+                # JavaScript para agregar el precio del strike en la línea de hover
+                st.markdown("""
+                    <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        var plot = document.querySelector('.js-plotly-plot');
+                        if (plot) {
+                            var svg = plot.querySelector('.main-svg');
+                            var text = null;
+
+                            plot.on('plotly_hover', function(data) {
+                                var strike = data.points[0].x.toFixed(2);
+                                if (!text) {
+                                    text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                                    text.setAttribute('x', data.points[0].xa._offset + data.points[0].xa.c2p(data.points[0].x));
+                                    text.setAttribute('y', svg.getBoundingClientRect().height - 20);
+                                    text.setAttribute('text-anchor', 'middle');
+                                    text.setAttribute('font-size', '12px');
+                                    text.setAttribute('font-family', 'Courier New, monospace');
+                                    text.setAttribute('fill', '#39FF14');
+                                    text.setAttribute('text-shadow', '0 0 5px rgba(57, 255, 20, 0.8)');
+                                    svg.appendChild(text);
+                                }
+                                text.textContent = 'Strike: $' + strike;
+                            });
+
+                            plot.on('plotly_unhover', function(data) {
+                                if (text) {
+                                    text.remove();
+                                    text = null;
+                                }
+                            });
+                        }
+                    });
+                    </script>
+                """, unsafe_allow_html=True)
+
+            # Señales de Entrada (Solo Mensuales)
+            st.markdown('<div class="section-header"></div>', unsafe_allow_html=True)
+            contract_type = "Monthly"
+            if all_signals[contract_type]:
+                # Deduplicate signals based on ticker, strike, type, and expiration
+                unique_signals = []
+                seen = set()
+                for signal in all_signals[contract_type]:
+                    signal_tuple = (ticker, signal["Strike"], signal["Type"], signal["Expiration"])
+                    if signal_tuple not in seen:
+                        seen.add(signal_tuple)
+                        unique_signals.append(signal)
+
+                st.markdown(f'<div class="section-header">{contract_type} Signals</div>', unsafe_allow_html=True)
+                for idx, signal in enumerate(unique_signals):
+                    # Filtrar contratos cerrados
+                    if (ticker, signal["Strike"], signal["Type"], signal["Expiration"]) in closed_contracts:
+                        continue
+
+                    exp_date_short = datetime.strptime(signal["Expiration"], "%Y-%m-%d").strftime("%m/%d")
+                    signal_key = f"{ticker}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}"
+
+                    # Inicializar estado de activación
+                    if signal_key not in st.session_state:
+                        st.session_state[signal_key] = True
+                        assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
+                        # Forzar actualización inmediata con reintentos
+                        for attempt in range(DB_RETRIES):
+                            try:
+                                pl_data = update_contract_prices()
+                                for key, data in pl_data.items():
+                                    st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
+                                    st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
+                                    st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
+                                logger.info(f"Price update successful for {signal_key}")
+                                break
+                            except Exception as e:
+                                logger.error(f"Price update attempt {attempt + 1} failed for {signal_key}: {str(e)}")
+                                if attempt < DB_RETRIES - 1:
+                                    time.sleep(DB_RETRY_DELAY)
+                                else:
+                                    st.session_state[f"pl_{signal_key}"] = 0.0
+                                    st.session_state[f"gamma_{key}"] = 0.0
+                                    st.session_state[f"theta_{key}"] = 0.0
+                                    logger.warning(f"Set default metrics for {signal_key}: P/L=0.0, Gamma=0.0, Theta=0.0")
+
+                    # Obtener métricas
+                    pl_key = f"pl_{signal_key}"
+                    gamma_key = f"gamma_{signal_key}"
+                    theta_key = f"theta_{signal_key}"
+                    pl_value = st.session_state.get(pl_key, 0.0)
+                    gamma_value = st.session_state.get(gamma_key, 0.0)
+                    theta_value = st.session_state.get(theta_key, 0.0)
+                    pl_display = f"{pl_value:.2f}%" if pl_value is not None else "0.00%"
+                    gamma_display = f"{gamma_value:.4f}" if gamma_value is not None else "0.0000"
+                    theta_display = f"{theta_value:.4f}" if theta_value is not None else "0.0000"
+
+                    # Determinar color dinámico para P/L
+                    pl_color = "#39FF14" if pl_value > 0 else "#FF4500" if pl_value < 0 else "#FFFFFF"
+                    logger.debug(f"P/L for {signal_key}: {pl_value}, Color: {pl_color}")
+
+                    # Debug: Mostrar estado de las métricas
+                    if pl_value == 0.0 and gamma_value == 0.0 and theta_value == 0.0:
+                        logger.warning(f"Metrics defaulted for {signal_key}: P/L={pl_value}, Gamma={gamma_value}, Theta={theta_value}")
+
+                    # Determinar estado del contrato
+                    with db_lock:
+                        with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                SELECT closed FROM assigned_contracts 
+                                WHERE ticker = ? AND strike = ? AND option_type = ? AND expiration_date = ?
+                            """, (ticker, signal["Strike"], signal["Type"], signal["Expiration"]))
+                            status_result = cursor.fetchone()
+                    is_closed = status_result and status_result[0]
+                    status = "Closed" if is_closed else "Active" if st.session_state[signal_key] else "Closed"
+
+                    # Sincronizar session_state
+                    if is_closed:
+                        st.session_state[signal_key] = False
+
+                    # Determinar clase CSS según % P/L
+                    signal_class = "signal-box-neutral"
+                    if pl_value is not None:
+                        signal_class = "signal-box-positive" if pl_value > 0 else "signal-box-negative" if pl_value < 0 else "signal-box-neutral"
+
+                    # Dividir ticket en columnas
+                    col_signal, col_status = st.columns([3, 1])
+                    with col_signal:
+                        st.markdown(f"""
+                            <div class="{signal_class}">
+                                <b>{ticker}${signal['Strike']:.0f} {signal['Type']} {exp_date_short}</b><br>
+                                Price: ${signal['Price']:.2f} | OI: {signal['OI']:,} | IV: {signal['IV']:.2%}<br>
+                                Prob OTM: {signal['Prob OTM']:.2%} | <span class="highlight">R/R: {signal['R/R']:.2f}</span><br>
+                                Max Pain Distance: ${signal['Max Pain Distance']:.2f}<br>
+                                <b><span style="color: {pl_color}">P/L (%): {pl_display}</span></b><br>
+                                <i>Score: {signal['Score']:.2f}</i>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+                        # Controles
+                        if st.button("Activate", key=f"activate_{contract_type}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}_tab11_{idx}", help="Assign this contract", disabled=st.session_state[signal_key]):
                             st.session_state[signal_key] = True
                             assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
                             # Forzar actualización inmediata con reintentos
@@ -5681,158 +6119,81 @@ def main():
                                         st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
                                         st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
                                         st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
-                                    logger.info(f"Price update successful for {signal_key}")
+                                    logger.info(f"Price update successful after activation for {signal_key}")
                                     break
                                 except Exception as e:
-                                    logger.error(f"Price update attempt {attempt + 1} failed for {signal_key}: {str(e)}")
+                                    logger.error(f"Price update attempt {attempt + 1} failed after activation for {signal_key}: {str(e)}")
                                     if attempt < DB_RETRIES - 1:
                                         time.sleep(DB_RETRY_DELAY)
                                     else:
-                                        # Asignar valores predeterminados temporales
                                         st.session_state[f"pl_{signal_key}"] = 0.0
-                                        st.session_state[f"gamma_{signal_key}"] = 0.0
-                                        st.session_state[f"theta_{signal_key}"] = 0.0
+                                        st.session_state[f"gamma_{key}"] = 0.0
+                                        st.session_state[f"theta_{key}"] = 0.0
                                         logger.warning(f"Set default metrics for {signal_key}: P/L=0.0, Gamma=0.0, Theta=0.0")
+                            st.rerun()
 
-                        # Obtener métricas
-                        pl_key = f"pl_{signal_key}"
-                        gamma_key = f"gamma_{signal_key}"
-                        theta_key = f"theta_{signal_key}"
-                        pl_value = st.session_state.get(pl_key, 0.0)  # Default a 0.0 si None
-                        gamma_value = st.session_state.get(gamma_key, 0.0)
-                        theta_value = st.session_state.get(theta_key, 0.0)
-                        pl_display = f"{pl_value:.2f}%" if pl_value is not None else "0.00%"
-                        gamma_display = f"{gamma_value:.4f}" if gamma_value is not None else "0.0000"
-                        theta_display = f"{theta_value:.4f}" if theta_value is not None else "0.0000"
+                    with col_status:
+                        st.markdown(f"""
+                            <div class="status-box">
+                                <b>Contract Status</b><br>
+                                Status: {status}<br>
+                                Gamma: {gamma_display}<br>
+                                Theta: {theta_display}<br>
+                                <span style="color: {pl_color}">P/L (%): {pl_display}</span>
+                            </div>
+                        """, unsafe_allow_html=True)
 
-                        # Debug: Mostrar estado de las métricas
-                        if pl_value == 0.0 and gamma_value == 0.0 and theta_value == 0.0:
-                            logger.warning(f"Metrics defaulted for {signal_key}: P/L={pl_value}, Gamma={gamma_value}, Theta={theta_value}")
-
-                        # Determinar estado del contrato
-                        with db_lock:
-                            with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
-                                cursor = conn.cursor()
-                                cursor.execute("""
-                                    SELECT closed FROM assigned_contracts 
-                                    WHERE ticker = ? AND strike = ? AND option_type = ? AND expiration_date = ?
-                                """, (ticker, signal["Strike"], signal["Type"], signal["Expiration"]))
-                                status_result = cursor.fetchone()
-                        is_closed = status_result and status_result[0]
-                        status = "Closed" if is_closed else "Active" if st.session_state[signal_key] else "Closed"
-
-                        # Sincronizar session_state
-                        if is_closed:
-                            st.session_state[signal_key] = False
-
-                        # Determinar clase CSS según % P/L
-                        signal_class = "signal-box-neutral"
-                        if pl_value is not None:
-                            signal_class = "signal-box-positive" if pl_value > 0 else "signal-box-negative" if pl_value < 0 else "signal-box-neutral"
-
-                        # Dividir ticket en columnas
-                        col_signal, col_status = st.columns([3, 1])
-                        with col_signal:
-                            st.markdown(f"""
-                                <div class="{signal_class}">
-                                    <b>{ticker}${signal['Strike']:.0f} {signal['Type']} {exp_date_short}</b><br>
-                                    Price: ${signal['Price']:.2f} | OI: {signal['OI']:,} | IV: {signal['IV']:.2%}<br>
-                                    Prob OTM: {signal['Prob OTM']:.2%} | <span class="highlight">R/R: {signal['R/R']:.2f}</span><br>
-                                    Max Pain Distance: ${signal['Max Pain Distance']:.2f}<br>
-                                    <b>P/L (%): {pl_display}</b><br>
-                                    <i>Score: {signal['Score']:.2f}</i>
-                                </div>
-                            """, unsafe_allow_html=True)
-
-                            # Controles
-                            # Solo el botón Activate
-                            if st.button("Activate", key=f"activate_{contract_type}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}_tab11_{idx}", help="Assign this contract", disabled=st.session_state[signal_key]):
-                                st.session_state[signal_key] = True
-                                assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
-                                # Forzar actualización inmediata con reintentos
-                                for attempt in range(DB_RETRIES):
-                                    try:
-                                        pl_data = update_contract_prices()
-                                        for key, data in pl_data.items():
-                                            st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
-                                            st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
-                                            st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
-                                        logger.info(f"Price update successful after activation for {signal_key}")
-                                        break
-                                    except Exception as e:
-                                        logger.error(f"Price update attempt {attempt + 1} failed after activation for {signal_key}: {str(e)}")
-                                        if attempt < DB_RETRIES - 1:
-                                            time.sleep(DB_RETRY_DELAY)
-                                        else:
-                                            # Asignar valores predeterminados temporales
-                                            st.session_state[f"pl_{signal_key}"] = 0.0
-                                            st.session_state[f"gamma_{signal_key}"] = 0.0
-                                            st.session_state[f"theta_{signal_key}"] = 0.0
-                                            logger.warning(f"Set default metrics after activation for {signal_key}: P/L=0.0, Gamma=0.0, Theta=0.0")
-                                st.rerun()  # Rerun only on activation
-
-                        with col_status:
-                            st.markdown(f"""
-                                <div class="status-box">
-                                    <b>Contract Status</b><br>
-                                    Status: {status}<br>
-                                    Gamma: {gamma_display}<br>
-                                    Theta: {theta_display}<br>
-                                    P/L (%): {pl_display}
-                                </div>
-                            """, unsafe_allow_html=True)
-
-                    signals_df = pd.DataFrame(unique_signals)
-                    signals_csv = signals_df.to_csv(index=False)
-                    st.download_button(
-                        label=f"📥 Download {contract_type} Signals",
-                        data=signals_csv,
-                        file_name=f"{ticker}_{contract_type.lower()}_signals.csv",
-                        mime="text/csv",
-                        key=f"download_signals_{contract_type.lower()}_tab11"
-                    )
+                signals_df = pd.DataFrame(unique_signals)
+                signals_csv = signals_df.to_csv(index=False)
+                st.download_button(
+                    label=f"📥 Download {contract_type} Signals",
+                    data=signals_csv,
+                    file_name=f"{ticker}_{contract_type.lower()}_signals.csv",
+                    mime="text/csv",
+                    key=f"download_signals_{contract_type.lower()}_tab11"
+                )
+            else:
+                st.warning(f"No high-confidence monthly signals found for {ticker}. Try a higher-liquidity ticker or adjust criteria.")
+                if debug_info["total_contracts"] > 0:
+                    st.markdown(f"""
+                        <div class="debug-box">
+                            <b>Debug Info for Monthly Signals</b><br>
+                            Total Contracts Processed: {debug_info["total_contracts"]}<br>
+                            Valid Contracts (OI >= 10): {debug_info["valid_contracts"]}<br>
+                            Top Rejection Reasons:<br>
+                            {'<br>'.join(set(debug_info["rejections"][:5]))}
+                        </div>
+                    """, unsafe_allow_html=True)
                 else:
-                    st.warning(f"No high-confidence {contract_type.lower()} signals found. Try a higher-liquidity ticker or adjust criteria.")
-                    if debug_info["total_contracts"] > 0:
-                        st.markdown(f"""
-                            <div class="debug-box">
-                                <b>Debug Info for {contract_type} Signals</b><br>
-                                Total Contracts Processed: {debug_info["total_contracts"]}<br>
-                                Valid Contracts (OI >= 10): {debug_info["valid_contracts"]}<br>
-                                Top Rejection Reasons:<br>
-                                {'<br>'.join(set(debug_info["rejections"][:5]))}
-                            </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                            <div class="debug-box">
-                                <b>Debug Info for {contract_type} Signals</b><br>
-                                No contracts were processed. Check Tradier API connectivity or ticker validity.
-                            </div>
-                        """, unsafe_allow_html=True)
+                    st.markdown(f"""
+                        <div class="debug-box">
+                            <b>Debug Info for Monthly Signals</b><br>
+                            No contracts were processed. Check Tradier API connectivity or ticker validity.
+                        </div>
+                    """, unsafe_allow_html=True)
 
             # Instrucciones y métricas clave
             st.markdown("""
                 <div class="instructions-box">
-                    <h2 style="color: #00FFFF; font-family: 'Courier New', Courier, monospace;">Instrucciones y Métricas Clave</h2>
+                    <h2 style="color: #00FFFF; font-family: 'Courier New', Courier, monospace;">Instructions and Key Metrics</h2>
                     <ul style="color: #FFFFFF; font-family: 'Courier New', Courier, monospace;">
-                        <li><b>Prob OTM</b>: Indica la probabilidad de que el contrato expire sin valor (e.g., 77.93% OTM → ~22% probabilidad ITM).</li>
-                        <li><b>R/R</b>: Relación riesgo/recompensa. Un R/R alto (e.g., 6.15) significa que las ganancias potenciales superan el riesgo.</li>
-                        <li><b>Score</b>: Puntajes más altos (e.g., 59.98 vs. 0.73) reflejan mayor confianza en la señal.</li>
-                        <li><b>Max Pain Distance</b>: Cero o bajo (e.g., $0.00) sugiere alta probabilidad de que el precio cierre cerca de ese strike.</li>
-                        <li><b>P/L (%)</b>: Porcentaje de ganancia/pérdida desde la asignación, actualizado al hacer clic en "Update Prices Now". Fondo verde para ganancias, rojo para pérdidas.</li>
-                        <li><b>Gamma</b>: Mide la tasa de cambio del delta, indicando sensibilidad al movimiento del precio.</li>
-                        <li><b>Theta</b>: Mide la pérdida de valor del contrato por el paso del tiempo.</li>
-                        <li><b>Activate</b>: Las señales se activan automáticamente. Use el botón verde (Activate) para asignar un contrato.</li>
-                        <li><b>Update Prices Now</b>: Actualiza manualmente los precios y métricas de los contratos activos.</li>
-                        <li><b>Status</b>: Indica si el contrato está activo ("Active") o cerrado ("Closed").</li>
+                        <li><b>Prob OTM</b>: Probability the contract expires out-of-the-money (e.g., 77.93% OTM → ~22% ITM probability).</li>
+                        <li><b>R/R</b>: Risk/reward ratio. High R/R (e.g., 6.15) indicates potential gains outweigh risk.</li>
+                        <li><b>Score</b>: Higher scores (e.g., 59.98 vs. 0.73) reflect greater signal confidence.</li>
+                        <li><b>Max Pain Distance</b>: Zero or low (e.g., $0.00) suggests high likelihood of price closing near that strike.</li>
+                        <li><b>P/L (%)</b>: Profit/loss percentage since assignment, updated via "Update Prices Now". Green for gains, red for losses.</li>
+                        <li><b>Gamma</b>: Measures delta’s rate of change, indicating price movement sensitivity.</li>
+                        <li><b>Theta</b>: Measures contract value loss due to time decay.</li>
+                        <li><b>Activate</b>: Signals activate automatically. Use the green "Activate" button to assign a contract.</li>
+                        <li><b>Update Prices Now</b>: Manually updates prices and metrics for active contracts.</li>
+                        <li><b>Status</b>: Indicates if the contract is "Active" or "Closed".</li>
                     </ul>
                 </div>
             """, unsafe_allow_html=True)
 
             # Pie de página
             st.markdown("---")
-            st.markdown("*Developed by Ozy | © 2025*")
+            st.markdown("*Developed by Ozy  | © 2025*")
 
             
 if __name__ == "__main__":
