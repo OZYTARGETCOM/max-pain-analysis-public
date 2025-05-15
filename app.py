@@ -28,7 +28,15 @@ import threading
 import os
 from datetime import timezone
 import pytz
-import threading
+
+from time import sleep
+from typing import Optional, Dict
+
+from requests.exceptions import RequestException
+
+from contextlib import contextmanager
+from threading import Lock
+
 
 
 
@@ -383,19 +391,21 @@ def get_implied_volatility(symbol: str) -> Optional[float]:
         logger.error(f"Error fetching IV for {symbol}: {e}")
         return None
 
-def fetch_api_data(url: str, params: Dict, headers: Dict, source: str) -> Optional[Dict]:
-    """
-    Realiza una solicitud GET a una API con manejo de reintentos y logging.
-    """
+def fetch_api_data(url: str, params: Dict, headers: Dict, source: str, max_retries: int = 5) -> Optional[Dict]:
     session = session_fmp if "FMP" in source else session_tradier
-    try:
-        response = session.get(url, params=params, headers=headers, timeout=5)
-        response.raise_for_status()
-        logger.debug(f"{source} fetch success: {len(response.text)} bytes")
-        return response.json()
-    except requests.RequestException as e:
-        logger.error(f"{source} error: {e}")
-        return None
+    for attempt in range(max_retries):
+        try:
+            response = session.get(url, params=params, headers=headers, timeout=5)
+            response.raise_for_status()
+            logger.debug(f"{source} fetch success: {len(response.text)} bytes")
+            return response.json()
+        except RequestException as e:
+            logger.warning(f"{source} attempt {attempt + 1}/{max_retries} failed: {str(e)}")
+            if attempt < max_retries - 1:
+                sleep(2 ** attempt)  # Exponential backoff: 1s, 2s, 4s, ...
+            else:
+                logger.error(f"{source} failed after {max_retries} attempts: {str(e)}")
+                return None
 
 @st.cache_data(ttl=60)
 def get_current_price(ticker: str) -> float:
@@ -2870,35 +2880,43 @@ def init_db():
                 conn.commit()
                 logger.info("Created assigned_contracts table")
 
-def assign_contract(ticker: str, strike: float, option_type: str, expiration_date: str, assigned_price: float):
-    retries = DB_RETRIES
-    for attempt in range(retries):
+
+db_lock = Lock()
+DB_PATH = "options_tracker.db"
+
+@contextmanager
+def get_db_connection():
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH, timeout=20)
+        conn.execute("PRAGMA journal_mode=WAL")
         try:
-            with db_lock:
-                with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
-                    cursor = conn.cursor()
+            yield conn
+        finally:
+            conn.close()
+
+def assign_contract(ticker: str, strike: float, option_type: str, expiration_date: str, assigned_price: float):
+    for attempt in range(DB_RETRIES):
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id FROM assigned_contracts 
+                    WHERE ticker = ? AND strike = ? AND option_type = ? AND expiration_date = ? AND closed = FALSE
+                """, (ticker, strike, option_type, expiration_date))
+                if not cursor.fetchone():
+                    assigned_at = datetime.now(timezone.utc).isoformat()
                     cursor.execute("""
-                        SELECT id FROM assigned_contracts 
-                        WHERE ticker = ? AND strike = ? AND option_type = ? AND expiration_date = ? AND closed = FALSE
-                    """, (ticker, strike, option_type, expiration_date))
-                    existing = cursor.fetchone()
-                    
-                    if not existing:
-                        assigned_at = datetime.now(timezone.utc).isoformat()
-                        cursor.execute("""
-                            INSERT INTO assigned_contracts (
-                                ticker, strike, option_type, expiration_date, assigned_price, assigned_at, closed
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (ticker, strike, option_type, expiration_date, assigned_price, assigned_at, False))
-                        conn.commit()
-                        logger.info(f"Assigned contract: {ticker} {strike} {option_type} expiring {expiration_date}")
-                    else:
-                        logger.info(f"Contract already exists: {ticker} {strike} {option_type} expiring {expiration_date}")
-                    return
+                        INSERT INTO assigned_contracts (
+                            ticker, strike, option_type, expiration_date, assigned_price, assigned_at, closed
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (ticker, strike, option_type, expiration_date, assigned_price, assigned_at, False))
+                    conn.commit()
+                    logger.info(f"Assigned contract: {ticker} {strike} {option_type} exp {expiration_date}")
+                return
         except sqlite3.OperationalError as e:
-            if "database is locked" in str(e) and attempt < retries - 1:
-                logger.warning(f"Database locked in assign_contract, retrying ({attempt + 1}/{retries})...")
-                time.sleep(DB_RETRY_DELAY)
+            if "database is locked" in str(e) and attempt < DB_RETRIES - 1:
+                logger.warning(f"Database locked, retrying ({attempt + 1}/{DB_RETRIES})...")
+                sleep(DB_RETRY_DELAY)
             else:
                 logger.error(f"Failed to assign contract: {e}")
                 raise
@@ -4960,7 +4978,7 @@ def main():
         # Tab 12: Performance Map
         # Tab 12: Performance Map
     with tab10:
-        
+        # Estilo CSS personalizado, ajustado para una tabla más espaciosa
         st.markdown("""
             <style>
             /* Fondo oscuro estilo terminal para toda la app */
@@ -4990,42 +5008,42 @@ def main():
                 font-family: 'Courier New', Courier, monospace;
             }
             /* Estilos para el contenedor de la tabla */
-            div[data-testid="stTable"] {
+            div[data-testid="stDataFrame"] {
                 width: 100% !important;
                 max-width: 100% !important;
                 overflow-x: auto !important;
             }
             /* Estilos para la tabla con mayor especificidad */
-            div[data-testid="stTable"] table.tab12-table {
+            div[data-testid="stDataFrame"] table {
                 width: 100% !important;
                 max-width: 100% !important;
                 table-layout: fixed !important; /* Forzar el ancho de las columnas */
                 border-collapse: collapse !important;
             }
-            div[data-testid="stTable"] table.tab12-table th {
+            div[data-testid="stDataFrame"] table th {
                 background-color: #1A1F2B !important;
                 color: #00FFFF !important; /* Azul eléctrico */
                 font-weight: 700 !important;
-                padding: 6px !important; /* Reducido para compactar */
+                padding: 8px !important; /* Aumentado para más espacio */
                 border: 2px solid #39FF14 !important; /* Verde neón */
                 text-transform: uppercase !important;
-                font-size: 10px !important; /* Reducido para compactar */
+                font-size: 11px !important; /* Aumentado para legibilidad */
                 font-family: 'Courier New', Courier, monospace !important;
                 text-shadow: 0 0 3px rgba(0, 255, 255, 0.5) !important;
-                line-height: 1 !important; /* Reducir espaciado vertical */
-                overflow-wrap: break-word !important; /* Permitir división de texto */
+                line-height: 1.2 !important; /* Ajustado para legibilidad */
+                overflow-wrap: break-word !important;
                 word-wrap: break-word !important;
             }
-            div[data-testid="stTable"] table.tab12-table td {
+            div[data-testid="stDataFrame"] table td {
                 background-color: #0F1419 !important;
                 color: #E0E0E0 !important; /* Blanco grisáceo */
-                padding: 4px !important; /* Reducido para compactar */
+                padding: 6px !important; /* Aumentado para más espacio */
                 border: 2px solid #39FF14 !important; /* Verde neón */
                 text-align: center !important;
                 font-family: 'Courier New', Courier, monospace !important;
-                font-size: 10px !important; /* Reducido para compactar */
-                line-height: 1 !important; /* Reducir espaciado vertical */
-                overflow-wrap: break-word !important; /* Permitir división de texto */
+                font-size: 11px !important; /* Aumentado para legibilidad */
+                line-height: 1.2 !important; /* Ajustado para legibilidad */
+                overflow-wrap: break-word !important;
                 word-wrap: break-word !important;
             }
             /* Botón de descarga con estilo hacker */
@@ -5055,15 +5073,42 @@ def main():
             </style>
         """, unsafe_allow_html=True)
 
-        # Índices, sectores y bonos
+        # Índices, sectores, bonos y nuevos tickers
         assets = {
-            "SPY": "SPY", "Nasdaq 100": "QQQ", "Dow Jones": "DIA", "Russell 2000": "IWM",
-            "Basic Materials": "XLB", "Consumer Cyclical": "XLY", "Financials": "XLF",
-            "Real Estate": "XLRE", "Utilities": "XLU", "Communication": "XLC",
-            "Healthcare": "XLV", "Energy": "XLE", "Industrials": "XLI", "Technology": "XLK",
-            "Consumer Defensive": "XLP", "20+ Yr Treasury": "TLT", "7-10 Yr Treasury": "IEF",
-            "1-3 Yr Treasury": "SHY", "VIX": "^VIX", "Dollar Index": "UUP", "FTSE 100": "EZU",
-            "DAX": "DAX", "CAC 40": "EWQ", "Shanghai Comp": "ASHR", "Hang Seng": "EWH"
+            "SPY": "SPY",
+            "Nasdaq 100": "QQQ",
+            "Dow Jones": "DIA",
+            "Russell 2000": "IWM",
+            "Basic Materials": "XLB",
+            "Consumer Cyclical": "XLY",
+            "Financials": "XLF",
+            "Real Estate": "XLRE",
+            "Utilities": "XLU",
+            "Communication": "XLC",
+            "Healthcare": "XLV",
+            "Energy": "XLE",
+            "Industrials": "XLI",
+            "Technology": "XLK",
+            "Consumer Defensive": "XLP",
+            "20+ Yr Treasury": "TLT",
+            "7-10 Yr Treasury": "IEF",
+            "1-3 Yr Treasury": "SHY",
+            "VIX": "^VIX",
+            "Dollar Index": "UUP",
+            "FTSE 100": "EZU",
+            "DAX": "DAX",
+            "CAC 40": "EWQ",
+            "Shanghai Comp": "ASHR",
+            "Hang Seng": "EWH",
+            # Nuevos tickers agregados
+            "Tesla": "TSLA",
+            "Nvidia": "NVDA",
+            "Microsoft": "MSFT",
+            "Netflix": "NFLX",
+            "Amazon": "AMZN",
+            "Apple": "AAPL",
+            "Meta": "META",
+            "Google": "GOOGL"
         }
 
         # Obtener datos y calcular métricas
@@ -5265,32 +5310,71 @@ def main():
                     return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"  # Amarillo mostaza
 
             styled_df = df.style.format({
-                "1D_Ret": "{:.2f}%", "1W_Ret": "{:.2f}%", "1M_Ret": "{:.2f}%",
-                "1Q_Ret": "{:.2f}%", "1Y_Ret": "{:.2f}%", "Inst_Score": "{:.1f}",
-                "Day_Move%": "{:.2f}%", "VIX_Corr": "{:.2f}",
-                "Risk_Adj_Ret": "{:.2f}", "Opt_Vol_Spike": "{:.1f}",
+                "1D_Ret": "{:.2f}%",
+                "1W_Ret": "{:.2f}%",
+                "1M_Ret": "{:.2f}%",
+                "1Q_Ret": "{:.2f}%",
+                "1Y_Ret": "{:.2f}%",
+                "Inst_Score": "{:.1f}",
+                "Day_Move%": "{:.2f}%",
+                "VIX_Corr": "{:.2f}",
+                "Risk_Adj_Ret": "{:.2f}",
+                "Opt_Vol_Spike": "{:.1f}",
                 "Price": "{:.2f}"
-            }, na_rep="N/A").applymap(color_performance, subset=[f"{p}_Ret" for p in periods] + ["Day_Move%"]).applymap(color_is, subset=["Inst_Score"]).applymap(color_sentiment, subset=["Sentiment"]).applymap(color_vix_corr, subset=["VIX_Corr"]).applymap(color_risk_adj, subset=["Risk_Adj_Ret"]).applymap(color_option_spike, subset=["Opt_Vol_Spike"]).set_properties(**{
-                "text-align": "center", "border": "2px solid #39FF14", "font-family": "'Courier New', Courier, monospace", "font-size": "10px", "padding": "4px"
+            }, na_rep="N/A").applymap(
+                color_performance, subset=[f"{p}_Ret" for p in periods] + ["Day_Move%"]
+            ).applymap(
+                color_is, subset=["Inst_Score"]
+            ).applymap(
+                color_sentiment, subset=["Sentiment"]
+            ).applymap(
+                color_vix_corr, subset=["VIX_Corr"]
+            ).applymap(
+                color_risk_adj, subset=["Risk_Adj_Ret"]
+            ).applymap(
+                color_option_spike, subset=["Opt_Vol_Spike"]
+            ).set_properties(**{
+                "text-align": "center",
+                "border": "2px solid #39FF14",
+                "font-family": "'Courier New', Courier, monospace",
+                "font-size": "11px",
+                "padding": "6px"
             }).set_table_styles([
-                {"selector": "th", "props": [("background-color", "#1A1F2B"), ("color", "#00FFFF"), ("font-weight", "700"), ("text-align", "center"), ("border", "2px solid #39FF14"), ("padding", "6px"), ("font-family", "'Courier New', Courier, monospace")]}
+                {
+                    "selector": "th",
+                    "props": [
+                        ("background-color", "#1A1F2B"),
+                        ("color", "#00FFFF"),
+                        ("font-weight", "700"),
+                        ("text-align", "center"),
+                        ("border", "2px solid #39FF14"),
+                        ("padding", "8px"),
+                        ("font-family", "'Courier New', Courier, monospace"),
+                        ("font-size", "11px")
+                    ]
+                }
             ])
 
-            st.dataframe(styled_df, use_container_width=True, height=1000)
+            # Aumentar altura de la tabla para mostrar todos los activos sin scroll
+            st.dataframe(styled_df, use_container_width=True, height=1200)
 
+            # Botón de descarga
             csv = df.to_csv(index=False)
             st.download_button(
                 label="> DOWNLOAD_DATA_",
                 data=csv,
                 file_name="performance_table_map.csv",
                 mime="text/csv",
-                key="download_tab12"
+                key="download_tab10"  # Corregido de tab12 a tab10 para consistencia
             )
 
-            st.markdown(f'<div class="footer-text">> LAST_UPDATED: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | POWERED_BY_OZY_ANALYTICS_</div>', unsafe_allow_html=True)
+            # Pie de página con timestamp
+            st.markdown(
+                f'<div class="footer-text">> LAST_UPDATED: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | POWERED_BY_OZY_ANALYTICS_</div>',
+                unsafe_allow_html=True
+            )
 
-
-
+            
     # Tab 11: Options Signals
     with tab11:
         # Estilo CSS personalizado adaptado al tema del código
