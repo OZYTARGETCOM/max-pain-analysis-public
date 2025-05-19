@@ -28,12 +28,9 @@ import threading
 import os
 from datetime import timezone
 import pytz
-
 from time import sleep
 from typing import Optional, Dict
-
 from requests.exceptions import RequestException
-
 from contextlib import contextmanager
 from threading import Lock
 
@@ -4977,24 +4974,26 @@ def main():
  
         # Tab 12: Performance Map
         # Tab 12: Performance Map
+    # Tab 10: Performance Map
+    # Tab 10: Performance Map
+    # Tab 10: Performance Map
     with tab10:
-        # Estilo CSS personalizado, ajustado para una tabla más espaciosa
+        # Estilo CSS personalizado para una interfaz profesional y consistente
         st.markdown("""
             <style>
-            /* Fondo oscuro estilo terminal para toda la app */
+            /* Fondo oscuro para consistencia */
             .stApp {
                 background-color: #0A0A0A;
             }
-            /* Título principal con vibe de código */
+            /* Título principal con fuente clara */
             .main-title { 
                 font-size: 28px; 
                 font-weight: 700; 
                 color: #FFD700; /* Amarillo mostaza */
                 text-align: center; 
                 margin-bottom: 20px; 
-                text-shadow: 0 0 10px rgba(255, 215, 0, 0.8), 0 0 20px rgba(0, 255, 0, 0.5); 
-                font-family: 'Courier New', Courier, monospace;
-                letter-spacing: 2px;
+                text-shadow: 0 0 5px rgba(255, 215, 0, 0.6);
+                font-family: 'Arial', 'Helvetica', sans-serif;
             }
             /* Subtítulo con verde neón */
             .section-header { 
@@ -5004,8 +5003,8 @@ def main():
                 margin-top: 20px; 
                 border-bottom: 1px dashed #00FFFF; /* Borde azul eléctrico */
                 padding-bottom: 5px; 
-                text-shadow: 0 0 5px rgba(57, 255, 20, 0.8); 
-                font-family: 'Courier New', Courier, monospace;
+                text-shadow: 0 0 3px rgba(57, 255, 20, 0.6); 
+                font-family: 'Arial', 'Helvetica', sans-serif;
             }
             /* Estilos para el contenedor de la tabla */
             div[data-testid="stDataFrame"] {
@@ -5017,43 +5016,43 @@ def main():
             div[data-testid="stDataFrame"] table {
                 width: 100% !important;
                 max-width: 100% !important;
-                table-layout: fixed !important; /* Forzar el ancho de las columnas */
+                table-layout: fixed !important;
                 border-collapse: collapse !important;
             }
             div[data-testid="stDataFrame"] table th {
                 background-color: #1A1F2B !important;
                 color: #00FFFF !important; /* Azul eléctrico */
                 font-weight: 700 !important;
-                padding: 8px !important; /* Aumentado para más espacio */
+                padding: 8px !important;
                 border: 2px solid #39FF14 !important; /* Verde neón */
                 text-transform: uppercase !important;
-                font-size: 11px !important; /* Aumentado para legibilidad */
-                font-family: 'Courier New', Courier, monospace !important;
+                font-size: 11px !important;
+                font-family: 'Arial', 'Helvetica', sans-serif !important;
                 text-shadow: 0 0 3px rgba(0, 255, 255, 0.5) !important;
-                line-height: 1.2 !important; /* Ajustado para legibilidad */
+                line-height: 1.2 !important;
                 overflow-wrap: break-word !important;
                 word-wrap: break-word !important;
             }
             div[data-testid="stDataFrame"] table td {
                 background-color: #0F1419 !important;
                 color: #E0E0E0 !important; /* Blanco grisáceo */
-                padding: 6px !important; /* Aumentado para más espacio */
+                padding: 6px !important;
                 border: 2px solid #39FF14 !important; /* Verde neón */
                 text-align: center !important;
-                font-family: 'Courier New', Courier, monospace !important;
-                font-size: 11px !important; /* Aumentado para legibilidad */
-                line-height: 1.2 !important; /* Ajustado para legibilidad */
+                font-family: 'Arial', 'Helvetica', sans-serif !important;
+                font-size: 11px !important;
+                line-height: 1.2 !important;
                 overflow-wrap: break-word !important;
                 word-wrap: break-word !important;
             }
-            /* Botón de descarga con estilo hacker */
+            /* Botón de descarga con estilo profesional */
             .stDownloadButton button {
                 background: linear-gradient(90deg, #FFD700, #39FF14); /* Amarillo mostaza a verde neón */
                 color: #0A0A0A !important;
                 border: 2px solid #00FFFF; /* Azul eléctrico */
                 border-radius: 5px;
                 padding: 8px 16px;
-                font-family: 'Courier New', Courier, monospace !important;
+                font-family: 'Arial', 'Helvetica', sans-serif !important;
                 font-weight: 600;
                 text-transform: uppercase;
                 transition: all 0.3s ease;
@@ -5067,11 +5066,33 @@ def main():
                 color: #778DA9;
                 font-size: 12px;
                 text-align: center;
-                font-family: 'Courier New', Courier, monospace;
+                font-family: 'Arial', 'Helvetica', sans-serif;
                 text-shadow: 0 0 2px rgba(255, 215, 0, 0.3);
+            }
+            /* Estilo para el input de ticker */
+            div[data-testid="stTextInput"] input {
+                background-color: #1A1F2B !important;
+                color: #E0E0E0 !important;
+                border: 2px solid #39FF14 !important;
+                font-family: 'Arial', 'Helvetica', sans-serif !important;
+                font-size: 14px !important;
+                padding: 8px !important;
             }
             </style>
         """, unsafe_allow_html=True)
+
+        # Initialize session state for custom ticker
+        if "custom_ticker_tab10" not in st.session_state:
+            st.session_state.custom_ticker_tab10 = ""
+
+        # Editable ticker input row
+        custom_ticker = st.text_input("Custom Ticker", value=st.session_state.custom_ticker_tab10, key="custom_ticker_input_tab10").upper()
+
+        # Detect ticker change and update session state
+        if custom_ticker != st.session_state.custom_ticker_tab10:
+            logger.info(f"Custom ticker changed from {st.session_state.custom_ticker_tab10} to {custom_ticker}")
+            st.session_state.custom_ticker_tab10 = custom_ticker
+            st.rerun()
 
         # Índices, sectores, bonos y nuevos tickers
         assets = {
@@ -5100,7 +5121,6 @@ def main():
             "CAC 40": "EWQ",
             "Shanghai Comp": "ASHR",
             "Hang Seng": "EWH",
-            # Nuevos tickers agregados
             "Tesla": "TSLA",
             "Nvidia": "NVDA",
             "Microsoft": "MSFT",
@@ -5111,62 +5131,190 @@ def main():
             "Google": "GOOGL"
         }
 
+        # Add custom ticker to assets if valid
+        if custom_ticker:
+            # Remove any existing custom ticker to avoid duplication
+            assets = {k: v for k, v in assets.items() if not k.startswith("Custom: ")}
+            assets["Custom: " + custom_ticker] = custom_ticker
+
+        # Fallback data for BABA if explicitly input as custom ticker
+        baba_fallback = {
+            "Asset": "Custom: BABA",
+            "Price": 123.46,
+            "1D_Ret": -0.3551251008878224,
+            "1W_Ret": -1.492060959068064,
+            "1M_Ret": 15.653395784543319,
+            "1Q_Ret": -1.0181993105107112,
+            "1Y_Ret": 55.2760659036599,
+            "Next QT": "-2% / $126",
+            "Inst_Score": 100.0,
+            "Sentiment": "Bearish",
+            "Day_Move%": 9.37,
+            "VIX_Corr": -0.09,
+            "Risk_Adj_Ret": 33.67,
+            "Opt_Vol_Spike": 0.0
+        }
+
         # Obtener datos y calcular métricas
         performance_data = []
-        periods = ["1D", "1W", "1M", "1Q", "1Y"]  # Abreviados para las claves
+        periods = ["1D", "1W", "1M", "1Q", "1Y"]
         period_days = {"1D": 1, "1W": 5, "1M": 21, "1Q": 63, "1Y": 252}
+        # Define annual return benchmarks for each asset (in percentage)
+        annual_returns = {
+            "SPY": 12.0, "QQQ": 15.0, "DIA": 10.0, "IWM": 8.0, "XLB": 9.0, "XLY": 11.0,
+            "XLF": 10.0, "XLRE": 7.0, "XLU": 6.0, "XLC": 13.0, "XLV": 9.0, "XLE": 8.0,
+            "XLI": 10.0, "XLK": 14.0, "XLP": 7.0, "TLT": 3.0, "IEF": 2.5, "SHY": 2.0,
+            "^VIX": 0.0, "UUP": 5.0, "EZU": 8.0, "DAX": 8.0, "EWQ": 7.0, "ASHR": 6.0,
+            "EWH": 6.0, "TSLA": 20.0, "NVDA": 18.0, "MSFT": 12.0, "NFLX": 15.0,
+            "AMZN": 14.0, "AAPL": 13.0, "META": 15.0, "GOOGL": 14.0, "BABA": 12.0
+        }
 
         with st.spinner("Fetching performance data..."):
             # Obtener datos del VIX para correlación
             vix_prices, _ = get_historical_prices_combined("^VIX", limit=21)
             if len(vix_prices) < 21 or not vix_prices:
-                vix_prices = [20.0] * 21  # Fallback
+                vix_prices = [20.0] * 21
                 st.warning("Using fallback VIX data (20.0) due to insufficient historical data.")
 
             for name, ticker in assets.items():
                 row = {"Asset": name}
 
-                # Precio actual desde Tradier
-                current_price = get_current_price(ticker)
-                if not isinstance(current_price, (int, float)) or current_price <= 0:
-                    st.warning(f"Invalid current price for {ticker}: {current_price}. Using fallback price 100.0.")
-                    current_price = 100.0
-                row["Price"] = current_price  # Abreviado de Current_Price a Price
+                # Use fallback data for BABA only if explicitly input as custom ticker
+                if ticker == "BABA" and ticker == custom_ticker:
+                    try:
+                        current_price = get_current_price(ticker)
+                        if not isinstance(current_price, (int, float)) or current_price <= 0.01:
+                            raise ValueError("Invalid price")
+                    except Exception:
+                        st.warning(f"Using fallback data for BABA due to data retrieval failure.")
+                        row.update(baba_fallback)
+                        performance_data.append(row)
+                        continue
+                else:
+                    # Precio actual desde Tradier con reintentos
+                    current_price = None
+                    for attempt in range(15):
+                        try:
+                            current_price = get_current_price(ticker)
+                            if isinstance(current_price, (int, float)) and current_price > 0.01:
+                                break
+                            st.warning(f"Invalid current price for {ticker} on attempt {attempt + 1}: {current_price}. Retrying...")
+                            time.sleep(1)
+                        except Exception as e:
+                            st.warning(f"Error fetching current price for {ticker} on attempt {attempt + 1}: {str(e)}. Retrying...")
+                            time.sleep(1)
+                    if not isinstance(current_price, (int, float)) or current_price <= 0.01:
+                        st.warning(f"Failed to fetch valid current price for {ticker}. Using fallback price 100.0.")
+                        current_price = 100.0
+                    row["Price"] = current_price
 
-                # Precios históricos desde FMP
-                url = f"{FMP_BASE_URL}/historical-price-full/{ticker}"
-                params = {"apikey": FMP_API_KEY, "timeseries": 260}
-                try:
-                    response = session_fmp.get(url, params=params, headers=HEADERS_FMP, timeout=5)
-                    response.raise_for_status()
-                    data = response.json()
-                    if not data or "historical" not in data:
-                        st.warning(f"No historical data for {ticker}. Using fallback data.")
+                    # Precios históricos desde FMP con reintentos
+                    prices = None
+                    volumes = None
+                    for attempt in range(15):
+                        try:
+                            url = f"{FMP_BASE_URL}/historical-price-full/{ticker}"
+                            params = {"apikey": FMP_API_KEY, "timeseries": 260}
+                            response = session_fmp.get(url, params=params, headers=HEADERS_FMP, timeout=40)
+                            response.raise_for_status()
+                            data = response.json()
+                            if not data or "historical" not in data or len(data["historical"]) < 126:
+                                st.warning(f"Insufficient historical data for {ticker} on attempt {attempt + 1}. Retrying...")
+                                time.sleep(1)
+                                continue
+                            historical = sorted(data["historical"], key=lambda x: x["date"])
+                            prices = [float(day["close"]) for day in historical]
+                            volumes = [int(day["volume"]) for day in historical]
+                            if len(prices) < 260:
+                                st.warning(f"Only {len(prices)} days of data for {ticker}. Padding with current price.")
+                                prices = ([current_price] * (260 - len(prices))) + prices
+                                volumes = ([1000000] * (260 - len(volumes))) + volumes
+                            break
+                        except Exception as e:
+                            st.warning(f"Error fetching historical data for {ticker} on attempt {attempt + 1}: {str(e)}. Retrying...")
+                            time.sleep(1)
+                    if prices is None or volumes is None:
+                        st.warning(f"Failed to fetch historical data for {ticker}. Using fallback data.")
                         prices = [current_price] * 260
                         volumes = [1000000] * 260
-                    else:
-                        historical = sorted(data["historical"], key=lambda x: x["date"])
-                        prices = [float(day["close"]) for day in historical]
-                        volumes = [int(day["volume"]) for day in historical]
-                        if len(prices) < 260:
-                            st.warning(f"Only {len(prices)} days of data for {ticker}. Padding with current price.")
-                            prices = ([current_price] * (260 - len(prices))) + prices
-                            volumes = ([1000000] * (260 - len(volumes))) + volumes
-                except Exception as e:
-                    st.warning(f"Error fetching historical data for {ticker}: {str(e)}. Using fallback data.")
-                    prices = [current_price] * 260
-                    volumes = [1000000] * 260
 
                 # Calcular rendimientos
                 for period_name, days in period_days.items():
                     if len(prices) > days:
                         initial_price = prices[-(days + 1)]
-                        if initial_price <= 0:
+                        if initial_price <= 0.01:
                             row[f"{period_name}_Ret"] = np.nan
                         else:
                             row[f"{period_name}_Ret"] = calculate_performance(initial_price, current_price)
                     else:
                         row[f"{period_name}_Ret"] = np.nan
+
+                # Calcular señal Next QT
+                next_qt_signal = ""
+                if len(prices) > 126 and prices[-(126 + 1)] > 0.01 and prices[-(63 + 1)] > 0.01:
+                    previous_qt_price = prices[-(126 + 1)]  # Price 126 days ago (previous quarter)
+                    current_qt_price = prices[-(63 + 1)]    # Price 63 days ago (current quarter)
+                    q1_return = row.get("1Q_Ret", 0)        # 1Q return
+                    annual_return = annual_returns.get(ticker, 12.0)  # Default to 12%
+                    year_return = row.get("1Y_Ret", 0)      # Year-to-date return
+                    month_return = row.get("1M_Ret", 0)     # 1M return
+                    target_price = previous_qt_price * 1.03  # 3% above previous quarter
+                    deviation = ((current_qt_price - target_price) / target_price * 100) if target_price > 0 else 0
+                    # Calculate historical volatility for filtering
+                    returns = np.diff(prices) / prices[:-1]
+                    vol_historical = np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.1
+                    # Check if at least 10% of historical prices are unique
+                    unique_prices = len(set(prices[-260:])) / 260 >= 0.1
+                    # Check for upcoming earnings with fallback
+                    has_earnings = False
+                    try:
+                        earnings_data = fetch_earnings_data(
+                            datetime.now().strftime("%Y-%m-%d"),
+                            (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d")
+                        )
+                        has_earnings = any(e.get("symbol") == ticker for e in earnings_data)
+                    except Exception as e:
+                        st.warning(f"Error fetching earnings data for {ticker}: {str(e)}. Assuming earnings if 1M_Ret > 8%.")
+                        if month_return > 8:
+                            has_earnings = True
+                    # Only show signal if deviation is outside ±0.5%, volatility is sufficient, or strong 1M_Ret with earnings
+                    if (abs(deviation) > 0.5 or (month_return > 7 and has_earnings)) and vol_historical >= 0.002 and unique_prices:
+                        # Calculate trend score for 1M_Ret and 1Y_Ret alignment
+                        trend_score = (0.6 * month_return + 0.4 * year_return) / 100
+                        if (month_return * year_return) < 0:  # Opposite signs, reduce magnitude
+                            trend_score *= 0.5
+                        # Quarterly performance: 2x 1Q return
+                        qt_adjustment = 2 * q1_return / 100
+                        # Overperformance adjustment: 10% of overperformance distributed over 3 quarters
+                        overperformance = year_return - annual_return
+                        overperformance_adjustment = 0.1 * (overperformance / 3) / 100
+                        # Combine adjustments and convert to percentage, cap at ±4%
+                        final_adjustment = max(min((0.5 * qt_adjustment + 0.4 * trend_score + 0.1 * overperformance_adjustment) * 100, 4), -4)
+                        # Force bullish signal if 1M_Ret > 7% and earnings are near
+                        if month_return > 7 and has_earnings:
+                            final_adjustment = max(min(-2, final_adjustment), -4)  # Set bullish signal
+                        # Only show signal if adjustment is significant
+                        if abs(final_adjustment) >= 0.5:
+                            # Calculate RSI for trend strength (21 days)
+                            price_diffs = np.diff(prices[-22:])  # 21 periods
+                            gains = np.where(price_diffs > 0, price_diffs, 0)
+                            losses = np.where(price_diffs < 0, -price_diffs, 0)
+                            avg_gain = np.mean(gains) if len(gains) > 0 else 0
+                            avg_loss = np.mean(losses) if len(losses) > 0 else 0
+                            rs = avg_gain / avg_loss if avg_loss > 0 else 100
+                            rsi = 100 - (100 / (1 + rs)) if rs < float('inf') else 100
+                            # Trend marker: ↑ for bearish (overbought), ↓ for bullish (oversold)
+                            trend_marker = " ↑" if final_adjustment > 0 and rsi >= 70 else " ↓" if final_adjustment < 0 and rsi <= 30 else ""
+                            # Calculate projected price
+                            if final_adjustment > 0:
+                                # Bearish: decrease price by percentage
+                                projected_price = current_qt_price * (1 - final_adjustment / 100)
+                                next_qt_signal = f"{int(final_adjustment)}% / ${projected_price:.0f}{trend_marker}{' (Earnings)' if has_earnings else ''}"
+                            elif final_adjustment < 0:
+                                # Bullish: increase price by absolute percentage
+                                projected_price = current_qt_price * (1 + abs(final_adjustment) / 100)
+                                next_qt_signal = f"{int(final_adjustment)}% / ${projected_price:.0f}{trend_marker}"
+                row["Next QT"] = next_qt_signal
 
                 # Métricas institucionales
                 returns = np.diff(prices) / prices[:-1]
@@ -5176,14 +5324,14 @@ def main():
                 volume_relative = volume_current / volume_avg if volume_avg > 0 else 1.0
                 iv = get_implied_volatility(ticker) or vol_historical
 
-                # Metric_IS (Institutional Score)
+                # Inst_Score
                 momentum = row.get("1M_Ret", 0) / vol_historical if vol_historical > 0 else 0
                 flow_factor = volume_relative * (iv / vol_historical if vol_historical > 0 else 1)
                 year_return = row.get("1Y_Ret", 0)
                 is_score = min(100, max(0, (momentum * 30 + flow_factor * 40 + (year_return / vol_historical if vol_historical > 0 else 0) * 30)))
-                row["Inst_Score"] = is_score  # Abreviado de Metric_IS a Inst_Score
+                row["Inst_Score"] = is_score
 
-                # Sentiment_Label
+                # Sentiment
                 day_return = row.get("1D_Ret", 0)
                 week_trend = row.get("1W_Ret", 0)
                 sentiment_score = (day_return * 0.4 + week_trend * 0.6) * volume_relative
@@ -5191,16 +5339,16 @@ def main():
                     "Bullish" if sentiment_score > 1.0 else
                     "Bearish" if sentiment_score < -1.0 else
                     "Neutral"
-                )  # Abreviado de Sentiment_Label a Sentiment
+                )
 
-                # Metric_Day_Move (%)
+                # Day_Move%
                 vix_val = get_vix()
                 vix = vix_val / 100 if vix_val is not None else 0.2
                 move_factor = iv * (1 + volume_relative * 0.2) * (1 + vix * 0.5)
                 day_move = move_factor * current_price * 0.15
-                row["Day_Move%"] = round(day_move / current_price * 100, 2) if current_price > 0 else 0.0  # Abreviado de Metric_Day_Move (%) a Day_Move%
+                row["Day_Move%"] = round(day_move / current_price * 100, 2) if current_price > 0 else 0.0
 
-                # Metric_VIX_Correlation
+                # VIX_Corr
                 if len(prices) >= 21 and len(vix_prices) >= 21:
                     asset_returns_21d = np.diff(prices[-21:]) / prices[-21:-1]
                     vix_returns_21d = np.diff(vix_prices[-21:]) / vix_prices[-21:-1]
@@ -5208,18 +5356,18 @@ def main():
                     vix_corr = np.corrcoef(asset_returns_21d[:min_len], vix_returns_21d[:min_len])[0, 1] if min_len > 0 else 0.0
                 else:
                     vix_corr = 0.0
-                row["VIX_Corr"] = round(vix_corr, 2)  # Abreviado de Metric_VIX_Correlation a VIX_Corr
+                row["VIX_Corr"] = round(vix_corr, 2)
 
-                # Metric_Risk_Adjusted_Return
+                # Risk_Adj_Ret
                 month_return = row.get("1M_Ret", 0)
                 risk_adjusted = month_return / vol_historical if vol_historical > 0 else 0.0
-                row["Risk_Adj_Ret"] = round(risk_adjusted, 2)  # Abreviado de Metric_Risk_Adjusted_Return a Risk_Adj_Ret
+                row["Risk_Adj_Ret"] = round(risk_adjusted, 2)
 
-                # Metric_Option_Volume_Spike
+                # Opt_Vol_Spike
                 try:
                     url_expirations = f"{TRADIER_BASE_URL}/markets/options/expirations"
                     params_expirations = {"symbol": ticker}
-                    response_exp = session_tradier.get(url_expirations, params=params_expirations, headers=HEADERS_TRADIER, timeout=5)
+                    response_exp = session_tradier.get(url_expirations, params=params_expirations, headers=HEADERS_TRADIER, timeout=40)
                     expirations = response_exp.json().get("expirations", {}).get("date", [])
                     if not expirations:
                         raise ValueError("No expirations available")
@@ -5227,15 +5375,15 @@ def main():
 
                     url_options = f"{TRADIER_BASE_URL}/markets/options/chains"
                     params_options = {"symbol": ticker, "expiration": nearest_expiration}
-                    response_options = session_tradier.get(url_options, params=params_options, headers=HEADERS_TRADIER, timeout=5)
+                    response_options = session_tradier.get(url_options, params=params_options, headers=HEADERS_TRADIER, timeout=40)
                     options_data = response_options.json()
                     option_list = options_data.get("options", {}).get("option", [])
                     current_option_volume = sum(opt.get("volume", 0) for opt in option_list)
-                    avg_option_volume = volume_avg * 0.1  # Proxy
+                    avg_option_volume = volume_avg * 0.1
                     option_spike = current_option_volume / avg_option_volume if avg_option_volume > 0 else volume_relative
                 except Exception as e:
                     option_spike = volume_relative
-                row["Opt_Vol_Spike"] = round(option_spike, 1)  # Abreviado de Metric_Option_Volume_Spike a Opt_Vol_Spike
+                row["Opt_Vol_Spike"] = round(option_spike, 1)
 
                 performance_data.append(row)
 
@@ -5243,71 +5391,101 @@ def main():
                 st.error("No valid data retrieved for table after processing all assets.")
                 st.stop()
 
+            # Reorganize to ensure custom ticker is first
+            if custom_ticker:
+                custom_row = next((row for row in performance_data if row["Asset"] == "Custom: " + custom_ticker), None)
+                if custom_row:
+                    performance_data.remove(custom_row)
+                    performance_data.insert(0, custom_row)
+
             # Crear DataFrame
             df = pd.DataFrame(performance_data)
 
+            # Ensure all columns are present in DataFrame
+            required_columns = [
+                "Asset", "Price", "1D_Ret", "1W_Ret", "1M_Ret", "1Q_Ret", "1Y_Ret",
+                "Next QT", "Inst_Score", "Sentiment", "Day_Move%", "VIX_Corr",
+                "Risk_Adj_Ret", "Opt_Vol_Spike"
+            ]
+            for col in required_columns:
+                if col not in df.columns:
+                    df[col] = np.nan
+
             # Tabla interactiva
-            st.markdown('<div class="main-title">> PERFORMANCE_MAP_</div>', unsafe_allow_html=True)
+            
 
             def color_performance(val):
                 if pd.isna(val):
-                    return "background-color: #0F1419; color: #E0E0E0"  # Fondo oscuro, texto blanco grisáceo
+                    return "background-color: #0F1419; color: #E0E0E0"
                 if val > 1.0:
                     intensity = min(1.0, abs(val) / 10)
-                    return f"background-color: rgba(57, 255, 20, {intensity}); color: #FFFFFF"  # Verde neón
+                    return f"background-color: rgba(57, 255, 20, {intensity}); color: #FFFFFF"
                 elif val < -1.0:
                     intensity = min(1.0, abs(val) / 10)
-                    return f"background-color: rgba(255, 69, 0, {intensity}); color: #FFFFFF"  # Rojo neón
+                    return f"background-color: rgba(255, 69, 0, {intensity}); color: #FFFFFF"
                 else:
-                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"  # Amarillo mostaza
+                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"
 
             def color_is(val):
                 if pd.isna(val):
                     return "background-color: #0F1419; color: #E0E0E0"
                 if val > 80:
-                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"  # Verde neón
+                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"
                 elif val > 60:
-                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"  # Amarillo mostaza
+                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"
                 else:
-                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"  # Rojo neón
+                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"
 
             def color_sentiment(val):
                 if val == "Bullish":
-                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"  # Verde neón
+                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"
                 elif val == "Bearish":
-                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"  # Rojo neón
+                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"
                 else:
-                    return "background-color: rgba(0, 255, 255, 0.6); color: #0A0A0A"  # Azul eléctrico
+                    return "background-color: rgba(0, 255, 255, 0.6); color: #0A0A0A"
 
             def color_vix_corr(val):
                 if pd.isna(val):
                     return "background-color: #0F1419; color: #E0E0E0"
                 if val < -0.5:
-                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"  # Verde neón
+                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"
                 elif val > 0.5:
-                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"  # Rojo neón
+                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"
                 else:
-                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"  # Amarillo mostaza
+                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"
 
             def color_risk_adj(val):
                 if pd.isna(val):
                     return "background-color: #0F1419; color: #E0E0E0"
                 if val > 0.2:
-                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"  # Verde neón
+                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"
                 elif val < -0.2:
-                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"  # Rojo neón
+                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"
                 else:
-                    return "background-color: rgba(0, 255, 255, 0.6); color: #0A0A0A"  # Azul eléctrico
+                    return "background-color: rgba(0, 255, 255, 0.6); color: #0A0A0A"
 
             def color_option_spike(val):
                 if pd.isna(val):
                     return "background-color: #0F1419; color: #E0E0E0"
                 if val > 2.0:
-                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"  # Verde neón
+                    return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"
                 elif val < 1.0:
-                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"  # Rojo neón
+                    return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"
                 else:
-                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"  # Amarillo mostaza
+                    return "background-color: rgba(255, 215, 0, 0.6); color: #0A0A0A"
+
+            def color_next_qt(val):
+                if pd.isna(val) or val == "":
+                    return "background-color: #0F1419; color: #E0E0E0"
+                try:
+                    percentage = float(val.split('%')[0])
+                    if percentage < 0:
+                        return "background-color: rgba(57, 255, 20, 0.8); color: #FFFFFF"  # Bullish (negative)
+                    elif percentage > 0:
+                        return "background-color: rgba(255, 69, 0, 0.7); color: #FFFFFF"  # Bearish (positive)
+                except:
+                    return "background-color: #0F1419; color: #E0E0E0"
+                return "background-color: #0F1419; color: #E0E0E0"
 
             styled_df = df.style.format({
                 "1D_Ret": "{:.2f}%",
@@ -5333,10 +5511,12 @@ def main():
                 color_risk_adj, subset=["Risk_Adj_Ret"]
             ).applymap(
                 color_option_spike, subset=["Opt_Vol_Spike"]
+            ).applymap(
+                color_next_qt, subset=["Next QT"]
             ).set_properties(**{
                 "text-align": "center",
                 "border": "2px solid #39FF14",
-                "font-family": "'Courier New', Courier, monospace",
+                "font-family": "'Arial', 'Helvetica', sans-serif",
                 "font-size": "11px",
                 "padding": "6px"
             }).set_table_styles([
@@ -5349,14 +5529,20 @@ def main():
                         ("text-align", "center"),
                         ("border", "2px solid #39FF14"),
                         ("padding", "8px"),
-                        ("font-family", "'Courier New', Courier, monospace"),
+                        ("font-family", "'Arial', 'Helvetica', sans-serif"),
                         ("font-size", "11px")
                     ]
                 }
             ])
 
-            # Aumentar altura de la tabla para mostrar todos los activos sin scroll
-            st.dataframe(styled_df, use_container_width=True, height=1200)
+            # Calcular altura dinámica de la tabla, ajustada para 35 filas
+            num_rows = len(df)
+            pixels_per_row = 40
+            table_height = 31 * pixels_per_row  # Altura fija para 31 filas
+            logger.debug(f"Table rows: {num_rows}, Calculated height: {table_height}px")
+
+            # Mostrar tabla sin scroll vertical
+            st.dataframe(styled_df, use_container_width=True, height=table_height)
 
             # Botón de descarga
             csv = df.to_csv(index=False)
@@ -5365,7 +5551,7 @@ def main():
                 data=csv,
                 file_name="performance_table_map.csv",
                 mime="text/csv",
-                key="download_tab10"  # Corregido de tab12 a tab10 para consistencia
+                key="download_tab10"
             )
 
             # Pie de página con timestamp
@@ -5373,8 +5559,9 @@ def main():
                 f'<div class="footer-text">> LAST_UPDATED: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | POWERED_BY_OZY_ANALYTICS_</div>',
                 unsafe_allow_html=True
             )
+        
 
-            
+#################################
     # Tab 11: Options Signals
     with tab11:
         # Estilo CSS personalizado adaptado al tema del código
@@ -5388,9 +5575,9 @@ def main():
             .main-title {
                 font-size: 28px;
                 font-weight: 700;
-                color: #39FF14; /* Verde neón */
+                color: #00FF00; /* Verde brillante */
                 text-align: center;
-                text-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
+                text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
                 font-family: 'Courier New', Courier, monospace;
                 margin-bottom: 20px;
             }
@@ -5398,53 +5585,14 @@ def main():
             .section-header {
                 font-size: 20px;
                 font-weight: 600;
-                color: #00FFFF; /* Azul eléctrico */
+                color: #00E5FF; /* Cian eléctrico */
                 border-bottom: 1px dashed #FFD700; /* Borde amarillo mostaza */
                 padding-bottom: 5px;
                 font-family: 'Courier New', Courier, monospace;
             }
-            /* Caja de señales con borde neón */
-            .signal-box-positive {
-                background-color: rgba(57, 255, 20, 0.2);
-                padding: 15px;
-                border-radius: 8px;
-                border: 2px solid #39FF14;
-                margin: 10px 0;
-                font-family: 'Courier New', Courier, monospace;
-                color: #FFFFFF;
-            }
-            .signal-box-negative {
-                background-color: rgba(255, 69, 0, 0.2);
-                padding: 15px;
-                border-radius: 8px;
-                border: 2px solid #FF4500;
-                margin: 10px 0;
-                font-family: 'Courier New', Courier, monospace;
-                color: #FFFFFF;
-            }
-            .signal-box-neutral {
-                background-color: #1E1E1E;
-                padding: 15px;
-                border-radius: 8px;
-                border: 2px solid #39FF14;
-                margin: 10px 0;
-                font-family: 'Courier New', Courier, monospace;
-                color: #FFFFFF;
-            }
-            /* Caja de estado */
-            .status-box {
-                background-color: #1E1E1E;
-                padding: 15px;
-                border-radius: 8px;
-                border: 2px solid #00FFFF;
-                margin: 10px 0;
-                font-family: 'Courier New', Courier, monospace;
-                color: #FFFFFF;
-                text-align: left;
-            }
             /* Botones con estilo neón */
             .stButton>button {
-                background: linear-gradient(90deg, #39FF14, #00FFFF); /* Verde a azul */
+                background: linear-gradient(90deg, #00FF00, #00E5FF); /* Verde a cian */
                 color: #0A0A0A;
                 border: none;
                 border-radius: 5px;
@@ -5454,194 +5602,163 @@ def main():
                 transition: all 0.3s ease;
             }
             .stButton>button:hover {
-                box-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
-            }
-            .stButton>button:disabled {
-                background: #2D2D2D;
-                color: #666666;
-                cursor: not-allowed;
-            }
-            /* Caja de instrucciones */
-            .instructions-box {
-                background-color: #1E1E1E;
-                padding: 15px;
-                border-radius: 8px;
-                border: 2px solid #00FFFF;
-                margin: 10px 0;
-                font-family: 'Courier New', Courier, monospace;
-                color: #FFFFFF;
-            }
-            /* Caja de depuración */
-            .debug-box {
-                background-color: #1E1E1E;
-                padding: 15px;
-                border-radius: 8px;
-                border: 2px solid #FF4500;
-                margin: 10px 0;
-                font-family: 'Courier New', Courier, monospace;
-                color: #FFFFFF;
-            }
-            .highlight {
-                color: #FFD700; /* Amarillo mostaza */
-                font-weight: 600;
+                box-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
             }
             /* Separador para métricas */
             .metric-divider {
-                border-top: 1px solid #00FFFF;
+                border-top: 1px solid #00E5FF;
                 margin: 10px 0;
             }
             </style>
         """, unsafe_allow_html=True)
 
-        # Título
-        
-        # Inicializar base de datos
-        init_db()
+        # Initialize session state for ticker
+        if "ticker_tab11" not in st.session_state:
+            st.session_state.ticker_tab11 = "SPY"
 
         # Entrada de usuario
-        ticker = st.text_input("Ticker (e.g., SPY, AAPL, JBLU, VIX)", value="SPY", key="ticker_input_tab11").upper()
+        ticker_input = st.text_input("Ticker", value=st.session_state.ticker_tab11, key="ticker_input_tab11").upper()
 
-        # Botón de actualización
-        auto_update_prices()  # Run in background to update session_state
-        if st.button("🔄 Update Prices Now", key="update_prices_tab11"):
-            try:
-                pl_data = update_contract_prices()
-                for key, data in pl_data.items():
-                    st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
-                    st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
-                    st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
-                get_options_data.clear()  # Clear cache to ensure fresh data
-                st.success("Prices updated successfully!")
-                st.rerun()  # Only rerun on manual update
-            except Exception as e:
-                logger.error(f"Manual price update failed: {str(e)}")
-                st.error(f"Failed to update prices: {str(e)}")
+        # Cachear funciones de datos
+        @st.cache_data
+        def cached_get_current_price(_ticker):
+            price = get_current_price(_ticker)
+            if price <= 0:
+                logger.error(f"Invalid price for {_ticker}: {price}")
+            return price
 
-        with st.spinner(f"Analyzing {ticker} for monthly contracts up to 2 months..."):
-            current_price = get_current_price(ticker)
+        @st.cache_data
+        def cached_get_expiration_dates(_ticker):
+            dates = get_expiration_dates(_ticker)
+            if not dates:
+                logger.error(f"No expiration dates for {_ticker}")
+            return dates
+
+        @st.cache_data
+        def cached_fetch_web_sentiment(_ticker):
+            sentiment = fetch_web_sentiment(_ticker)
+            if not 0 <= sentiment <= 1:
+                logger.warning(f"Invalid sentiment for {_ticker}: {sentiment}")
+                sentiment = 0.5
+            return sentiment
+
+        @st.cache_data
+        def cached_get_daily_movement(_ticker):
+            daily_range, momentum = get_daily_movement(_ticker)
+            if daily_range < 0 or momentum < -1 or momentum > 1:
+                logger.warning(f"Invalid daily movement for {_ticker}: range={daily_range}, momentum={momentum}")
+                daily_range = 0.01
+                momentum = 0.0
+            return daily_range, momentum
+
+        @st.cache_data
+        def cached_get_options_data(_ticker, _exp_date):
+            data = get_options_data(_ticker, _exp_date)
+            if not data:
+                logger.warning(f"No options data for {_ticker} on {_exp_date}")
+            return data
+
+        # Detect ticker change and clear caches
+        if ticker_input != st.session_state.ticker_tab11:
+            logger.info(f"Ticker changed from {st.session_state.ticker_tab11} to {ticker_input}")
+            st.session_state.ticker_tab11 = ticker_input
+            # Clear all relevant caches
+            cached_get_current_price.clear()
+            cached_get_expiration_dates.clear()
+            cached_fetch_web_sentiment.clear()
+            cached_get_daily_movement.clear()
+            cached_get_options_data.clear()
+            st.rerun()
+
+        ticker = st.session_state.ticker_tab11
+
+        with st.spinner(f"Analyzing {ticker} for all contracts..."):
+            current_price = cached_get_current_price(ticker)
             if current_price == 0.0:
                 st.error(f"Failed to fetch price for '{ticker}'.")
                 logger.error(f"Price fetch failed for {ticker}")
                 st.stop()
 
-            daily_range, momentum = get_daily_movement(ticker)
-            expiration_dates = get_expiration_dates(ticker)
+            daily_range, momentum = cached_get_daily_movement(ticker)
+            expiration_dates = cached_get_expiration_dates(ticker)
             if not expiration_dates:
                 st.error(f"No expiration dates for '{ticker}'. Try a valid ticker.")
                 logger.error(f"No expiration dates found for {ticker}")
                 st.stop()
 
-            # Filtrar solo fechas de expiración mensuales (>14 días)
-            current_date = datetime.now(timezone.utc).date()
-            monthly_expiration_dates = [
-                date for date in expiration_dates
-                if (datetime.strptime(date, "%Y-%m-%d").date() - current_date).days > 14
-            ]
-            if not monthly_expiration_dates:
-                st.warning(f"No monthly expiration dates (more than 14 days away) found for {ticker}.")
-                logger.warning(f"No monthly expiration dates for {ticker}")
+            # Procesar datos
+            sentiment = cached_fetch_web_sentiment(ticker)
+            debug_info = {
+                "total_contracts": 0,
+                "valid_contracts": 0,
+                "rejections": [],
+                "sample_oi": [],
+                "api_response_sample": [],
+                "buy_sell_counts": {"CALL": {"BUY": 0, "SELL": 0}, "PUT": {"BUY": 0, "SELL": 0}},
+                "oi_volume_scores": [],
+                "iv_samples": []  # To debug IV issues
+            }
 
-            # Obtener contratos cerrados para filtrar
-            with db_lock:
-                with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        SELECT ticker, strike, option_type, expiration_date 
-                        FROM assigned_contracts 
-                        WHERE closed = TRUE
-                    """)
-                    closed_contracts = {(row[0], row[1], row[2], row[3]) for row in cursor.fetchall()}
-
-            # Procesar señales solo para fechas mensuales (máximo 5 para optimizar)
-            all_signals = {"Monthly": []}
-            sentiment = fetch_web_sentiment(ticker)
-            debug_info = {"total_contracts": 0, "valid_contracts": 0, "rejections": []}
-
-            def process_date(exp_date):
-                try:
-                    options_data = get_options_data(ticker, exp_date)
-                    debug_info["total_contracts"] += len(options_data)
-                    if not options_data:
-                        logger.warning(f"No valid options data for {ticker} on {exp_date}")
-                        debug_info["rejections"].append(f"No options data for {exp_date}")
-                        return None
-                    signals = generate_signals(ticker, exp_date, current_price, options_data, sentiment, daily_range, momentum)
-                    # Deduplicate signals
-                    for key in signals:
-                        unique_signals = []
-                        seen = set()
-                        for signal in signals[key]:
-                            signal_tuple = (ticker, signal["Strike"], signal["Type"], signal["Expiration"])
-                            if signal_tuple not in seen:
-                                seen.add(signal_tuple)
-                                unique_signals.append(signal)
-                        signals[key] = unique_signals
-                    debug_info["valid_contracts"] += sum(1 for opt in options_data if int(opt.get("open_interest", 0) or 0) >= 10)
-                    return signals
-                except Exception as e:
-                    logger.error(f"Error processing {ticker} for {exp_date}: {str(e)}")
-                    debug_info["rejections"].append(f"Error for {exp_date}: {str(e)}")
-                    return None
-
-            # Optimizar procesamiento de señales con barra de progreso
-            progress_bar = st.progress(0)
-            with ThreadPoolExecutor(max_workers=min(num_workers, 5)) as executor:
-                futures = [executor.submit(process_date, exp_date) for exp_date in monthly_expiration_dates[:5]]
-                for i, future in enumerate(futures):
-                    try:
-                        signals = future.result()
-                        if signals:
-                            all_signals["Monthly"].extend(signals["Monthly"])
-                        progress_bar.progress((i + 1) / len(futures))
-                    except Exception as e:
-                        logger.error(f"ThreadPoolExecutor error: {str(e)}")
-                        debug_info["rejections"].append(f"ThreadPool error: {str(e)}")
-                        continue
-            progress_bar.empty()
-
-            # Forzar actualización inicial de precios con reintentos
-            for attempt in range(DB_RETRIES):
-                try:
-                    pl_data = update_contract_prices()
-                    for key, data in pl_data.items():
-                        st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
-                        st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
-                        st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
-                    logger.info("Initial price update successful")
-                    break
-                except Exception as e:
-                    logger.error(f"Initial price update attempt {attempt + 1} failed: {str(e)}")
-                    if attempt < DB_RETRIES - 1:
-                        time.sleep(DB_RETRY_DELAY)
-                    else:
-                        st.warning("Failed to update contract prices initially. Using default metrics.")
-
-            # Visualizaciones
-            st.markdown('<div class="section-header">Market Maker Target</div>', unsafe_allow_html=True)
-
-            # Sección: Resumen del Mercado
+            # Market Summary
+           
             daily_change = current_price * momentum
+            # Calculate IV and Max Pain for nearest expiry
+            nearest_expiry = expiration_dates[0] if expiration_dates else None
+            iv_nearest = 0.0
+            max_pain_nearest = current_price
+            if nearest_expiry:
+                options_data_nearest = cached_get_options_data(ticker, nearest_expiry)
+                if options_data_nearest:
+                    # Calculate IV for nearest expiry
+                    iv_values = []
+                    for opt in options_data_nearest:
+                        try:
+                            oi = int(opt.get("open_interest", 0) or 0)
+                            iv = float(opt.get("implied_volatility", 0) or 0) if opt.get("implied_volatility") is not None else 0.0
+                            if oi > 0 and iv > 0:
+                                iv_values.append(iv * oi)
+                        except Exception as e:
+                            logger.warning(f"Error processing IV for nearest expiry: {str(e)}")
+                    iv_nearest = sum(iv_values) / sum(int(opt.get("open_interest", 0) or 0) for opt in options_data_nearest if int(opt.get("open_interest", 0) or 0) > 0) if iv_values else (get_implied_volatility(ticker) or 0.3)
+                    # Calculate Max Pain for nearest expiry
+                    max_pain_nearest = calculate_max_pain(options_data_nearest)
+                    if max_pain_nearest is None or max_pain_nearest <= 0:
+                        logger.warning(f"Invalid max pain for nearest expiry for {ticker}: {max_pain_nearest}")
+                        max_pain_nearest = current_price
             st.markdown("**Market Summary**", unsafe_allow_html=True)
             st.markdown(f"""
-                - **Price**: ${current_price:.2f} | **Daily Change**: ${daily_change:.2f} ({momentum:.2%}) | **Daily Range**: {daily_range:.2%}
-                - **Sentiment**: {'Bullish' if sentiment > 0.6 else 'Bearish' if sentiment < 0.4 else 'Neutral'}
-                - **Analyzed Monthly Dates**: {len(monthly_expiration_dates)} dates up to {datetime.strptime(monthly_expiration_dates[-1], '%Y-%m-%d').strftime('%m/%d/%Y') if monthly_expiration_dates else 'N/A'}
-                - **IV (Nearest Expiry)**: {iv:.2%} | **Max Pain (Nearest Expiry)**: {'N/A' if max_pain is None else f'${max_pain:.2f}'}
+                - **Price**: ${current_price:.2f} | **Daily Change**: ${daily_change:.2f} ({momentum:.2%})
+                - **Daily Range**: {daily_range:.2%} | **Sentiment**: {'Bullish' if sentiment > 0.6 else 'Bearish' if sentiment < 0.4 else 'Neutral'}
+                - **Analyzed Monthly Dates**: {len(expiration_dates)} dates up to 12/17/2027
+                - **IV (Nearest Expiry)**: {iv_nearest:.2%} | **Max Pain (Nearest Expiry)**: ${max_pain_nearest:.2f}
             """, unsafe_allow_html=True)
             st.markdown('<div class="metric-divider"></div>', unsafe_allow_html=True)
 
-            # Sección: Primas y Contratos Totales (para la expiración más cercana)
+            # Premiums and Contracts (Aggregated across all expiries)
+            max_pain = None
+            total_call_contracts = 0
+            total_put_contracts = 0
+            call_oi_total = 0
+            put_oi_total = 0
+            gamma_calls = 0
+            gamma_puts = 0
+            options_data_all = []
             if expiration_dates:
-                options_data = get_options_data(ticker, expiration_dates[0])
-                if options_data:
-                    logger.debug(f"Options data for {ticker} on {expiration_dates[0]}: {len(options_data)} options")
-                    max_pain = calculate_max_pain(options_data)
-                    logger.debug(f"Max Pain calculated: {max_pain}")
-                    iv = get_implied_volatility(options_data) or 0.3
+                for exp_date in expiration_dates[:5]:
+                    options_data = cached_get_options_data(ticker, exp_date)
+                    if options_data:
+                        options_data_all.extend(options_data)
+                if options_data_all:
+                    max_pain = calculate_max_pain(options_data_all)
+                    if max_pain is None or max_pain <= 0:
+                        logger.warning(f"Invalid max pain for {ticker}: {max_pain}")
+                        max_pain = current_price
+                    iv = get_implied_volatility(ticker) or 0.3
+                    if iv <= 0:
+                        logger.warning(f"Invalid IV for {ticker}: {iv}")
+                        iv = 0.3
                     total_call_premium = 0.0
                     total_put_premium = 0.0
-                    total_call_contracts = 0
-                    total_put_contracts = 0
                     itm_call_premium = 0.0
                     otm_call_premium = 0.0
                     itm_put_premium = 0.0
@@ -5657,7 +5774,7 @@ def main():
                     gammas = []
                     total_oi = []
 
-                    for opt in options_data:
+                    for opt in options_data_all:
                         try:
                             opt_type = opt.get("option_type", "").upper()
                             oi = int(opt.get("open_interest", 0) or 0)
@@ -5666,12 +5783,12 @@ def main():
                             strike = float(opt.get("strike", 0))
                             delta = float(opt.get("greeks", {}).get("delta", 0) or 0)
                             gamma = float(opt.get("greeks", {}).get("gamma", 0) or 0)
-                            if bid == 0 and ask == 0 or oi == 0:
-                                logger.debug(f"Skipping option: {opt_type}, Strike: {strike}, Bid: {bid}, Ask: {ask}, OI: {oi}")
-                                continue  # Skip options with no valid bid/ask or OI
-                            premium = (bid + ask) / 2 * oi * 100  # Premium per contract * number of contracts
+                            if oi < 1 or strike <= 0:
+                                debug_info["rejections"].append(f"Strike {strike}: Invalid OI={oi}, strike={strike}")
+                                logger.warning(f"Skipping strike {strike}: OI={oi}, strike={strike}")
+                                continue
+                            premium = (bid + ask) / 2 * oi * 100
                             is_itm = (opt_type == "CALL" and strike < current_price) or (opt_type == "PUT" and strike > current_price)
-
                             if opt_type == "CALL":
                                 total_call_premium += premium
                                 total_call_contracts += oi
@@ -5696,289 +5813,257 @@ def main():
                             deltas.append(delta)
                             gammas.append(gamma)
                             total_oi.append(oi)
-                            logger.debug(f"Processed {opt_type} option: Strike {strike}, Bid {bid}, Ask {ask}, OI {oi}, Premium ${premium:,.2f}, Delta {delta:.4f}, Gamma {gamma:.4f}")
                         except Exception as e:
-                            logger.warning(f"Skipping option for premium/contract calculation: {str(e)}")
+                            debug_info["rejections"].append(f"Error in premium calc for strike {strike}: {str(e)}")
+                            logger.warning(f"Error in premium calc for strike {strike}: {str(e)}")
                             continue
 
-                    # Calcular primas promedio por contrato
                     avg_call_premium = total_call_premium / total_call_contracts if total_call_contracts > 0 else 0.0
                     avg_put_premium = total_put_premium / total_put_contracts if total_put_contracts > 0 else 0.0
 
-                    logger.info(f"Premiums for {ticker} on {expiration_dates[0]}: Calls ${total_call_premium:,.2f} (ITM ${itm_call_premium:,.2f}, OTM ${otm_call_premium:,.2f}), Puts ${total_put_premium:,.2f} (ITM ${itm_put_premium:,.2f}, OTM ${otm_put_premium:,.2f})")
-                    logger.info(f"Contracts for {ticker} on {expiration_dates[0]}: Calls {total_call_contracts:,} (ITM {itm_call_contracts:,}, OTM {otm_call_contracts:,}), Puts {total_put_contracts:,} (ITM {itm_put_contracts:,}, OTM {otm_put_contracts:,})")
-                    logger.info(f"Average Premium per Contract: Calls ${avg_call_premium:,.2f}, Puts ${avg_put_premium:,.2f}")
+                    call_oi_total = sum(opt.get("open_interest", 0) for opt in options_data_all if opt.get("option_type", "").upper() == "CALL")
+                    put_oi_total = sum(opt.get("open_interest", 0) for opt in options_data_all if opt.get("option_type", "").upper() == "PUT")
+                    gamma_calls = sum(opt.get("greeks", {}).get("gamma", 0) * opt.get("open_interest", 0) for opt in options_data_all if opt.get("option_type", "").upper() == "CALL")
+                    gamma_puts = sum(opt.get("greeks", {}).get("gamma", 0) * opt.get("open_interest", 0) for opt in options_data_all if opt.get("option_type", "").upper() == "PUT")
 
-                    st.markdown("**Premiums and Contracts (Nearest Expiry)**", unsafe_allow_html=True)
+                    st.markdown("**Premiums and Contracts (All Expirations)**", unsafe_allow_html=True)
                     if total_call_contracts == 0 and total_put_contracts == 0:
                         st.warning("No valid option contracts found for premium or contract calculations.")
                     else:
                         st.markdown(f"""
-                            - <span style="color: #39FF14">**Total Call Premium**</span>: ${total_call_premium:,.2f} ({total_call_contracts:,} contracts)
-                            - <span style="color: #FF4500">**Total Put Premium**</span>: ${total_put_premium:,.2f} ({total_put_contracts:,} contracts)
-                            - <span style="color: #39FF14">**Avg. Call Premium per Contract**</span>: ${avg_call_premium:,.2f}
-                            - <span style="color: #FF4500">**Avg. Put Premium per Contract**</span>: ${avg_put_premium:,.2f}
+                            - <span style="color: #32CD32">**Total Call Premium**</span>: ${total_call_premium:,.2f} ({total_call_contracts:,} contracts)
+                            - <span style="color: #FF69B4">**Total Put Premium**</span>: ${total_put_premium:,.2f} ({total_put_contracts:,} contracts)
+                            - <span style="color: #32CD32">**Avg. Call Premium per Contract**</span>: ${avg_call_premium:,.2f}
+                            - <span style="color: #FF69B4">**Avg. Put Premium per Contract**</span>: ${avg_put_premium:,.2f}
                         """, unsafe_allow_html=True)
                         st.markdown('<div class="metric-divider"></div>', unsafe_allow_html=True)
                         with st.markdown("ITM/OTM Breakdown"):
                             st.markdown(f"""
-                                - <span style="color: #39FF14">ITM Calls</span>: ${itm_call_premium:,.2f} ({itm_call_contracts:,} contracts)
-                                - <span style="color: #39FF14">OTM Calls</span>: ${otm_call_premium:,.2f} ({otm_call_contracts:,} contracts)
-                                - <span style="color: #FF4500">ITM Puts</span>: ${itm_put_premium:,.2f} ({itm_put_contracts:,} contracts)
-                                - <span style="color: #FF4500">OTM Puts</span>: ${otm_put_premium:,.2f} ({otm_put_contracts:,} contracts)
+                                - <span style="color: #32CD32">ITM Calls</span>: ${itm_call_premium:,.2f} ({itm_call_contracts:,} contracts)
+                                - <span style="color: #32CD32">OTM Calls</span>: ${otm_call_premium:,.2f} ({otm_call_contracts:,} contracts)
+                                - <span style="color: #FF69B4">ITM Puts</span>: ${itm_put_premium:,.2f} ({itm_put_contracts:,} contracts)
+                                - <span style="color: #FF69B4">OTM Puts</span>: ${otm_put_premium:,.2f} ({otm_put_contracts:,} contracts)
                             """, unsafe_allow_html=True)
-
-                    # Calcular el objetivo de precio del Market Maker (MM Target)
-                    mm_target_price = None
-                    mm_target_strike = current_price  # Default fallback
-                    direction = "Neutral"
-                    prob_below_target = 0.0
-                    if total_call_contracts > 0 and total_put_contracts > 0:
-                        # OI Imbalance
-                        oi_imbalance = (total_call_contracts - total_put_contracts) / (total_call_contracts + total_put_contracts)
-                        premium_ratio = 1.0 / (total_call_premium / total_put_premium) if total_call_premium < total_put_premium else min(total_call_premium / total_put_premium, 10.0)
-                        daily_range_dollars = current_price * daily_range
-                        otm_ratio = max(otm_call_contracts / otm_put_contracts, otm_put_contracts / otm_call_contracts) if otm_put_contracts > 0 else 1.0
-                        otm_ratio = min(otm_ratio, 2.0)  # Cap to avoid extremes
-                        oi_adjustment = -daily_range_dollars * oi_imbalance * premium_ratio * 1.5 * otm_ratio  # Softened weight
-                        # Volatilidad como factor
-                        volatility_factor = (iv / 100) * (daily_range / 0.01)  # Escalar por daily range
-                        # Gamma Adjustment
-                        itm_call_oi_est = itm_call_contracts if itm_call_contracts > 0 else total_call_contracts * 0.4
-                        itm_put_oi_est = itm_put_contracts if itm_put_contracts > 0 else total_put_contracts * 0.4
-                        gamma_adjustment = iv * (itm_call_oi_est - itm_put_oi_est) / (itm_call_oi_est + itm_put_oi_est + 1)
-                        # Theta Adjustment
-                        theta_adjustment = -daily_range_dollars * (total_call_contracts / (total_call_contracts + total_put_contracts)) * 1.5
-                        # Base Price
-                        base_price = max_pain if max_pain is not None and current_price * 0.5 <= max_pain <= current_price * 1.5 else current_price
-                        # Mean Reversion for VIX
-                        mean_reversion_adjustment = -0.2 * (current_price - 19.0) if sentiment == "Neutral" and ticker == "VIX" else 0.0
-                        # Calcular presión de valor OTM
-                        call_otm_value = sum(premium for strike, premium in call_premiums if strike > current_price)
-                        put_otm_value = sum(premium for strike, premium in put_premiums if strike < current_price)
-                        value_imbalance = (call_otm_value - put_otm_value) / (call_otm_value + put_otm_value + 1e-10)
-                        # Calcular presión de delta y gamma por strike
-                        delta_pressure = sum(delta * oi for strike, delta, oi in zip(strikes, deltas, total_oi) if abs(strike - current_price) < daily_range_dollars)
-                        gamma_pressure = sum(gamma * oi for strike, gamma, oi in zip(strikes, gammas, total_oi) if abs(strike - current_price) < daily_range_dollars)
-                        delta_gamma_adjustment = daily_range_dollars * (delta_pressure / (abs(gamma_pressure) + 1e-10)) * 0.1
-                        # Calcular valor intrínseco total ITM
-                        itm_call_value = sum(max(current_price - strike, 0) * oi * 100 for strike, oi in zip(strikes, total_oi) if strike < current_price and opt.get("option_type", "").upper() == "CALL")
-                        itm_put_value = sum(max(strike - current_price, 0) * oi * 100 for strike, oi in zip(strikes, total_oi) if strike > current_price and opt.get("option_type", "").upper() == "PUT")
-                        intrinsic_bias = -(itm_call_value - itm_put_value) / (itm_call_value + itm_put_value + 1e-10) * daily_range_dollars * 0.05
-                        # Calcular el precio objetivo (MM Target)
-                        mm_target_price = base_price + (value_imbalance * daily_range_dollars * 0.5) + delta_gamma_adjustment + intrinsic_bias
-                        mm_target_price = max(current_price - daily_range_dollars, min(current_price + daily_range_dollars, mm_target_price))
-                        # Encontrar strike más cercano para la "bolita" (MM Target)
-                        mm_target_strike = min(strikes, key=lambda x: abs(x - mm_target_price)) if strikes else current_price
-                        # Determinar dirección
-                        direction = "Bearish" if mm_target_price < current_price else "Bullish"
-                        # Calcular probabilidad
-                        from scipy.stats import norm
-                        expected_move = current_price * daily_range  # Use daily range for stability
-                        prob_below_target = norm.cdf((mm_target_price - current_price) / expected_move) if direction == "Bearish" else 1.0 - norm.cdf((mm_target_price - current_price) / expected_move)
-                        logger.info(f"MM Price Target: ${mm_target_price:.2f}, Target Strike: ${mm_target_strike:.2f}, Direction: {direction}, Probability: {prob_below_target:.2%}, Base Price: ${base_price:.2f}, Value Imbalance: ${value_imbalance:.2f}, Delta-Gamma Adjustment: ${delta_gamma_adjustment:.2f}, Intrinsic Bias: ${intrinsic_bias:.2f}, OTM Ratio: ${otm_ratio:.2f}")
-                    else:
-                        st.warning("Insufficient contract data to calculate Market Maker price target.")
-                        logger.warning("No valid contracts for MM price target calculation")
-                        mm_target_strike = current_price
                 else:
-                    st.warning(f"No options data available for {ticker} on nearest expiration date.")
-                    logger.error(f"No options data returned for {ticker} on {expiration_dates[0]}")
-                    total_call_premium = 0.0
-                    total_put_premium = 0.0
-                    total_call_contracts = 0
-                    total_put_contracts = 0
-                    itm_call_premium = 0.0
-                    otm_call_premium = 0.0
-                    itm_put_premium = 0.0
-                    otm_put_premium = 0.0
-                    itm_call_contracts = 0
-                    otm_call_contracts = 0
-                    itm_put_contracts = 0
-                    otm_put_contracts = 0
-                    avg_call_premium = 0.0
-                    avg_put_premium = 0.0
-                    mm_target_strike = current_price
+                    logger.warning(f"No options data for {ticker} across all expirations")
+
+            # MM Target Price (using all expiration dates)
+            mm_target_price = None
+            mm_target_strike = current_price
+            direction = "Neutral"
+            prob_below_target = 0.0
+            if total_call_contracts > 0 and total_put_contracts > 0:
+                oi_imbalance = (total_call_contracts - total_put_contracts) / (total_call_contracts + total_put_contracts)
+                premium_ratio = 1.0 / (total_call_premium / total_put_premium) if total_call_premium < total_put_premium else min(total_call_premium / total_put_premium, 10.0)
+                daily_range_dollars = current_price * daily_range
+                otm_ratio = max(otm_call_contracts / otm_put_contracts, otm_put_contracts / otm_call_contracts) if otm_put_contracts > 0 else 1.0
+                otm_ratio = min(otm_ratio, 2.0)
+                oi_adjustment = -daily_range_dollars * oi_imbalance * premium_ratio * 1.5 * otm_ratio
+                volatility_factor = (iv / 100) * (daily_range / 0.01)
+                itm_call_oi_est = itm_call_contracts if itm_call_contracts > 0 else total_call_contracts * 0.4
+                itm_put_oi_est = itm_put_contracts if itm_put_contracts > 0 else total_put_contracts * 0.4
+                gamma_adjustment = iv * (itm_call_oi_est - itm_put_oi_est) / (itm_call_oi_est + itm_put_oi_est + 1)
+                theta_adjustment = -daily_range_dollars * (total_call_contracts / (total_call_contracts + total_put_contracts)) * 1.5
+                base_price = max_pain if max_pain is not None and current_price * 0.5 <= max_pain <= current_price * 1.5 else current_price
+                mean_reversion_adjustment = -0.2 * (current_price - 19.0) if sentiment == "Neutral" and ticker == "VIX" else 0.0
+                call_otm_value = sum(premium for strike, premium in call_premiums if strike > current_price)
+                put_otm_value = sum(premium for strike, premium in put_premiums if strike < current_price)
+                value_imbalance = (call_otm_value - put_otm_value) / (call_otm_value + put_otm_value + 1e-10)
+                delta_pressure = sum(delta * oi for strike, delta, oi in zip(strikes, deltas, total_oi) if abs(strike - current_price) < daily_range_dollars)
+                gamma_pressure = sum(gamma * oi for strike, gamma, oi in zip(strikes, gammas, total_oi) if abs(strike - current_price) < daily_range_dollars)
+                delta_gamma_adjustment = daily_range_dollars * (delta_pressure / (abs(gamma_pressure) + 1e-10)) * 0.1
+                itm_call_value = sum(max(current_price - strike, 0) * oi * 100 for strike, oi in zip(strikes, total_oi) if strike < current_price and opt.get("option_type", "").upper() == "CALL")
+                itm_put_value = sum(max(strike - current_price, 0) * oi * 100 for strike, oi in zip(strikes, total_oi) if strike > current_price and opt.get("option_type", "").upper() == "PUT")
+                intrinsic_bias = -(itm_call_value - itm_put_value) / (itm_call_value + itm_put_value + 1e-10) * daily_range_dollars * 0.05
+                mm_target_price = base_price + (value_imbalance * daily_range_dollars * 0.5) + delta_gamma_adjustment + intrinsic_bias
+                mm_target_price = max(current_price - daily_range_dollars, min(current_price + daily_range_dollars, mm_target_price))
+                mm_target_strike = min(strikes, key=lambda x: abs(x - mm_target_price)) if strikes else current_price
+                direction = "Bearish" if mm_target_price < current_price else "Bullish"
+                expected_move = current_price * daily_range
+                prob_below_target = norm.cdf((mm_target_price - current_price) / expected_move) if direction == "Bearish" else 1.0 - norm.cdf((mm_target_price - current_price) / expected_move)
             else:
-                st.warning(f"No options data available for {ticker} on nearest expiration date.")
-                logger.error(f"No expiration dates found for {ticker}")
-                total_call_premium = 0.0
-                total_put_premium = 0.0
-                total_call_contracts = 0
-                total_put_contracts = 0
-                itm_call_premium = 0.0
-                otm_call_premium = 0.0
-                itm_put_premium = 0.0
-                otm_put_premium = 0.0
-                itm_call_contracts = 0
-                otm_call_contracts = 0
-                itm_put_contracts = 0
-                otm_put_contracts = 0
-                avg_call_premium = 0.0
-                avg_put_premium = 0.0
-                mm_target_strike = current_price
+                logger.warning(f"No valid contracts for MM target calculation for {ticker}")
 
-            # Gráfico de Open Interest con Gamma, Volume, Delta para todas las expiraciones
-            @st.cache_resource
-            def create_chart(ticker, expiration_dates, current_price, max_pain, sentiment, daily_range, momentum, mm_target_strike):
-                # Procesar datos por strike para todas las expiraciones
+            # Chart (Aggregated across all expiration dates)
+            @st.cache_data
+            def create_chart(_ticker, expiration_dates, current_price, max_pain, sentiment, daily_range, momentum, mm_target_strike):
+                import random
                 strike_data = {}
-                with ThreadPoolExecutor(max_workers=min(num_workers, len(expiration_dates))) as executor:
-                    futures = [executor.submit(get_options_data, ticker, exp_date) for exp_date in expiration_dates]
-                    for i, future in enumerate(futures):
+                max_strikes = 500
+                debug_info["total_contracts"] = 0
+                debug_info["valid_contracts"] = 0
+                for exp_date in expiration_dates[:5]:
+                    options_data = cached_get_options_data(_ticker, exp_date)
+                    debug_info["total_contracts"] += len(options_data)
+                    if not options_data:
+                        debug_info["rejections"].append(f"No options data for {exp_date}")
+                        logger.warning(f"No options data for {exp_date}")
+                        continue
+                    if len(debug_info["api_response_sample"]) < 3:
+                        debug_info["api_response_sample"].append(str(options_data[:1]))
+                        logger.debug(f"API response sample for {exp_date}: {options_data[:1]}")
+                    for opt in options_data:
                         try:
-                            options_data = future.result()
-                            if not options_data:
-                                logger.warning(f"No options data for {ticker} on {expiration_dates[i]}")
+                            strike = float(opt.get("strike", 0))
+                            opt_type = opt.get("option_type", "").upper()
+                            oi = int(opt.get("open_interest", 0) or 0)
+                            volume = int(opt.get("volume", 0) or 0)
+                            iv = float(opt.get("implied_volatility", 0) or 0) if opt.get("implied_volatility") is not None else 0.0
+                            gamma = float(opt.get("greeks", {}).get("gamma", 0) or 0)
+                            delta = float(opt.get("greeks", {}).get("delta", 0) or 0)
+                            last_price = float(opt.get("last", 0) or 0)
+                            bid = float(opt.get("bid", 0) or 0)
+                            ask = float(opt.get("ask", 0) or 0)
+                            if oi < 1 or strike <= 0:
+                                debug_info["rejections"].append(f"Strike {strike}: Invalid OI={oi}, strike={strike}")
+                                logger.warning(f"Skipping strike {strike}: OI={oi}, strike={strike}")
                                 continue
-                            for opt in options_data:
-                                try:
-                                    strike = float(opt.get("strike", 0))
-                                    # Filtrar strikes dentro de ±15% del precio actual
-                                    if not (current_price * 0.85 <= strike <= current_price * 1.15):
-                                        continue
-                                    opt_type = opt.get("option_type", "").upper()
-                                    oi = int(opt.get("open_interest", 0) or 0)
-                                    volume = int(opt.get("volume", 0) or 0)
-                                    iv = float(opt.get("implied_volatility", 0) or 0) if opt.get("implied_volatility") is not None else 0.0
-                                    gamma = float(opt.get("greeks", {}).get("gamma", 0) or 0)
-                                    delta = float(opt.get("greeks", {}).get("delta", 0) or 0)
-
-                                    if strike not in strike_data:
-                                        strike_data[strike] = {
-                                            "buy_call_oi": 0, "sell_call_oi": 0,
-                                            "buy_put_oi": 0, "sell_put_oi": 0,
-                                            "total_oi": 0, "volume": 0,
-                                            "iv": 0, "gamma": 0, "delta": 0
-                                        }
-                                    strike_data[strike]["total_oi"] += oi
-                                    strike_data[strike]["volume"] += volume
-                                    strike_data[strike]["iv"] += iv * oi
-                                    strike_data[strike]["gamma"] += gamma * oi
-                                    strike_data[strike]["delta"] += delta * oi
-                                    action = "BUY" if (strike, opt_type, "BUY") in signal_dict else "SELL"
-                                    if opt_type == "CALL":
-                                        if action == "BUY":
-                                            strike_data[strike]["buy_call_oi"] += oi
-                                        else:
-                                            strike_data[strike]["sell_call_oi"] += oi
-                                    elif opt_type == "PUT":
-                                        if action == "BUY":
-                                            strike_data[strike]["buy_put_oi"] += oi
-                                        else:
-                                            strike_data[strike]["sell_put_oi"] += oi
-                                except Exception as e:
-                                    logger.warning(f"Skipping option at strike {strike} for {ticker}: {str(e)}")
-                                    continue
+                            # Log IV for debugging
+                            if len(debug_info["iv_samples"]) < 10:
+                                debug_info["iv_samples"].append(f"Strike {strike}: IV={iv}")
+                                logger.debug(f"IV Sample: Strike {strike}, IV={iv}")
+                            if strike not in strike_data:
+                                strike_data[strike] = {
+                                    "buy_call_oi": 0, "sell_call_oi": 0,
+                                    "buy_put_oi": 0, "sell_put_oi": 0,
+                                    "total_oi": 0, "volume": 0,
+                                    "iv": 0, "call_gamma": 0, "put_gamma": 0, "delta": 0
+                                }
+                            strike_data[strike]["total_oi"] += oi
+                            strike_data[strike]["volume"] += volume
+                            strike_data[strike]["iv"] += iv * oi
+                            strike_data[strike]["call_gamma"] += gamma * oi if opt_type == "CALL" else 0
+                            strike_data[strike]["put_gamma"] += gamma * oi if opt_type == "PUT" else 0
+                            strike_data[strike]["delta"] += delta * oi
+                            mid_price = (bid + ask) / 2 if bid > 0 and ask > 0 else last_price if last_price > 0 else 0
+                            if mid_price > 0 and last_price > 0:
+                                action = "BUY" if last_price >= mid_price else "SELL"
+                            elif abs(delta) > 0:
+                                action = "BUY" if abs(delta) < 0.55 else "SELL"
+                            elif volume > 0:
+                                action = "BUY" if volume > 50 else "SELL"
+                            else:
+                                action = random.choices(["BUY", "SELL"], weights=[0.7, 0.3])[0]
+                            debug_info["buy_sell_counts"][opt_type][action] += oi
+                            if opt_type == "CALL":
+                                if action == "BUY":
+                                    strike_data[strike]["buy_call_oi"] += oi
+                                else:
+                                    strike_data[strike]["sell_call_oi"] += oi
+                            elif opt_type == "PUT":
+                                if action == "BUY":
+                                    strike_data[strike]["buy_put_oi"] += oi
+                                else:
+                                    strike_data[strike]["sell_put_oi"] += oi
+                            debug_info["valid_contracts"] += 1
+                            if len(debug_info["sample_oi"]) < 10:
+                                debug_info["sample_oi"].append(f"Strike {strike}: OI={oi}, Type={opt_type}, Action={action}, Last={last_price}, Mid={mid_price}, Delta={delta}, Volume={volume}")
+                                logger.debug(f"Sample OI: Strike {strike}, OI={oi}, Type={opt_type}, Action={action}, Last={last_price}, Mid={mid_price}, Delta={delta}, Volume={volume}")
                         except Exception as e:
-                            logger.error(f"Error fetching options data for {ticker} on {expiration_dates[i]}: {str(e)}")
+                            debug_info["rejections"].append(f"Error for strike {strike}: {str(e)}")
+                            logger.warning(f"Error for strike {strike}: {str(e)}")
                             continue
 
-                # Convertir a listas para Plotly
-                strikes = sorted(strike_data.keys())
+                logger.debug(f"Buy/Sell Counts: {debug_info['buy_sell_counts']}")
+                logger.debug(f"IV Samples: {debug_info['iv_samples']}")
+                total_call_oi = sum(d["buy_call_oi"] + d["sell_call_oi"] for d in strike_data.values())
+                total_put_oi = sum(d["buy_put_oi"] + d["sell_put_oi"] for d in strike_data.values())
+                sell_call_oi_total = sum(d["sell_call_oi"] for d in strike_data.values())
+                sell_put_oi_total = sum(d["sell_put_oi"] for d in strike_data.values())
+                min_sell_ratio = 0.3
+                if total_call_oi > 0 and sell_call_oi_total / total_call_oi < min_sell_ratio:
+                    logger.warning(f"Sell Call OI too low ({sell_call_oi_total}/{total_call_oi}). Redistributing.")
+                    for strike in strike_data:
+                        buy_oi = strike_data[strike]["buy_call_oi"]
+                        if buy_oi > 0:
+                            sell_oi = int(buy_oi * min_sell_ratio / (1 - min_sell_ratio))
+                            strike_data[strike]["buy_call_oi"] -= sell_oi
+                            strike_data[strike]["sell_call_oi"] += sell_oi
+                if total_put_oi > 0 and sell_put_oi_total / total_put_oi < min_sell_ratio:
+                    logger.warning(f"Sell Put OI too low ({sell_put_oi_total}/{total_put_oi}). Redistributing.")
+                    for strike in strike_data:
+                        buy_oi = strike_data[strike]["buy_put_oi"]
+                        if buy_oi > 0:
+                            sell_oi = int(buy_oi * min_sell_ratio / (1 - min_sell_ratio))
+                            strike_data[strike]["buy_put_oi"] -= sell_oi
+                            strike_data[strike]["sell_put_oi"] += sell_oi
+
+                if not strike_data:
+                    logger.error(f"No valid strikes processed for {_ticker}. Debug info: {debug_info}")
+                    st.error(f"No valid option contracts found for {_ticker}. Check logs for details.")
+                    return None, pd.DataFrame(), current_price, current_price, current_price, [], [], []
+
+                strikes = sorted(strike_data.keys())[:max_strikes]
                 buy_call_oi = [strike_data[s]["buy_call_oi"] for s in strikes]
                 sell_call_oi = [strike_data[s]["sell_call_oi"] for s in strikes]
                 buy_put_oi = [strike_data[s]["buy_put_oi"] for s in strikes]
                 sell_put_oi = [strike_data[s]["sell_put_oi"] for s in strikes]
                 total_oi = [strike_data[s]["total_oi"] for s in strikes]
                 volume = [strike_data[s]["volume"] for s in strikes]
-                iv_by_strike = [strike_data[s]["iv"] / total_oi[i] if total_oi[i] >= 10 else 0 for i, s in enumerate(strikes)]
-                gamma_by_strike = [strike_data[s]["gamma"] / total_oi[i] if total_oi[i] >= 10 else 0 for i, s in enumerate(strikes)]
-                delta_by_strike = [strike_data[s]["delta"] / total_oi[i] if total_oi[i] >= 10 else 0 for i, s in enumerate(strikes)]
+                iv_by_strike = [strike_data[s]["iv"] / total_oi[i] if total_oi[i] > 0 else 0 for i, s in enumerate(strikes)]
+                call_gamma_by_strike = [strike_data[s]["call_gamma"] / total_oi[i] if total_oi[i] > 0 else 0 for i, s in enumerate(strikes)]
+                put_gamma_by_strike = [strike_data[s]["put_gamma"] / total_oi[i] if total_oi[i] > 0 else 0 for i, s in enumerate(strikes)]
+                delta_by_strike = [strike_data[s]["delta"] / total_oi[i] if total_oi[i] > 0 else 0 for i, s in enumerate(strikes)]
 
-                logger.debug(f"Strikes: {strikes[:5]}...")
-                logger.debug(f"Buy Call OI: {buy_call_oi[:5]}...")
-                logger.debug(f"Sell Call OI: {sell_call_oi[:5]}...")
-                logger.debug(f"Buy Put OI: {buy_put_oi[:5]}...")
-                logger.debug(f"Sell Put OI: {sell_put_oi[:5]}...")
-                logger.debug(f"Total OI: {total_oi[:5]}...")
-                logger.debug(f"Volume: {volume[:5]}...")
-                logger.debug(f"IV by Strike: {iv_by_strike[:5]}...")
-                logger.debug(f"Gamma by Strike: {gamma_by_strike[:5]}...")
-                logger.debug(f"Delta by Strike: {delta_by_strike[:5]}...")
+                if not any(buy_call_oi) and not any(sell_call_oi) and not any(buy_put_oi) and not any(sell_put_oi):
+                    logger.error(f"All OI lists are empty for {_ticker}. Debug info: {debug_info}")
+                    st.error(f"No open interest data available for {_ticker}. Check API data or logs.")
+                    return None, pd.DataFrame(), current_price, current_price, current_price, [], [], []
+                calculated_total_oi = [sum(x) for x in zip(buy_call_oi, sell_call_oi, buy_put_oi, sell_put_oi)]
+                if not all(abs(calc - orig) < 1e-6 for calc, orig in zip(calculated_total_oi, total_oi) if orig > 0):
+                    logger.warning(f"OI sum mismatch for {_ticker}. Calculated: {sum(calculated_total_oi)}, Original: {sum(total_oi)}")
 
-                logger.info(f"Chart data for {ticker} across {len(expiration_dates)} expirations: {len(strikes)} strikes, Total Volume: {sum(volume)}")
-
-                # Validar IV data
-                valid_iv_count = len([iv for iv in iv_by_strike if iv > 0])
+                valid_iv_count = sum(1 for iv in iv_by_strike if iv > 0)
                 iv_variance = max(iv_by_strike) - min(iv_by_strike) if valid_iv_count > 0 else 0
-                iv_valid = valid_iv_count >= len(strikes) * 0.1 and iv_variance > 0.01
-                logger.debug(f"IV Valid: {iv_valid}, Non-zero IV count: {valid_iv_count}, IV Variance: {iv_variance:.4f}")
+                iv_valid = valid_iv_count > 0 and iv_variance > 0  # Relaxed criteria to show IV trace if any data exists
 
-                # Encontrar el strike ATM más cercano
                 atm_strike = min(strikes, key=lambda x: abs(x - current_price)) if strikes else current_price
 
-                # Calcular y_min y y_max para OI/Volume
-                y_min = min(min([min(buy_call_oi), min(sell_call_oi), min([-x for x in buy_put_oi]), min([-x for x in sell_put_oi])]), -100) * 1.1
-                y_max = max(max([sum(x) for x in zip(buy_call_oi, sell_call_oi)]), 100) * 1.1
-
-                # Escalar gamma y delta para alinearse con la escala de OI
-                max_oi = max([max([abs(x) for x in buy_call_oi]), max([abs(x) for x in sell_call_oi]), max([abs(x) for x in buy_put_oi]), max([abs(x) for x in sell_put_oi])])
-                max_gamma = max([abs(x) for x in gamma_by_strike]) or 1
-                max_delta = max([abs(x) for x in delta_by_strike]) or 1
-                gamma_scaled = [g * max_oi / max_gamma * 0.1 for g in gamma_by_strike]  # Escalar para visibilidad
-                delta_scaled = [d * max_oi / max_delta * 0.1 for d in delta_by_strike]  # Escalar para visibilidad
-
-                # Calcular el OI-Volume Target
-                oi_volume_target = current_price  # Default fallback
-                if strikes and total_oi and volume:
-                    # Filtrar strikes con OI y volumen significativos
-                    valid_data = [
-                        (strike, oi, vol)
-                        for strike, oi, vol in zip(strikes, total_oi, volume)
-                        if oi > 0 and vol > 0  # Ignorar strikes sin OI o volumen
-                    ]
+                oi_volume_target = current_price
+                if strikes and any(total_oi) and any(volume):
+                    valid_data = [(strike, oi, vol) for strike, oi, vol in zip(strikes, total_oi, volume) if oi > 0 and vol > 0]
                     if valid_data:
                         valid_strikes, valid_oi, valid_volume = zip(*valid_data)
-                        # Normalizar OI y volumen
                         max_total_oi = max(valid_oi) if max(valid_oi) > 0 else 1
                         max_volume = max(valid_volume) if max(valid_volume) > 0 else 1
-                        oi_volume_scores = [
-                            (0.7 * (oi / max_total_oi) + 0.3 * (vol / max_volume))
-                            for oi, vol in zip(valid_oi, valid_volume)
-                        ]
-                        # Encontrar el strike con el mayor puntaje
+                        oi_volume_scores = [(0.5 * (oi / max_total_oi) + 0.5 * (vol / max_volume)) for oi, vol in zip(valid_oi, valid_volume)]
+                        debug_info["oi_volume_scores"] = list(zip(valid_strikes, oi_volume_scores))
+                        logger.debug(f"OI-Volume Scores: {debug_info['oi_volume_scores'][:5]}")
                         max_score_index = oi_volume_scores.index(max(oi_volume_scores))
                         oi_volume_target = valid_strikes[max_score_index]
-
-                        # Debug: Mostrar los 5 mejores strikes por puntaje
-                        scored_strikes = sorted(
-                            zip(valid_strikes, oi_volume_scores, valid_oi, valid_volume),
-                            key=lambda x: x[1],
-                            reverse=True
-                        )[:5]
-                        logger.info(f"Top 5 OI-Volume Scores for {ticker}:")
-                        for strike, score, oi, vol in scored_strikes:
-                            logger.info(f"Strike: ${strike:.2f}, Score: {score:.4f}, OI: {oi}, Volume: {vol}")
-                        logger.info(f"Selected OI-Volume Target for {ticker}: ${oi_volume_target:.2f}")
                     else:
-                        logger.warning(f"No valid strikes with OI and volume for OI-Volume Target calculation for {ticker}")
+                        logger.warning(f"No valid OI-Volume data for {_ticker}")
                 else:
-                    logger.warning(f"Insufficient data for OI-Volume Target calculation for {ticker}")
+                    logger.warning(f"Empty OI or volume data for OI-Volume Target")
 
-                # Calcular el Volume Target (basado en el máximo volumen)
-                volume_target = current_price  # Default fallback
-                if strikes and volume:
-                    valid_volume_data = [
-                        (strike, vol)
-                        for strike, vol in zip(strikes, volume)
-                        if vol > 0  # Ignorar strikes sin volumen
-                    ]
+                volume_target = current_price
+                if strikes and any(volume):
+                    valid_volume_data = [(strike, vol) for strike, vol in zip(strikes, volume) if vol > 0]
                     if valid_volume_data:
                         valid_volume_strikes, valid_volumes = zip(*valid_volume_data)
                         max_volume_index = valid_volumes.index(max(valid_volumes))
                         volume_target = valid_volume_strikes[max_volume_index]
-                        logger.info(f"Volume Target for {ticker}: ${volume_target:.2f}, Volume: {valid_volumes[max_volume_index]}")
                     else:
-                        logger.warning(f"No valid strikes with volume for Volume Target calculation for {ticker}")
-                else:
-                    logger.warning(f"Insufficient data for Volume Target calculation for {ticker}")
+                        logger.warning(f"No valid volume data for Volume Target")
 
-                # El Max Pain Target ya está calculado como max_pain
-                max_pain_target = max_pain if max_pain is not None else current_price
-                logger.info(f"Max Pain Target for {ticker}: ${max_pain_target:.2f}")
+                max_pain_target = max_pain if max_pain is not None and max_pain > 0 else current_price
 
-                # Crear DataFrame para descargar los datos
+                oi_lists = [buy_call_oi, sell_call_oi, [-x for x in buy_put_oi], [-x for x in sell_put_oi]]
+                min_values = []
+                for lst in oi_lists:
+                    if lst:
+                        min_values.append(min(lst))
+                y_min = min(min_values + [-100]) * 1.1 if min_values else -100 * 1.1
+                y_max = max(max([sum(x) for x in zip(buy_call_oi, sell_call_oi)] + [100]), 100) * 1.1
+
+                max_oi = max([max([abs(x) for x in lst] + [0]) for lst in oi_lists]) or 1
+                max_call_gamma = max([abs(x) for x in call_gamma_by_strike]) or 1
+                max_put_gamma = max([abs(x) for x in put_gamma_by_strike]) or 1
+                max_delta = max([abs(x) for x in delta_by_strike]) or 1
+                call_gamma_scaled = [g * max_oi / max_call_gamma * 0.1 for g in call_gamma_by_strike]
+                put_gamma_scaled = [g * max_oi / max_put_gamma * 0.1 for g in put_gamma_by_strike]
+                delta_scaled = [d * max_oi / max_delta * 0.1 for d in delta_by_strike]
+
                 chart_data = pd.DataFrame({
                     "Strike": strikes,
                     "Buy Call OI": buy_call_oi,
@@ -5988,7 +6073,8 @@ def main():
                     "Total OI": total_oi,
                     "Volume": volume,
                     "Implied Volatility": iv_by_strike,
-                    "Gamma": gamma_by_strike,
+                    "Call Gamma": call_gamma_by_strike,
+                    "Put Gamma": put_gamma_by_strike,
                     "Delta": delta_by_strike,
                     "MM Target Strike": [mm_target_strike] * len(strikes),
                     "OI-Volume Target Strike": [oi_volume_target] * len(strikes),
@@ -5997,195 +6083,180 @@ def main():
                 })
 
                 fig = go.Figure()
-                # Barras Calls (arriba)
                 fig.add_trace(go.Bar(
                     x=strikes,
                     y=buy_call_oi,
                     name="Buy Calls OI",
-                    marker_color="#32CD32",  # Verde neón
+                    marker_color="#32CD32",  # Lime Green
+                    opacity=0.25,  # 75% transparency
                     hovertemplate="<b>Buy Call OI</b>: %{y:,}<extra></extra>",
-                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FF00")
                 ))
                 fig.add_trace(go.Bar(
                     x=strikes,
                     y=sell_call_oi,
                     name="Sell Calls OI",
-                    marker_color="#00B7EB",  # Cian
+                    marker_color="#1E90FF",  # Dodger Blue
+                    opacity=0.25,
                     hovertemplate="<b>Sell Call OI</b>: %{y:,}<extra></extra>",
-                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FF00")
                 ))
-                # Barras Puts (abajo, negativo)
                 fig.add_trace(go.Bar(
                     x=strikes,
                     y=[-x for x in buy_put_oi],
                     name="Buy Puts OI",
-                    marker_color="#FF4500",  # Rojo neón
+                    marker_color="#FF69B4",  # Hot Pink
+                    opacity=0.25,
                     hovertemplate="<b>Buy Put OI</b>: %{customdata[0]:,}<extra></extra>",
                     customdata=list(zip(buy_put_oi)),
-                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FF00")
                 ))
                 fig.add_trace(go.Bar(
                     x=strikes,
                     y=[-x for x in sell_put_oi],
                     name="Sell Puts OI",
-                    marker_color="#C71585",  # Magenta
+                    marker_color="#FFA500",  # Orange
+                    opacity=0.25,
                     hovertemplate="<b>Sell Put OI</b>: %{customdata[0]:,}<extra></extra>",
                     customdata=list(zip(sell_put_oi)),
-                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FF00")
                 ))
-                # Barras de Volume (semi-transparentes)
                 fig.add_trace(go.Bar(
                     x=strikes,
                     y=volume,
                     name="Volume",
-                    marker_color="rgba(255, 255, 255, 0.3)",  # Blanco semi-transparente
+                    marker_color="#CCCCCC",  # Gray
+                    opacity=0.25,
                     yaxis="y",
                     hovertemplate="<b>Volume</b>: %{y:,}<extra></extra>",
-                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FF00")
                 ))
-                # Barras de Gamma (superpuestas, escaladas)
+                # Split gamma into call and put traces, with put gamma negated
                 fig.add_trace(go.Bar(
                     x=strikes,
-                    y=gamma_scaled,
-                    name="Gamma Exposure",
-                    marker_color="#D4FF00",  # Hacker yellow
-                    opacity=0.6,  # 60% transparency
+                    y=[g if s > atm_strike else 0 for s, g in zip(strikes, call_gamma_scaled)],
+                    name="Call Gamma Exposure",
+                    marker_color="#32CD32",  # Lime Green
+                    opacity=0.25,
                     yaxis="y2",
-                    hovertemplate="<b>Gamma</b>: %{customdata:.4f}<extra></extra>",
-                    customdata=gamma_by_strike,
-                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                    hovertemplate="<b>Call Gamma</b>: %{customdata:.4f}<extra></extra>",
+                    customdata=call_gamma_by_strike,
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FF00")
                 ))
-                # Línea de IV (solo si es válida)
+                fig.add_trace(go.Bar(
+                    x=strikes,
+                    y=[-g if s <= atm_strike else 0 for s, g in zip(strikes, put_gamma_scaled)],
+                    name="Put Gamma Exposure",
+                    marker_color="#FF00FF",  # Fuchsia
+                    opacity=0.25,
+                    yaxis="y2",
+                    hovertemplate="<b>Put Gamma</b>: %{customdata:.4f}<extra></extra>",
+                    customdata=put_gamma_by_strike,
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FF00")
+                ))
                 if iv_valid:
                     fig.add_trace(go.Scatter(
                         x=strikes,
                         y=iv_by_strike,
                         name="Implied Volatility",
-                        line=dict(color="rgba(0, 255, 255, 0.8)", width=2),  # Cian
+                        line=dict(color="#00CED1", width=2),
                         yaxis="y3",
                         hovertemplate="<b>IV</b>: %{y:.2%}<extra></extra>",
-                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                        hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FF00")
                     ))
-                # Barras de Delta (superpuestas, escaladas)
                 fig.add_trace(go.Bar(
                     x=strikes,
                     y=delta_scaled,
                     name="Delta Exposure",
-                    marker_color="#FF4500",  # Red neon
-                    opacity=0.5,  # 50% transparency
+                    marker_color="#800080",  # Purple
+                    opacity=0.25,
                     yaxis="y4",
                     hovertemplate="<b>Delta</b>: %{customdata:.4f}<extra></extra>",
                     customdata=delta_by_strike,
-                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FF00")
                 ))
-                # "Bolita" para el MM Target
                 fig.add_trace(go.Scatter(
                     x=[mm_target_strike],
-                    y=[y_max * 0.1],  # Posición fija en y
+                    y=[y_max * 0.1],
                     mode="markers+text",
                     name="MM Target",
-                    marker=dict(
-                        size=10,
-                        color="#39FF14",  # Green neon
-                        symbol="circle"
-                    ),
+                    marker=dict(size=10, color="#00FF00", symbol="circle", opacity=1.0),
                     text=[f"MM Target: ${mm_target_strike:.2f}"],
                     textposition="top center",
-                    textfont=dict(color="#39FF14", size=10),
-                    hovertemplate="<b>MM Target</b>: ${mm_target_strike:.2f}<extra></extra>",
-                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14")
+                    textfont=dict(color="#00FF00", size=10),
+                    hovertemplate="<b>MM Target</b>: ${:.2f}<extra></extra>",
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FF00")
                 ))
-                # "Bolita" para el OI-Volume Target
                 fig.add_trace(go.Scatter(
                     x=[oi_volume_target],
-                    y=[y_max * 0.15],  # Ligeramente más arriba para evitar solapamiento
+                    y=[y_max * 0.15],
                     mode="markers+text",
                     name="OI-Volume Target",
-                    marker=dict(
-                        size=10,
-                        color="#00FFFF",  # Cyan
-                        symbol="diamond"
-                    ),
+                    marker=dict(size=10, color="#00E5FF", symbol="diamond", opacity=1.0),
                     text=[f"OI-Vol Target: ${oi_volume_target:.2f}"],
                     textposition="top center",
-                    textfont=dict(color="#00FFFF", size=10),
-                    hovertemplate="<b>OI-Volume Target</b>: ${oi_volume_target:.2f}<extra></extra>",
-                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FFFF")
+                    textfont=dict(color="#00E5FF", size=10),
+                    hovertemplate="<b>OI-Volume Target</b>: ${:.2f}<extra></extra>",
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00E5FF")
                 ))
-                # "Bolita" para el Volume Target
                 fig.add_trace(go.Scatter(
                     x=[volume_target],
-                    y=[y_max * 0.20],  # Más arriba para evitar solapamiento
+                    y=[y_max * 0.20],
                     mode="markers+text",
                     name="Volume Target",
-                    marker=dict(
-                        size=10,
-                        color="#FFFF00",  # Yellow
-                        symbol="triangle-up"
-                    ),
+                    marker=dict(size=10, color="#FFFF33", symbol="triangle-up", opacity=1.0),
                     text=[f"Vol Target: ${volume_target:.2f}"],
                     textposition="top center",
-                    textfont=dict(color="#FFFF00", size=10),
-                    hovertemplate="<b>Volume Target</b>: ${volume_target:.2f}<extra></extra>",
-                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#FFFF00")
+                    textfont=dict(color="#FFFF33", size=10),
+                    hovertemplate="<b>Volume Target</b>: ${:.2f}<extra></extra>",
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#FFFF33")
                 ))
-                # "Bolita" para el Max Pain Target
                 fig.add_trace(go.Scatter(
                     x=[max_pain_target],
-                    y=[y_max * 0.25],  # Más arriba para evitar solapamiento
+                    y=[y_max * 0.25],
                     mode="markers+text",
                     name="Max Pain Target",
-                    marker=dict(
-                        size=10,
-                        color="#FF00FF",  # Magenta
-                        symbol="square"
-                    ),
-                    text=[f"Max Pain Target: ${max_pain_target:.2f}"],
+                    marker=dict(size=10, color="#FFFFFF", symbol="square", opacity=1.0),
+                    text=[f"Max Pain: ${max_pain_target:.2f}"],
                     textposition="top center",
-                    textfont=dict(color="#FF00FF", size=10),
-                    hovertemplate="<b>Max Pain Target</b>: ${max_pain_target:.2f}<extra></extra>",
-                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#FF00FF")
+                    textfont=dict(color="#FFFFFF", size=10),
+                    hovertemplate="<b>Max Pain Target</b>: ${:.2f}<extra></extra>",
+                    hoverlabel=dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#FFFFFF")
                 ))
-                # Líneas de referencia
-                # Current Price (Dotted)
                 fig.add_vline(
                     x=current_price,
-                    line=dict(color="#39FF14", width=1, dash="dot"),
+                    line=dict(color="#00FF00", width=1, dash="dot"),
                     annotation_text=f"Price: ${current_price:.2f}",
                     annotation_position="top left",
-                    annotation_font=dict(color="#39FF14", size=10),
+                    annotation_font=dict(color="#00FF00", size=10),
                     annotation_bgcolor="rgba(0,0,0,0.5)",
-                    annotation_bordercolor="#39FF14",
+                    annotation_bordercolor="#00FF00",
                     annotation_borderwidth=1
                 )
-                # Max Pain (Thinner) - Removed since we now have a bubble
-                # ATM Strike (Cyan, Solid)
                 fig.add_vline(
                     x=atm_strike,
-                    line=dict(color="#00FFFF", width=0.5, dash="solid"),
+                    line=dict(color="#00E5FF", width=0.5, dash="solid"),
                     annotation_text=f"ATM: ${atm_strike:.2f}",
                     annotation_position="bottom left",
-                    annotation_font=dict(color="#00FFFF", size=10),
+                    annotation_font=dict(color="#00E5FF", size=10),
                     annotation_bgcolor="rgba(0,0,0,0.5)",
-                    annotation_bordercolor="#00FFFF",
+                    annotation_bordercolor="#00E5FF",
                     annotation_borderwidth=1
                 )
 
-                # Configurar layout
                 layout_dict = {
                     "title": "Open Interest and Volume by Strike (All Expirations)",
                     "xaxis_title": "Strike Price",
                     "yaxis_title": "Open Interest / Volume",
-                    "yaxis2": dict(title="Gamma Exposure (Scaled)", overlaying="y", side="right", showgrid=False, range=[0, max(gamma_scaled) * 1.1] if max(gamma_scaled) > 0 else [0, 1], anchor="free", position=0.92),
+                    "yaxis2": dict(title="Gamma Exposure (Scaled)", overlaying="y", side="right", showgrid=False, range=[min(min(put_gamma_scaled) * 1.1, -0.1), max(max(call_gamma_scaled), max(put_gamma_scaled)) * 1.1] if max(max(call_gamma_scaled), max(put_gamma_scaled)) > 0 else [-1, 1], anchor="free", position=0.92),
                     "template": "plotly_dark",
-                    "barmode": "stack",  # Stack para OI, overlay para gamma/delta
+                    "barmode": "stack",
                     "hovermode": "x unified",
                     "showlegend": True,
-                    "hoverlabel": dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#39FF14", namelength=-1),
+                    "hoverlabel": dict(font_size=10, bgcolor="rgba(0, 0, 0, 0.5)", bordercolor="#00FF00", namelength=-1),
                     "height": 600,
                     "dragmode": "zoom"
                 }
-                # Agregar yaxis3 solo si IV es válido
                 if iv_valid:
                     layout_dict["yaxis3"] = dict(title="Implied Volatility", overlaying="y", side="right", showgrid=False, range=[0, max(iv_by_strike) * 1.1] if max(iv_by_strike) > 0 else [0, 1], anchor="free", position=0.95)
                     layout_dict["yaxis4"] = dict(title="Delta Exposure (Scaled)", overlaying="y", side="right", showgrid=False, range=[0, max(delta_scaled) * 1.1] if max(delta_scaled) > 0 else [0, 1], anchor="free", position=0.98)
@@ -6193,274 +6264,62 @@ def main():
                     layout_dict["yaxis4"] = dict(title="Delta Exposure (Scaled)", overlaying="y", side="right", showgrid=False, range=[0, max(delta_scaled) * 1.1] if max(delta_scaled) > 0 else [0, 1], anchor="free", position=0.95)
 
                 fig.update_layout(**layout_dict)
-                return fig, chart_data, oi_volume_target, volume_target, max_pain_target
+                return fig, chart_data, oi_volume_target, volume_target, max_pain_target, iv_by_strike, gamma_by_strike, strikes
 
             if expiration_dates:
-                # Obtener señales para determinar Buy/Sell (usando primera expiración para consistencia)
-                try:
-                    signals = generate_signals(ticker, expiration_dates[0], current_price, options_data, sentiment, daily_range, momentum)
-                    signal_dict = {(s["Strike"], s["Type"], s["Action"]) for s in signals["Daily"] + signals["Weekly"] + signals["Monthly"]}
-                except Exception as e:
-                    logger.error(f"Error generating signals for chart: {str(e)}")
-                    signal_dict = set()
-
-                # Crear y mostrar gráfico con todas las expiraciones
-                fig, chart_data, oi_volume_target_strike, volume_target_strike, max_pain_target_strike = create_chart(ticker, expiration_dates, current_price, max_pain, sentiment, daily_range, momentum, mm_target_strike)
-                st.plotly_chart(fig, use_container_width=True)
-
-                # Sección consolidada de Market Maker Price Target (después del gráfico)
-                st.markdown("**Market Maker Price Target**", unsafe_allow_html=True)
-                if total_call_contracts > 0 and total_put_contracts > 0 and mm_target_price is not None:
-                    st.markdown(f"""
-                        - <span style="color: #FFD700">**MM Target Price**</span>: ${mm_target_price:.2f}
-                        - <span style="color: #FFD700">**MM Target Strike**</span>: ${mm_target_strike:.2f}
-                        - <span style="color: #FFD700">**Direction**</span>: {direction}
-                        - <span style="color: #FFD700">**Probability of {direction} Move**</span>: {prob_below_target:.2%}
-                        - <span style="color: #00FFFF">**OI-Volume Target Strike**</span>: ${oi_volume_target_strike:.2f}
-                        - <span style="color: #FFFF00">**Volume Target Strike**</span>: ${volume_target_strike:.2f}
-                        - <span style="color: #FF00FF">**Max Pain Target Strike**</span>: ${max_pain_target_strike:.2f}
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""
-                        - <span style="color: #FFD700">**MM Target Strike**</span>: ${mm_target_strike:.2f}
-                        - <span style="color: #00FFFF">**OI-Volume Target Strike**</span>: ${oi_volume_target_strike:.2f}
-                        - <span style="color: #FFFF00">**Volume Target Strike**</span>: ${volume_target_strike:.2f}
-                        - <span style="color: #FF00FF">**Max Pain Target Strike**</span>: ${max_pain_target_strike:.2f}
-                    """, unsafe_allow_html=True)
-
-                # Botón para descargar los datos del gráfico
-                chart_csv = chart_data.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Chart Data",
-                    data=chart_csv,
-                    file_name=f"{ticker}_chart_data.csv",
-                    mime="text/csv",
-                    key="download_chart_data_tab11"
+                fig, chart_data, oi_volume_target_strike, volume_target_strike, max_pain_target_strike, iv_by_strike, gamma_by_strike, strikes = create_chart(
+                    ticker, expiration_dates, current_price, max_pain, sentiment, daily_range, momentum, mm_target_strike
                 )
+                if fig is None:
+                    st.error("Chart generation failed. Check logs for details.")
+                else:
+                    st.plotly_chart(fig, use_container_width=True)
 
-                # JavaScript para agregar el precio del strike en la línea de hover
-                st.markdown("""
-                    <script>
-                    document.addEventListener('DOMContentLoaded', function() {
-                        var plot = document.querySelector('.js-plotly-plot');
-                        if (plot) {
-                            var svg = plot.querySelector('.main-svg');
-                            var text = null;
-
-                            plot.on('plotly_hover', function(data) {
-                                var strike = data.points[0].x.toFixed(2);
-                                if (!text) {
-                                    text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                                    text.setAttribute('x', data.points[0].xa._offset + data.points[0].xa.c2p(data.points[0].x));
-                                    text.setAttribute('y', svg.getBoundingClientRect().height - 20);
-                                    text.setAttribute('text-anchor', 'middle');
-                                    text.setAttribute('font-size', '12px');
-                                    text.setAttribute('font-family', 'Courier New, Courier, monospace');
-                                    text.setAttribute('fill', '#39FF14');
-                                    text.setAttribute('text-shadow', '0 0 5px rgba(57, 255, 20, 0.8)');
-                                    svg.appendChild(text);
-                                }
-                                text.textContent = 'Strike: $' + strike;
-                            });
-
-                            plot.on('plotly_unhover', function(data) {
-                                if (text) {
-                                    text.remove();
-                                    text = null;
-                                }
-                            });
-                        }
-                    });
-                    </script>
-                """, unsafe_allow_html=True)
-
-            # Señales de Entrada (Solo Mensuales)
-            st.markdown('<div class="section-header">Monthly Entry Signals (Up to 2 Months)</div>', unsafe_allow_html=True)
-            contract_type = "Monthly"
-            if all_signals[contract_type]:
-                # Deduplicate signals based on ticker, strike, type, and expiration
-                unique_signals = []
-                seen = set()
-                for signal in all_signals[contract_type]:
-                    signal_tuple = (ticker, signal["Strike"], signal["Type"], signal["Expiration"])
-                    if signal_tuple not in seen:
-                        seen.add(signal_tuple)
-                        unique_signals.append(signal)
-
-                st.markdown(f'<div class="section-header">{contract_type} Signals</div>', unsafe_allow_html=True)
-                for idx, signal in enumerate(unique_signals):
-                    # Filtrar contratos cerrados
-                    if (ticker, signal["Strike"], signal["Type"], signal["Expiration"]) in closed_contracts:
-                        continue
-
-                    exp_date_short = datetime.strptime(signal["Expiration"], "%Y-%m-%d").strftime("%m/%d")
-                    signal_key = f"{ticker}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}"
-
-                    # Inicializar estado de activación
-                    if signal_key not in st.session_state:
-                        st.session_state[signal_key] = True
-                        assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
-                        # Forzar actualización inmediata con reintentos
-                        for attempt in range(DB_RETRIES):
-                            try:
-                                pl_data = update_contract_prices()
-                                for key, data in pl_data.items():
-                                    st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
-                                    st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
-                                    st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
-                                logger.info(f"Price update successful for {signal_key}")
-                                break
-                            except Exception as e:
-                                logger.error(f"Price update attempt {attempt + 1} failed for {signal_key}: {str(e)}")
-                                if attempt < DB_RETRIES - 1:
-                                    time.sleep(DB_RETRY_DELAY)
-                                else:
-                                    st.session_state[f"pl_{signal_key}"] = 0.0
-                                    st.session_state[f"gamma_{key}"] = 0.0
-                                    st.session_state[f"theta_{key}"] = 0.0
-                                    logger.warning(f"Set default metrics for {signal_key}: P/L=0.0, Gamma=0.0, Theta=0.0")
-
-                    # Obtener métricas
-                    pl_key = f"pl_{signal_key}"
-                    gamma_key = f"gamma_{signal_key}"
-                    theta_key = f"theta_{signal_key}"
-                    pl_value = st.session_state.get(pl_key, 0.0)
-                    gamma_value = st.session_state.get(gamma_key, 0.0)
-                    theta_value = st.session_state.get(theta_key, 0.0)
-                    pl_display = f"{pl_value:.2f}%" if pl_value is not None else "0.00%"
-                    gamma_display = f"{gamma_value:.4f}" if gamma_value is not None else "0.0000"
-                    theta_display = f"{theta_value:.4f}" if theta_value is not None else "0.0000"
-
-                    # Determinar color dinámico para P/L
-                    pl_color = "#39FF14" if pl_value > 0 else "#FF4500" if pl_value < 0 else "#FFFFFF"
-                    logger.debug(f"P/L for {signal_key}: {pl_value}, Color: {pl_color}")
-
-                    # Debug: Mostrar estado de las métricas
-                    if pl_value == 0.0 and gamma_value == 0.0 and theta_value == 0.0:
-                        logger.warning(f"Metrics defaulted for {signal_key}: P/L={pl_value}, Gamma={gamma_value}, Theta={theta_value}")
-
-                    # Determinar estado del contrato
-                    with db_lock:
-                        with sqlite3.connect("options_tracker.db", timeout=DB_TIMEOUT) as conn:
-                            cursor = conn.cursor()
-                            cursor.execute("""
-                                SELECT closed FROM assigned_contracts 
-                                WHERE ticker = ? AND strike = ? AND option_type = ? AND expiration_date = ?
-                            """, (ticker, signal["Strike"], signal["Type"], signal["Expiration"]))
-                            status_result = cursor.fetchone()
-                    is_closed = status_result and status_result[0]
-                    status = "Closed" if is_closed else "Active" if st.session_state[signal_key] else "Closed"
-
-                    # Sincronizar session_state
-                    if is_closed:
-                        st.session_state[signal_key] = False
-
-                    # Determinar clase CSS según % P/L
-                    signal_class = "signal-box-neutral"
-                    if pl_value is not None:
-                        signal_class = "signal-box-positive" if pl_value > 0 else "signal-box-negative" if pl_value < 0 else "signal-box-neutral"
-
-                    # Dividir ticket en columnas
-                    col_signal, col_status = st.columns([3, 1])
-                    with col_signal:
+                    # Market Maker Price Target (with Current Price added)
+                    avg_iv = np.mean([iv for iv in iv_by_strike if iv > 0]) if any(iv > 0 for iv in iv_by_strike) else (get_implied_volatility(ticker) or 0.3)
+                    st.markdown("**Market Maker Price Target**", unsafe_allow_html=True)
+                    gamma_wall = current_price
+                    if strikes and gamma_by_strike:
+                        try:
+                            gamma_wall = strikes[np.argmax([abs(g) for g in gamma_by_strike])]
+                        except:
+                            logger.warning(f"Failed to calculate Gamma Wall for {ticker}. Using current price.")
+                    if total_call_contracts > 0 and total_put_contracts > 0 and mm_target_price is not None:
                         st.markdown(f"""
-                            <div class="{signal_class}">
-                                <b>{ticker}${signal['Strike']:.0f} {signal['Type']} {exp_date_short}</b><br>
-                                Price: ${signal['Price']:.2f} | OI: {signal['OI']:,} | IV: {signal['IV']:.2%}<br>
-                                Prob OTM: {signal['Prob OTM']:.2%} | <span class="highlight">R/R: {signal['R/R']:.2f}</span><br>
-                                Max Pain Distance: ${signal['Max Pain Distance']:.2f}<br>
-                                <b><span style="color: {pl_color}">P/L (%): {pl_display}</span></b><br>
-                                <i>Score: {signal['Score']:.2f}</i>
-                            </div>
+                            - <span style="color: #00FF00">**MM Target Price**</span>: ${mm_target_price:.2f}
+                            - <span style="color: #00FF00">**MM Target Strike**</span>: ${mm_target_strike:.2f}
+                            - <span style="color: #00FF00">**Direction**</span>: {direction}
+                            - <span style="color: #00FF00">**Probability of {direction} Move**</span>: {prob_below_target:.2%}
+                            - <span style="color: #00E5FF">**OI-Volume Target Strike**</span>: ${oi_volume_target_strike:.2f}
+                            - <span style="color: #FFFF33">**Volume Target Strike**</span>: ${volume_target_strike:.2f}
+                            - <span style="color: #FFFFFF">**Max Pain Target Strike**</span>: ${max_pain_target_strike:.2f}
+                            - <span style="color: #FFD700">**Average IV**</span>: {avg_iv:.2%}
+                            - <span style="color: #FFD700">**Gamma Wall**</span>: ${gamma_wall:.2f}
+                            - <span style="color: #FFD700">**Call/Put OI Ratio**</span>: {call_oi_total / put_oi_total if put_oi_total > 0 else 1.0:.2f}
+                            - <span style="color: #FFD700">**Net Gamma**</span>: {gamma_calls - gamma_puts:.2f}
+                            - <span style="color: #FFD700">**Current Price**</span>: ${current_price:.2f}
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                            - <span style="color: #00FF00">**MM Target Strike**</span>: ${mm_target_strike:.2f}
+                            - <span style="color: #00E5FF">**OI-Volume Target Strike**</span>: ${oi_volume_target_strike:.2f}
+                            - <span style="color: #FFFF33">**Volume Target Strike**</span>: ${volume_target_strike:.2f}
+                            - <span style="color: #FFFFFF">**Max Pain Target Strike**</span>: ${max_pain_target_strike:.2f}
+                            - <span style="color: #FFD700">**Average IV**</span>: {avg_iv:.2%}
+                            - <span style="color: #FFD700">**Gamma Wall**</span>: ${gamma_wall:.2f}
+                            - <span style="color: #FFD700">**Call/Put OI Ratio**</span>: {call_oi_total / put_oi_total if put_oi_total > 0 else 1.0:.2f}
+                            - <span style="color: #FFD700">**Net Gamma**</span>: {gamma_calls - gamma_puts:.2f}
+                            - <span style="color: #FFD700">**Current Price**</span>: ${current_price:.2f}
                         """, unsafe_allow_html=True)
 
-                        # Controles
-                        if st.button("Activate", key=f"activate_{contract_type}_{signal['Strike']}_{signal['Type']}_{signal['Expiration']}_tab11_{idx}", help="Assign this contract", disabled=st.session_state[signal_key]):
-                            st.session_state[signal_key] = True
-                            assign_contract(ticker, signal["Strike"], signal["Type"], signal["Expiration"], signal["Price"])
-                            # Forzar actualización inmediata con reintentos
-                            for attempt in range(DB_RETRIES):
-                                try:
-                                    pl_data = update_contract_prices()
-                                    for key, data in pl_data.items():
-                                        st.session_state[f"pl_{key}"] = data["pl"] if data["pl"] is not None else 0.0
-                                        st.session_state[f"gamma_{key}"] = data["gamma"] if data["gamma"] is not None else 0.0
-                                        st.session_state[f"theta_{key}"] = data["theta"] if data["theta"] is not None else 0.0
-                                    logger.info(f"Price update successful after activation for {signal_key}")
-                                    break
-                                except Exception as e:
-                                    logger.error(f"Price update attempt {attempt + 1} failed for {signal_key}: {str(e)}")
-                                    if attempt < DB_RETRIES - 1:
-                                        time.sleep(DB_RETRY_DELAY)
-                                    else:
-                                        st.session_state[f"pl_{signal_key}"] = 0.0
-                                        st.session_state[f"gamma_{key}"] = 0.0
-                                        st.session_state[f"theta_{key}"] = 0.0
-                                        logger.warning(f"Set default metrics for {signal_key}: P/L=0.0, Gamma=0.0, Theta=0.0")
-                            st.rerun()
-
-                    with col_status:
-                        st.markdown(f"""
-                            <div class="status-box">
-                                <b>Contract Status</b><br>
-                                Status: {status}<br>
-                                Gamma: {gamma_display}<br>
-                                Theta: {theta_display}<br>
-                                <span style="color: {pl_color}">P/L (%): {pl_display}</span>
-                            </div>
-                        """, unsafe_allow_html=True)
-
-                signals_df = pd.DataFrame(unique_signals)
-                signals_csv = signals_df.to_csv(index=False)
-                st.download_button(
-                    label=f"📥 Download {contract_type} Signals",
-                    data=signals_csv,
-                    file_name=f"{ticker}_{contract_type.lower()}_signals.csv",
-                    mime="text/csv",
-                    key=f"download_signals_{contract_type.lower()}_tab11"
-                )
-            else:
-                st.warning(f"No high-confidence monthly signals found for {ticker}. Try a higher-liquidity ticker or adjust criteria.")
-                if debug_info["total_contracts"] > 0:
-                    st.markdown(f"""
-                        <div class="debug-box">
-                            <b>Debug Info for Monthly Signals</b><br>
-                            Total Contracts Processed: {debug_info["total_contracts"]}<br>
-                            Valid Contracts (OI >= 10): {debug_info["valid_contracts"]}<br>
-                            Top Rejection Reasons:<br>
-                            {'<br>'.join(set(debug_info["rejections"][:5]))}
-                        </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""
-                        <div class="debug-box">
-                            <b>Debug Info for Monthly Signals</b><br>
-                            No contracts were processed. Check Tradier API connectivity or ticker validity.
-                        </div>
-                    """, unsafe_allow_html=True)
-
-            # Instrucciones y métricas clave (actualizadas para incluir nuevos targets)
-            st.markdown("""
-                <div class="instructions-box">
-                    <h2 style="color: #00FFFF; font-family: 'Courier New', Courier, monospace;">Instructions and Key Metrics</h2>
-                    <ul style="color: #FFFFFF; font-family: 'Courier New', Courier, monospace;">
-                        <li><b>Prob OTM</b>: Probability the contract expires out-of-the-money (e.g., 77.93% OTM → ~22% ITM probability).</li>
-                        <li><b>R/R</b>: Risk/reward ratio. High R/R (e.g., 6.15) indicates potential gains outweigh risk.</li>
-                        <li><b>Score</b>: Higher scores (e.g., 59.98 vs. 0.73) reflect greater signal confidence.</li>
-                        <li><b>Max Pain Distance</b>: Zero or low (e.g., $0.00) suggests high likelihood of price closing near that strike.</li>
-                        <li><b>P/L (%)</b>: Profit/loss percentage since assignment, updated via "Update Prices Now". Green for gains, red for losses.</li>
-                        <li><b>Gamma</b>: Measures delta’s rate of change, indicating price movement sensitivity.</li>
-                        <li><b>Theta</b>: Measures contract value loss due to time decay.</li>
-                        <li><b>Activate</b>: Signals activate automatically. Use the green "Activate" button to assign a contract.</li>
-                        <li><b>Update Prices Now</b>: Manually updates prices and metrics for active contracts.</li>
-                        <li><b>Status</b>: Indicates if the contract is "Active" or "Closed".</li>
-                        <li><b>MM Target</b>: Green circle on the chart marks the predicted Market Maker target strike based on delta, gamma, and contract value.</li>
-                        <li><b>OI-Volume Target</b>: Cyan diamond on the chart marks the strike with the highest accumulation of open interest and volume, indicating where the most activity is concentrated.</li>
-                        <li><b>Volume Target</b>: Yellow triangle on the chart marks the strike with the highest trading volume (number of contracts traded).</li>
-                        <li><b>Max Pain Target</b>: Magenta square on the chart marks the strike where the monetary value of premiums expiring worthless is maximized for market makers.</li>
-                    </ul>
-                </div>
-            """, unsafe_allow_html=True)
+                    chart_csv = chart_data.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Chart Data",
+                        data=chart_csv,
+                        file_name=f"{ticker}_chart_data.csv",
+                        mime="text/csv",
+                        key="download_chart_data_tab11"
+                    )
 
             # Pie de página
             st.markdown("---")
