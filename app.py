@@ -3843,7 +3843,7 @@ def main():
                                 key="download_tab4"
                             )
                 except requests.RequestException as e:
-                    st.error(f"Error fetching data for {ticker}: {str(e)}")
+                    
                     logger.error(f"HTTP error for {ticker}: {str(e)}")
             st.markdown("---")
             st.markdown("*Developed by Ozy | © 2025*")
