@@ -3786,64 +3786,414 @@ def main():
 
     # Tab 4: Institutional Holders
 
+    # Tab 4: Recent Insider Transactions (SEC Form 4)
     with tab4:
-        st.subheader("Institutional Holders")
-        ticker = st.text_input("Ticker for Holders (e.g., AAPL):", "AAPL", key="holders_ticker").upper()
-        if ticker:
-            with st.spinner(f"Fetching institutional holders for {ticker}..."):
-                # Usamos una solicitud directa para evitar caché y asegurar datos frescos
-                url = f"{FMP_BASE_URL}/institutional-holder/{ticker}?apikey={FMP_API_KEY}"
-                try:
-                    response = session_fmp.get(url, headers=HEADERS_FMP, timeout=10)
-                    response.raise_for_status()
-                    data = response.json()
-                    if not data or not isinstance(data, list):
-                        st.error(f"No institutional holders data returned for {ticker}. Check ticker.")
-                        logger.error(f"No data from FMP for {ticker}: {data}")
-                    else:
-                        holders = pd.DataFrame(data)
-                        if holders.empty:
-                            st.warning(f"No institutional holders data available for {ticker}.")
-                        else:
-                            # Verificar la fecha más reciente
-                            if 'date' in holders.columns:
-                                latest_date = pd.to_datetime(holders['date']).max().date()
-                                st.write(f"**Latest Data Date:** {latest_date}")
-                                if latest_date < datetime(2025, 3, 1).date():
-                                    st.warning(f"Data is outdated (latest: {latest_date}). Expected updates beyond Dec 2024.")
-                            else:
-                                st.warning("")
+        st.subheader("Recent Insider Transactions (SEC Form 4)")
 
-                            # Estilizar la tabla
-                            def color_negative(row):
-                                if 'change' in row and row['change'] < 0:
-                                    return ['color: #FF4500'] * len(row)
-                                elif 'shares' in row and row['shares'] < 0:
-                                    return ['color: #FF4500'] * len(row)
-                                return [''] * len(row)
+        # Importar módulos necesarios dentro del scope de main()
+        import time
 
-                            styled_holders = holders.style.apply(color_negative, axis=1).format({
-                                'shares': '{:,.0f}',
-                                'change': '{:,.0f}' if 'change' in holders.columns else None,
-                                'value': '${:,.0f}' if 'value' in holders.columns else None,
-                                'date': lambda x: x if pd.isna(x) else pd.to_datetime(x).strftime('%Y-%m-%d')
+        # Estilo CSS personalizado para mantener el tema de la app
+        st.markdown("""
+            <style>
+            /* Fondo oscuro para consistencia */
+            .stApp {
+                background-color: #000000;
+            }
+            /* Título de la sección */
+            .section-header { 
+                font-size: 20px; 
+                font-weight: 600; 
+                color: #00E5FF; /* Cian eléctrico */
+                border-bottom: 1px dashed #FFD700; /* Borde amarillo mostaza */
+                padding-bottom: 5px; 
+                font-family: 'Courier New', Courier, monospace;
+                text-align: center;
+            }
+            /* Estilo para el contenedor de la tabla */
+            div[data-testid="stDataFrame"] {
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow-x: auto !important;
+            }
+            /* Estilos para la tabla */
+            div[data-testid="stDataFrame"] table {
+                width: 100% !important;
+                border-collapse: collapse !important;
+            }
+            div[data-testid="stDataFrame"] table th {
+                background-color: #1A1F2B !important;
+                color: #00E5FF !important; /* Cian eléctrico */
+                font-weight: 700 !important;
+                padding: 8px !important;
+                border: 2px solid #39FF14 !important; /* Verde neón */
+                text-transform: uppercase !important;
+                font-size: 11px !important;
+                font-family: 'Courier New', Courier, monospace !important;
+                text-align: center !important;
+            }
+            div[data-testid="stDataFrame"] table td {
+                background-color: #0F1419 !important;
+                color: #E0E0E0 !important; /* Blanco grisáceo */
+                padding: 6px !important;
+                border: 2px solid #39FF14 !important; /* Verde neón */
+                text-align: center !important;
+                font-family: 'Courier New', Courier, monospace !important;
+                font-size: 11px !important;
+            }
+            /* Botón de descarga */
+            .stDownloadButton button {
+                background: linear-gradient(90deg, #39FF14, #00E5FF); /* Verde a cian */
+                color: #0A0A0A !important;
+                border: 2px solid #FFD700; /* Amarillo mostaza */
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-family: 'Courier New', Courier, monospace !important;
+                font-weight: 600;
+                text-transform: uppercase;
+                transition: all 0.3s ease;
+            }
+            .stDownloadButton button:hover {
+                background: linear-gradient(90deg, #00E5FF, #39FF14); /* Invertido al hover */
+                box-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
+            }
+            /* Pie de página */
+            .footer-text {
+                color: #778DA9;
+                font-size: 12px;
+                text-align: center;
+                font-family: 'Courier New', Courier, monospace;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        with st.spinner("Fetching recent SEC Form 4 filings..."):
+            # Definir la función de resaltado
+            def highlight_transaction(row):
+                if row["Transaction Type"] == "Acquisition":
+                    return ['background-color: rgba(57, 255, 20, 0.2); color: #E0E0E0'] * len(row)
+                elif row["Transaction Type"] == "Disposition":
+                    return ['background-color: rgba(255, 69, 0, 0.2); color: #E0E0E0'] * len(row)
+                return [''] * len(row)
+
+            # Función para obtener Form 4 filings desde FMP API
+            def fetch_fmp_form4_filings():
+                logger.debug("Fetching recent Form 4 filings using Financial Modeling Prep API")
+                filings = []
+                # Definir el rango de fechas (May 11 to May 16, 2025, excluding weekend)
+                start_date = "2025-05-11"
+                end_date = "2025-05-16"  # Último día hábil
+                date_range = f"{start_date} to {end_date}"
+                logger.debug(f"Date range: {date_range}")
+
+                # Configuración de FMP API
+                api_key = FMP_API_KEY  # Usar la clave definida en tu app
+                base_url = f"{FMP_BASE_URL}/insider-trading"
+                params = {
+                    "apikey": api_key,
+                    "from": start_date,
+                    "to": end_date,
+                    "limit": 100  # Ajustar según el límite de tu plan
+                }
+
+                # Lista de empresas a consultar
+                companies_of_interest = ["TSLA", "AAPL", "UNH", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "JPM"]
+
+                for ticker in companies_of_interest:
+                    params["symbol"] = ticker
+                    logger.debug(f"Fetching insider transactions for {ticker}")
+                    page = 0  # FMP usa page=0 como primera página
+                    while True:
+                        params["page"] = page
+                        try:
+                            response = requests.get(base_url, headers=HEADERS_FMP, params=params, timeout=10)
+                            response.raise_for_status()
+                            data = response.json()
+                            logger.debug(f"FMP response for {ticker}, page {page}: {data}")
+                        except Exception as e:
+                            logger.error(f"Error fetching FMP data for {ticker} on page {page}: {str(e)}")
+                            break
+
+                        # Procesar las transacciones
+                        transactions = data if isinstance(data, list) else []
+                        if not transactions:
+                            logger.debug(f"No more transactions for {ticker} on page {page}")
+                            break
+
+                        for transaction in transactions:
+                            filing_date = transaction.get("filingDate", "").split(" ")[0]  # Formato: YYYY-MM-DD
+                            try:
+                                filing_dt = datetime.strptime(filing_date, "%Y-%m-%d")
+                                if not (datetime.strptime(start_date, "%Y-%m-%d") <= filing_dt <= datetime.strptime(end_date, "%Y-%m-%d")):
+                                    continue
+                            except ValueError:
+                                continue
+
+                            # Mapear los datos al formato deseado
+                            trans_type = "Acquisition" if transaction.get("transactionType", "").startswith("P") else "Disposition"
+                            shares = float(transaction.get("securitiesTransacted", 0.0))
+                            price = float(transaction.get("transactionPrice", 0.0))
+                            value = shares * price
+
+                            # Determinar la razón del filing
+                            reason = "N/A"
+                            if trans_type == "Acquisition" and price == 0.0:
+                                reason = "Likely equity-based compensation (e.g., stock grant), signaling confidence in the company's future."
+                            elif trans_type == "Acquisition":
+                                reason = "Insider purchase, indicating strong confidence in future growth."
+                            elif trans_type == "Disposition":
+                                reason = "Insider sale, possibly for personal liquidity or portfolio rebalancing; not necessarily bearish."
+
+                            filings.append({
+                                "Company": ticker,
+                                "Insider": transaction.get("reportingOwner", "Unknown"),
+                                "Title": transaction.get("ownerTitle", "Unknown"),
+                                "Filing Date": filing_date,
+                                "Transaction Type": trans_type,
+                                "Shares": shares,
+                                "Price": price,
+                                "Value": value,
+                                "Reason": reason,
+                                "Link": transaction.get("link", "#")
                             })
-                            st.dataframe(styled_holders, use_container_width=True)
+                            logger.debug(f"Added Form 4 filing for {ticker}: {transaction}")
 
-                            # Botón de descarga
-                            holders_csv = holders.to_csv(index=False)
-                            st.download_button(
-                                label="📥 Download Holders Data",
-                                data=holders_csv,
-                                file_name=f"{ticker}_institutional_holders.csv",
-                                mime="text/csv",
-                                key="download_tab4"
-                            )
-                except requests.RequestException as e:
-                    st.error(f"Error fetching data for {ticker}: {str(e)}")
-                    logger.error(f"HTTP error for {ticker}: {str(e)}")
-            st.markdown("---")
-            st.markdown("*Developed by Ozy | © 2025*")
+                        # Verificar si hay más páginas
+                        if len(transactions) < params["limit"]:
+                            break
+                        page += 1
+
+                    # Pausa para evitar límites de tasa
+                    time.sleep(1)  # Ajustar según los límites de tu plan de FMP
+
+                return filings
+
+            # Función para obtener Form 4 filings desde SEC EDGAR API (como respaldo)
+            def fetch_sec_form4_filings():
+                logger.debug("Fetching recent Form 4 filings from SEC EDGAR as fallback")
+                filings = []
+                # Definir el rango de fechas (May 11 to May 16, 2025)
+                end_date = datetime(2025, 5, 16)
+                start_date = end_date - timedelta(days=7)
+                date_range = f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+                logger.debug(f"Date range: {date_range}")
+
+                # Obtener la lista de tickers y CIKs
+                ticker_url = "https://www.sec.gov/files/company_tickers.json"
+                headers = {
+                    "User-Agent": "ProScanner/1.0 (your.email@example.com)",  # Reemplazar con tu correo
+                    "Accept": "application/json"
+                }
+                try:
+                    response = requests.get(ticker_url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    ticker_data = response.json()
+                except Exception as e:
+                    raise Exception(f"Failed to fetch ticker data from {ticker_url}: {str(e)}")
+
+                # Limitar a un conjunto de empresas relevantes
+                companies_of_interest = ["TSLA", "AAPL", "UNH", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "JPM"]
+                cik_list = []
+                for company in ticker_data.values():
+                    ticker = company["ticker"]
+                    if ticker in companies_of_interest:
+                        cik = str(company["cik_str"]).zfill(10)
+                        cik_list.append({"ticker": ticker, "cik": cik})
+
+                if not cik_list:
+                    raise Exception("No CIKs found for the specified companies. Ensure the ticker list is correct.")
+
+                # Procesar cada empresa
+                for company in cik_list:
+                    ticker = company["ticker"]
+                    cik = company["cik"]
+                    submissions_url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+                    logger.debug(f"Fetching submissions for {ticker} (CIK: {cik})")
+                    try:
+                        response = requests.get(submissions_url, headers=headers, timeout=10)
+                        response.raise_for_status()
+                        submissions = response.json()
+                    except Exception as e:
+                        logger.error(f"Error fetching submissions for {ticker}: {str(e)}")
+                        continue
+
+                    recent_filings = submissions.get("filings", {}).get("recent", {})
+                    if not recent_filings:
+                        logger.warning(f"No recent filings found for {ticker}")
+                        continue
+
+                    forms = recent_filings.get("form", [])
+                    filing_dates = recent_filings.get("filingDate", [])
+                    accession_numbers = recent_filings.get("accessionNumber", [])
+                    primary_docs = recent_filings.get("primaryDocument", [])
+
+                    if not (forms and filing_dates and accession_numbers and primary_docs):
+                        logger.warning(f"Incomplete filing data for {ticker}")
+                        continue
+
+                    for i in range(len(forms)):
+                        if forms[i] != "4":
+                            continue
+                        filing_date = filing_dates[i]
+                        try:
+                            filing_dt = datetime.strptime(filing_date, "%Y-%m-%d")
+                            if not (start_date <= filing_dt <= end_date):
+                                continue
+                        except ValueError:
+                            logger.warning(f"Invalid filing date format for {ticker}: {filing_date}")
+                            continue
+
+                        accession_number = accession_numbers[i].replace("-", "")
+                        primary_doc = primary_docs[i]
+                        filing_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession_number}/{primary_doc}"
+                        logger.debug(f"Fetching Form 4 details from {filing_url}")
+                        try:
+                            filing_response = requests.get(filing_url, headers=headers, timeout=10)
+                            filing_response.raise_for_status()
+                            filing_text = filing_response.text
+                        except Exception as e:
+                            logger.error(f"Error fetching Form 4 filing for {ticker}: {str(e)}")
+                            continue
+
+                        insider_name = "Unknown"
+                        insider_title = "Unknown"
+                        transactions = []
+                        in_transaction = False
+                        transaction_data = {}
+                        in_issuer = False
+                        for line in filing_text.split("\n"):
+                            line = line.strip()
+                            if "<issuer>" in line:
+                                in_issuer = True
+                            elif "</issuer>" in line:
+                                in_issuer = False
+                            elif in_issuer and "issuerTradingSymbol" in line:
+                                ticker = line.split(">")[1].split("<")[0].strip()
+                            elif "reportingOwnerRelationship" in line:
+                                if "director" in line.lower() or "officer" in line.lower():
+                                    title_match = line.split("officerTitle>")
+                                    if len(title_match) > 1:
+                                        insider_title = title_match[1].split("<")[0].strip()
+                                    else:
+                                        insider_title = "Director" if "director" in line.lower() else "Officer"
+                            elif "rptOwnerName" in line:
+                                insider_name = line.split(">")[1].split("<")[0].strip()
+                            elif "<nonDerivativeTransaction>" in line:
+                                in_transaction = True
+                                transaction_data = {}
+                            elif "</nonDerivativeTransaction>" in line:
+                                in_transaction = False
+                                if transaction_data:
+                                    if "Shares" in transaction_data and "Price" in transaction_data:
+                                        transaction_data["Value"] = transaction_data["Shares"] * transaction_data["Price"]
+                                    else:
+                                        transaction_data["Value"] = 0.0
+                                    transactions.append(transaction_data.copy())
+                            elif in_transaction:
+                                if "transactionCode" in line and "acquiredDisposedCode" in line:
+                                    if "value=\"A\"" in line:
+                                        transaction_data["Type"] = "Acquisition"
+                                    elif "value=\"D\"" in line:
+                                        transaction_data["Type"] = "Disposition"
+                                elif "transactionShares" in line and "value" in line:
+                                    shares = line.split("value=\"")[1].split("\"")[0]
+                                    transaction_data["Shares"] = float(shares) if shares and shares.replace(".", "").replace("-", "").isdigit() else 0.0
+                                elif "transactionPricePerShare" in line and "value" in line:
+                                    price = line.split("value=\"")[1].split("\"")[0]
+                                    transaction_data["Price"] = float(price) if price and price.replace(".", "").replace("-", "").isdigit() else 0.0
+
+                        reason = "N/A"
+                        if transactions:
+                            transaction = transactions[0]
+                            trans_type = transaction.get("Type", "N/A")
+                            price = transaction.get("Price", 0.0)
+                            if trans_type == "Acquisition" and price == 0.0:
+                                reason = "Likely equity-based compensation (e.g., stock grant), signaling confidence in the company's future."
+                            elif trans_type == "Acquisition":
+                                reason = "Insider purchase, indicating strong confidence in future growth."
+                            elif trans_type == "Disposition":
+                                reason = "Insider sale, possibly for personal liquidity or portfolio rebalancing; not necessarily bearish."
+
+                        for transaction in transactions:
+                            filings.append({
+                                "Company": ticker,
+                                "Insider": insider_name,
+                                "Title": insider_title,
+                                "Filing Date": filing_date,
+                                "Transaction Type": transaction.get("Type", "N/A"),
+                                "Shares": transaction.get("Shares", 0.0),
+                                "Price": transaction.get("Price", 0.0),
+                                "Value": transaction.get("Value", 0.0),
+                                "Reason": reason,
+                                "Link": filing_url
+                            })
+                            logger.debug(f"Added Form 4 filing for {ticker}: {insider_name}, {transaction.get('Shares', 0.0)} shares")
+
+                    time.sleep(2)
+
+                filings.sort(key=lambda x: x["Filing Date"], reverse=True)
+                logger.info(f"Fetched {len(filings)} Form 4 filings from SEC EDGAR")
+                return filings
+
+            # Obtener filings reales, primero intentando con FMP y luego con SEC EDGAR
+            try:
+                filings = fetch_fmp_form4_filings()
+                if not filings:
+                    logger.warning("No Form 4 filings found with FMP API, falling back to SEC EDGAR")
+                    filings = fetch_sec_form4_filings()
+                if not filings:
+                    raise Exception("No Form 4 filings found for the specified date range (May 11 to May 16, 2025) for the selected companies (TSLA, AAPL, UNH, MSFT, GOOGL, AMZN, NVDA, META, JPM). This may indicate no Form 4 filings were submitted by these companies during this period, or access to data is restricted.")
+            except Exception as e:
+                st.error(f"Error fetching real-time SEC Form 4 filings: {str(e)}")
+                st.markdown("""
+                    **Troubleshooting Steps:**
+                    1. **Verify FMP API Key:** Ensure the FMP_API_KEY in your app (`bQ025fPNVrYcBN4KaExd1N3Xczyk44wM`) is valid and has access to insider trading data.
+                    2. **Check SEC Access:** For SEC EDGAR, ensure your User-Agent includes your email (e.g., "ProScanner/1.0 (your.email@example.com)") and complies with the SEC's Privacy and Security Policy (https://www.sec.gov/developer).
+                    3. **Check Internet Connection:** Ensure your device is connected to the internet.
+                    4. **Rate Limits:** Both FMP and SEC EDGAR may be rate-limiting requests. Try again later or increase delays (e.g., `time.sleep(1)` to `time.sleep(2)` for FMP, `time.sleep(2)` to `time.sleep(5)` for SEC).
+                    5. **API Plans:** Verify that your FMP plan includes access to insider trading data. Upgrade if necessary.
+                    6. **API Documentation:** Check FMP (https://financialmodelingprep.com/developer/docs) and SEC EDGAR (https://www.sec.gov/developer) documentation for endpoint changes.
+                    7. **Contact Support:** If the issue persists, contact FMP support or email webmaster@sec.gov for assistance.
+                """)
+                logger.error(f"Error in fetching Form 4 filings: {str(e)}")
+                filings = []
+
+            if filings:
+                # Crear DataFrame
+                df_form4 = pd.DataFrame(filings)
+
+                # Estilizar la tabla
+                styled_df = df_form4.style.apply(highlight_transaction, axis=1).format({
+                    "Shares": "{:,.0f}",
+                    "Price": "${:.2f}",
+                    "Value": "${:,.2f}"
+                }).set_properties(**{
+                    "text-align": "center",
+                    "border": "2px solid #39FF14",
+                    "font-family": "'Courier New', Courier, monospace",
+                    "font-size": "11px",
+                    "padding": "6px"
+                })
+
+                # Mostrar tabla
+                st.markdown(f"**Form 4 Filings from {df_form4['Filing Date'].min()} to {df_form4['Filing Date'].max()}**")
+                st.dataframe(styled_df, use_container_width=True)
+
+                # Botón de descarga
+                form4_csv = df_form4.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Form 4 Data",
+                    data=form4_csv,
+                    file_name=f"sec_form4_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    key="download_tab4"
+                )
+            else:
+                logger.warning("No Form 4 filings retrieved for display")
+
+        # Pie de página
+        st.markdown("---")
+        st.markdown(f'<div class="footer-text">Developed by Ozy | © 2025</div>', unsafe_allow_html=True)
 
     # Tab 5: Options Order Flow
     with tab5:
@@ -4977,6 +5327,7 @@ def main():
     # Tab 10: Performance Map
     # Tab 10: Performance Map
     # Tab 10: Performance Map
+    # Tab 10: Performance Map with Ticker Search
     with tab10:
         # Estilo CSS personalizado para una interfaz profesional y consistente
         st.markdown("""
@@ -5069,7 +5420,7 @@ def main():
                 font-family: 'Arial', 'Helvetica', sans-serif;
                 text-shadow: 0 0 2px rgba(255, 215, 0, 0.3);
             }
-            /* Estilo para el input de ticker */
+            /* Estilo para el input de búsqueda */
             div[data-testid="stTextInput"] input {
                 background-color: #1A1F2B !important;
                 color: #E0E0E0 !important;
@@ -5081,18 +5432,28 @@ def main():
             </style>
         """, unsafe_allow_html=True)
 
-        # Initialize session state for custom ticker
-        if "custom_ticker_tab10" not in st.session_state:
-            st.session_state.custom_ticker_tab10 = ""
+        # Initialize session state for custom tickers
+        if "custom_tickers_tab10" not in st.session_state:
+            st.session_state.custom_tickers_tab10 = ""
 
-        # Editable ticker input row
-        custom_ticker = st.text_input("Custom Ticker", value=st.session_state.custom_ticker_tab10, key="custom_ticker_input_tab10").upper()
+        # Campo de búsqueda para los tickers
+        custom_tickers_input = st.text_input(
+            "Add up to 5 Tickers",
+            value=st.session_state.custom_tickers_tab10,
+            key="custom_tickers_input_tab10"
+        ).upper()
 
         # Detect ticker change and update session state
-        if custom_ticker != st.session_state.custom_ticker_tab10:
-            logger.info(f"Custom ticker changed from {st.session_state.custom_ticker_tab10} to {custom_ticker}")
-            st.session_state.custom_ticker_tab10 = custom_ticker
+        if custom_tickers_input != st.session_state.custom_tickers_tab10:
+            logger.info(f"Custom tickers changed from {st.session_state.custom_tickers_tab10} to {custom_tickers_input}")
+            st.session_state.custom_tickers_tab10 = custom_tickers_input
             st.rerun()
+
+        # Procesar los tickers personalizados ingresados
+        custom_tickers = [ticker.strip() for ticker in custom_tickers_input.split(",") if ticker.strip()]
+        if len(custom_tickers) > 5:
+            st.warning("Please enter up to 5 tickers only. Extra tickers will be ignored.")
+            custom_tickers = custom_tickers[:5]
 
         # Índices, sectores, bonos y nuevos tickers
         assets = {
@@ -5131,11 +5492,10 @@ def main():
             "Google": "GOOGL"
         }
 
-        # Add custom ticker to assets if valid
-        if custom_ticker:
-            # Remove any existing custom ticker to avoid duplication
-            assets = {k: v for k, v in assets.items() if not k.startswith("Custom: ")}
-            assets["Custom: " + custom_ticker] = custom_ticker
+        # Agregar tickers personalizados a assets
+        for ticker in custom_tickers:
+            if ticker not in assets.values():  # Evitar duplicados con tickers predefinidos
+                assets[f"Custom: {ticker}"] = ticker
 
         # Fallback data for BABA if explicitly input as custom ticker
         baba_fallback = {
@@ -5180,7 +5540,7 @@ def main():
                 row = {"Asset": name}
 
                 # Use fallback data for BABA only if explicitly input as custom ticker
-                if ticker == "BABA" and ticker == custom_ticker:
+                if ticker == "BABA" and ticker in custom_tickers:
                     try:
                         current_price = get_current_price(ticker)
                         if not isinstance(current_price, (int, float)) or current_price <= 0.01:
@@ -5368,6 +5728,7 @@ def main():
                     url_expirations = f"{TRADIER_BASE_URL}/markets/options/expirations"
                     params_expirations = {"symbol": ticker}
                     response_exp = session_tradier.get(url_expirations, params=params_expirations, headers=HEADERS_TRADIER, timeout=40)
+                    response_exp.raise_for_status()
                     expirations = response_exp.json().get("expirations", {}).get("date", [])
                     if not expirations:
                         raise ValueError("No expirations available")
@@ -5376,12 +5737,14 @@ def main():
                     url_options = f"{TRADIER_BASE_URL}/markets/options/chains"
                     params_options = {"symbol": ticker, "expiration": nearest_expiration}
                     response_options = session_tradier.get(url_options, params=params_options, headers=HEADERS_TRADIER, timeout=40)
+                    response_options.raise_for_status()
                     options_data = response_options.json()
                     option_list = options_data.get("options", {}).get("option", [])
                     current_option_volume = sum(opt.get("volume", 0) for opt in option_list)
                     avg_option_volume = volume_avg * 0.1
                     option_spike = current_option_volume / avg_option_volume if avg_option_volume > 0 else volume_relative
                 except Exception as e:
+                    logger.warning(f"Error fetching option volume for {ticker}: {str(e)}. Using volume relative.")
                     option_spike = volume_relative
                 row["Opt_Vol_Spike"] = round(option_spike, 1)
 
@@ -5391,12 +5754,15 @@ def main():
                 st.error("No valid data retrieved for table after processing all assets.")
                 st.stop()
 
-            # Reorganize to ensure custom ticker is first
-            if custom_ticker:
-                custom_row = next((row for row in performance_data if row["Asset"] == "Custom: " + custom_ticker), None)
-                if custom_row:
-                    performance_data.remove(custom_row)
-                    performance_data.insert(0, custom_row)
+            # Reorganize to ensure custom tickers are first
+            custom_rows = []
+            predefined_rows = []
+            for row in performance_data:
+                if row["Asset"].startswith("Custom: "):
+                    custom_rows.append(row)
+                else:
+                    predefined_rows.append(row)
+            performance_data = custom_rows + predefined_rows
 
             # Crear DataFrame
             df = pd.DataFrame(performance_data)
@@ -5412,8 +5778,6 @@ def main():
                     df[col] = np.nan
 
             # Tabla interactiva
-            
-
             def color_performance(val):
                 if pd.isna(val):
                     return "background-color: #0F1419; color: #E0E0E0"
@@ -5538,7 +5902,7 @@ def main():
             # Calcular altura dinámica de la tabla, ajustada para 35 filas
             num_rows = len(df)
             pixels_per_row = 40
-            table_height = 31 * pixels_per_row  # Altura fija para 31 filas
+            table_height = 34 * pixels_per_row  # Altura fija para 31 filas
             logger.debug(f"Table rows: {num_rows}, Calculated height: {table_height}px")
 
             # Mostrar tabla sin scroll vertical
@@ -5560,7 +5924,7 @@ def main():
                 unsafe_allow_html=True
             )
         
-
+##
 #################################
     # Tab 11: Options Signals
     with tab11:
