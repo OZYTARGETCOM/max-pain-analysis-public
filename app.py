@@ -4601,7 +4601,7 @@ def main():
                     )
                 else:
                     st.markdown('<p class="data-text">No recent House trades available. Check logs or FMP plan.</p>', unsafe_allow_html=True)
-            st.markdown('<p class="data-text">Note: Political trading data may require a premium FMP plan. Check logs if data is unavailable.</p>', unsafe_allow_html=True)
+            
             st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
             # Búsqueda por Nombre de Empresa
@@ -4721,7 +4721,7 @@ def main():
                             )
                         else:
                             st.warning(f"No SEC filings found for {ticker} in the selected date range.")
-            st.markdown('<p class="data-text">Note: Limited to 1000 records per request and a 90-day date range. Some filings may require a premium FMP plan.</p>', unsafe_allow_html=True)
+            
             st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
             st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
