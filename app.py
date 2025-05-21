@@ -4506,6 +4506,32 @@ def main():
                 border-top: 1px dashed #00FFFF;
                 margin: 20px 0;
             }
+            .custom-table {
+                border: 1px solid #39FF14;
+                border-radius: 5px;
+                background: #0F1419;
+                padding: 10px;
+                width: 100%;
+                font-family: 'Arial', sans-serif;
+                color: #E0E0E0;
+            }
+            .custom-table th, .custom-table td {
+                border: 1px solid #39FF14;
+                padding: 8px;
+                text-align: center;
+            }
+            .custom-table th {
+                background: #2D2D2D;
+                color: #00FFFF;
+                font-weight: 600;
+            }
+            .custom-table a {
+                color: #39FF14;
+                text-decoration: none;
+            }
+            .custom-table a:hover {
+                text-decoration: underline;
+            }
             </style>
         """, unsafe_allow_html=True)
 
@@ -4601,7 +4627,7 @@ def main():
                     )
                 else:
                     st.markdown('<p class="data-text">No recent House trades available. Check logs or FMP plan.</p>', unsafe_allow_html=True)
-            
+           
             st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
             # Búsqueda por Nombre de Empresa
@@ -4674,9 +4700,8 @@ def main():
                             st.warning("No stocks match the selected criteria.")
             st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-            # SEC Filings
             st.markdown('<div class="sub-section">SEC Filings</div>', unsafe_allow_html=True)
-            st.markdown('<p class="data-text">View recent SEC filings (e.g., 8-K) for a company, including significant events like mergers, acquisitions, or leadership changes.</p>', unsafe_allow_html=True)
+            st.markdown('<p class="data-text"></p>', unsafe_allow_html=True)
             col1, col2 = st.columns(2)
             with col1:
                 ticker = st.text_input("Stock Ticker (e.g., AAPL)", value="", key="sec_filings_ticker").upper()
@@ -4705,20 +4730,32 @@ def main():
                                 "formType": "Form Type",
                                 "link": "Link"
                             })
-                            filings_df["Link"] = filings_df["Link"].apply(lambda x: f'<a href="{x}" target="_blank">View Filing</a>')
-                            st.dataframe(
-                                filings_df[["Ticker", "CIK", "Filing Date", "Form Type", "Link"]].style.set_properties(**{
-                                    "background-color": "#0F1419",
-                                    "color": "#E0E0E0",
-                                    "border-color": "#39FF14",
-                                    "font-family": "'Arial', sans-serif",
-                                    "text-align": "center"
-                                }),
-                                use_container_width=True,
-                                height=200,
-                                hide_index=True,
-                                column_config={"Link": st.column_config.LinkColumn(display_text="View Filing")}
-                            )
+                            # Render custom HTML table
+                            st.markdown('<div class="custom-table"><table style="width: 100%; border-collapse: collapse;">', unsafe_allow_html=True)
+                            # Table header
+                            st.markdown("""
+                                <tr>
+                                    <th>Ticker</th>
+                                    <th>CIK</th>
+                                    <th>Filing Date</th>
+                                    <th>Form Type</th>
+                                    <th>Link</th>
+                                </tr>
+                            """, unsafe_allow_html=True)
+                            # Table rows
+                            for _, row in filings_df.iterrows():
+                                link_text = f"View Filing for {row['Ticker']} {row['Form Type']}" if pd.notnull(row["Link"]) else "N/A"
+                                link_html = f'<a href="{row["Link"]}" target="_blank" rel="noopener noreferrer">{link_text}</a>' if pd.notnull(row["Link"]) else "N/A"
+                                st.markdown(f"""
+                                    <tr>
+                                        <td>{row['Ticker']}</td>
+                                        <td>{row['CIK']}</td>
+                                        <td>{row['Filing Date']}</td>
+                                        <td>{row['Form Type']}</td>
+                                        <td>{link_html}</td>
+                                    </tr>
+                                """, unsafe_allow_html=True)
+                            st.markdown('</table></div>', unsafe_allow_html=True)
                         else:
                             st.warning(f"No SEC filings found for {ticker} in the selected date range.")
             
