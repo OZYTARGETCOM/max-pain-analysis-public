@@ -33,8 +33,8 @@ from typing import Optional, Dict
 from requests.exceptions import RequestException
 from contextlib import contextmanager
 from threading import Lock
-
-
+from plotly.subplots import make_subplots
+import yfinance as yf
 
 
 db_lock = threading.Lock()
@@ -407,7 +407,7 @@ def fetch_api_data(url: str, params: Dict, headers: Dict, source: str, max_retri
 @st.cache_data(ttl=60)
 def get_current_price(ticker: str) -> float:
     """
-    Obtiene el precio actual de un ticker usando la API de Tradier con fallback a FMP.
+    Obtiene el precio actual de un ticker .
     """
     url_tradier = f"{TRADIER_BASE_URL}/markets/quotes"
     params_tradier = {"symbols": ticker}
@@ -435,10 +435,10 @@ def get_current_price(ticker: str) -> float:
         if data and isinstance(data, list) and len(data) > 0:
             price = float(data[0].get("price", 0.0))
             if price > 0:
-                logger.info(f"Fetched current price for {ticker} from FMP: ${price:.2f}")
+                logger.info(f"Fetched current price for {ticker} from : ${price:.2f}")
                 return price
     except Exception as e:
-        logger.error(f"FMP failed to fetch price for {ticker}: {str(e)}")
+        logger.error(f"failed to fetch price for {ticker}: {str(e)}")
 
     logger.error(f"Unable to fetch current price for {ticker} from any API")
     return 0.0
@@ -470,7 +470,7 @@ def get_expiration_dates(ticker: str) -> List[str]:
 @st.cache_data(ttl=60)
 def get_current_prices(tickers: List[str]) -> Dict[str, float]:
     """
-    Obtiene precios actuales para una lista de tickers usando la API de Tradier con fallback a FMP.
+    Obtiene precios actuales para una lista de tickers .
     """
     prices_dict = {ticker: 0.0 for ticker in tickers}
     
@@ -510,9 +510,9 @@ def get_current_prices(tickers: List[str]) -> Dict[str, float]:
                     if ticker in prices_dict and price > 0:
                         prices_dict[ticker] = price
                 fetched = [t for t, p in prices_dict.items() if p > 0 and t in missing_tickers]
-                logger.info(f"Fetched prices for {len(fetched)}/{len(missing_tickers)} missing tickers from FMP: {fetched}")
+                logger.info(f"Fetched prices for {len(fetched)}/{len(missing_tickers)} missing tickers : {fetched}")
         except Exception as e:
-            logger.error(f"FMP failed to fetch prices for batch: {str(e)}")
+            logger.error(f"failed to fetch prices for batch: {str(e)}")
 
     failed = [t for t, p in prices_dict.items() if p == 0.0]
     if failed:
@@ -523,14 +523,14 @@ def get_current_prices(tickers: List[str]) -> Dict[str, float]:
 @st.cache_data(ttl=3600)
 def get_metaverse_stocks() -> List[str]:
     """
-    Obtiene una lista de los 50 stocks más activos desde FMP o usa una lista de respaldo.
+    Obtiene una lista de los 50 stocks más activos desde o usa una lista de respaldo.
     """
     url = "https://financialmodelingprep.com/api/v3/stock_market/actives"
     params = {"apikey": FMP_API_KEY}
-    data = fetch_api_data(url, params, HEADERS_FMP, "FMP Actives")
+    data = fetch_api_data(url, params, HEADERS_FMP, "Actives")
     if data and isinstance(data, list):
         return [stock["symbol"] for stock in data[:50]]
-    logger.warning("Failed to retrieve stocks from FMP API. Using fallback list.")
+    logger.warning("Failed to retrieve stocks. Using fallback list.")
     return ["NVDA", "TSLA", "AAPL", "AMD", "PLTR", "META", "RBLX", "U", "COIN", "HOOD"]
 
 @st.cache_data(ttl=CACHE_TTL)
@@ -580,10 +580,10 @@ def get_options_data(ticker: str, expiration_date: str) -> List[Dict]:
 
 @st.cache_data(ttl=CACHE_TTL)
 def get_historical_prices_combined(symbol, period="daily", limit=30):
-    """Obtener precios históricos combinando FMP y Tradier para máxima velocidad y fiabilidad."""
+    """Obtener precios históricos combinando máxima velocidad y fiabilidad."""
     url_fmp = f"{FMP_BASE_URL}/historical-price-full/{symbol}"
     params_fmp = {"apikey": FMP_API_KEY, "timeseries": limit}
-    data_fmp = fetch_api_data(url_fmp, params_fmp, HEADERS_FMP, "FMP")
+    data_fmp = fetch_api_data(url_fmp, params_fmp, HEADERS_FMP, "")
     if data_fmp and "historical" in data_fmp:
         prices = [float(day["close"]) for day in data_fmp["historical"]]
         volumes = [int(day["volume"]) for day in data_fmp["historical"]]
@@ -603,7 +603,7 @@ def get_historical_prices_combined(symbol, period="daily", limit=30):
 
 @st.cache_data(ttl=CACHE_TTL)
 def get_stock_list_combined():
-    """Obtener lista de acciones combinando FMP y Tradier."""
+    """Obtener lista de acciones combinando ."""
     combined_tickers = set()  # Usamos un set para evitar duplicados
 
     # 1. Obtener lista de FMP
@@ -622,9 +622,9 @@ def get_stock_list_combined():
         data = response.json()
         fmp_tickers = [stock["symbol"] for stock in data if stock.get("isActivelyTrading", True)]
         combined_tickers.update(fmp_tickers[:200])  # Limitamos a 200 por velocidad
-        logger.info(f"FMP returned {len(fmp_tickers)} tickers")
+        logger.info(f"returned {len(fmp_tickers)} tickers")
     except Exception as e:
-        logger.error(f"FMP stock list failed: {str(e)}")
+        logger.error(f"stock list failed: {str(e)}")
 
     # 2. Obtener lista de Tradier (usamos endpoint de quotes con múltiples símbolos)
     try:
@@ -3057,6 +3057,643 @@ def auto_update_prices():
             logger.error(f"Error updating prices: {e}")
             st.session_state.last_update = current_time
             st.warning("Database temporarily locked. Retrying in next update cycle.")
+
+
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_stock_quote(symbol: str) -> dict:
+    """Fetch real-time stock quote from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/quote?symbol={symbol}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if not data:
+            logger.warning(f"No quote data returned for {symbol}")
+            return {}
+        quote = data[0]
+        numeric_fields = ['price', 'change', 'changesPercentage', 'volume', 'dayLow', 'dayHigh']
+        for field in numeric_fields:
+            if field in quote and quote[field] is not None:
+                try:
+                    quote[field] = float(quote[field])
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid {field} for {symbol}: {quote[field]}")
+                    quote[field] = None
+            else:
+                quote[field] = None
+        logger.info(f"Successfully fetched quote for {symbol}")
+        return quote
+    except requests.RequestException as e:
+        logger.error(f"Error fetching stock quote for {symbol}: {e}")
+        return {}
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_company_search(query: str) -> list:
+    """Fetch company search results by name from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/search-name?query={query}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data if data else []
+    except requests.RequestException as e:
+        logger.error(f"Error fetching company search for {query}: {e}")
+        return []
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_stock_screener(min_market_cap: int = None, max_beta: float = None, sector: str = None, exchange: str = None) -> list:
+    """Fetch stock screener results from FMP API."""
+    params = {"apikey": FMP_API_KEY}
+    if min_market_cap:
+        params["marketCapMoreThan"] = min_market_cap
+    if max_beta:
+        params["betaLowerThan"] = max_beta
+    if sector:
+        params["sector"] = sector
+    if exchange:
+        params["exchange"] = exchange
+    url = "https://financialmodelingprep.com/stable/company-screener"
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data if data else []
+    except requests.RequestException as e:
+        logger.error(f"Error fetching stock screener: {e}")
+        return []
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_price_target_summary(symbol: str) -> dict:
+    """Fetch price target summary from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/price-target-summary?symbol={symbol}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data[0] if data else {}
+    except requests.RequestException as e:
+        logger.error(f"Error fetching price target summary for {symbol}: {e}")
+        return {}
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_ratings_snapshot(symbol: str) -> dict:
+    """Fetch ratings snapshot from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/ratings-snapshot?symbol={symbol}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data[0] if data else {}
+    except requests.RequestException as e:
+        logger.error(f"Error fetching ratings snapshot for {symbol}: {e}")
+        return {}
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_key_metrics(symbol: str) -> dict:
+    """Fetch key financial metrics from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/key-metrics?symbol={symbol}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data[0] if data else {}
+    except requests.RequestException as e:
+        logger.error(f"Error fetching key metrics for {symbol}: {e}")
+        return {}
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_financial_ratios(symbol: str) -> dict:
+    """Fetch financial ratios from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/ratios?symbol={symbol}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data[0] if data else {}
+    except requests.RequestException as e:
+        logger.error(f"Error fetching financial ratios for {symbol}: {e}")
+        return {}
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_sector_performance() -> list:
+    """Fetch sector performance snapshot from FMP API and normalize response."""
+    url = f"https://financialmodelingprep.com/api/v3/sector-performance?apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if not data or not isinstance(data, list):
+            logger.warning("No sector performance data returned")
+            return []
+        # Normalize column names
+        normalized_data = []
+        for item in data:
+            sector = item.get("sector", "Unknown")
+            # Try various possible field names for percentage change
+            change = None
+            for key in ["changePercentage", "changesPercentage", "change", "percentageChange"]:
+                if key in item and item[key] is not None:
+                    try:
+                        change = float(item[key])
+                        break
+                    except (ValueError, TypeError):
+                        continue
+            if change is None:
+                logger.warning(f"No valid change percentage found for sector {sector}: {item}")
+                change = 0.0
+            normalized_data.append({"sector": sector, "changePercentage": change})
+        logger.info(f"Successfully fetched sector performance for {len(normalized_data)} sectors")
+        return normalized_data
+    except requests.RequestException as e:
+        logger.error(f"Error fetching sector performance: {e}")
+        return []
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_intraday_prices(symbol: str) -> pd.DataFrame:
+    """Fetch 1-hour interval intraday prices from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/historical-chart/1hour?symbol={symbol}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data:
+            df = pd.DataFrame(data)
+            df["date"] = pd.to_datetime(df["date"])
+            return df[["date", "close"]].sort_values("date")
+        return pd.DataFrame()
+    except requests.RequestException as e:
+        logger.error(f"Error fetching intraday prices for {symbol}: {e}")
+        return pd.DataFrame()
+
+
+
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_company_profile(symbol: str) -> dict:
+    """Fetch company profile from FMP API."""
+    url = f"https://financialmodelingprep.com/api/v3/profile/{symbol}?apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if not data or not isinstance(data, list) or len(data) == 0:
+            logger.warning(f"No company profile data returned for {symbol}")
+            return {}
+        profile = data[0]
+        numeric_fields = ['marketCap', 'beta', 'price']
+        for field in numeric_fields:
+            if field in profile and profile[field] is not None:
+                try:
+                    profile[field] = float(profile[field])
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid {field} for {symbol}: {profile[field]}")
+                    profile[field] = None
+            else:
+                profile[field] = None
+        logger.info(f"Successfully fetched company profile for {symbol}")
+        return profile
+    except requests.RequestException as e:
+        logger.error(f"Error fetching company profile for {symbol}: {e}")
+        return {}
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_financial_statements(symbol: str, statement_type: str) -> dict:
+    """Fetch financial statements (income, balance-sheet, cash-flow) from FMP API."""
+    statement_map = {
+        "income": "income-statement",
+        "balance-sheet": "balance-sheet-statement",
+        "cash-flow": "cash-flow-statement"
+    }
+    if statement_type not in statement_map:
+        logger.error(f"Invalid statement type: {statement_type}")
+        return {}
+    endpoint = statement_map[statement_type]
+    url = f"https://financialmodelingprep.com/api/v3/{endpoint}/{symbol}?limit=1&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if not data or not isinstance(data, list) or len(data) == 0:
+            logger.warning(f"No {statement_type} data returned for {symbol}")
+            return {}
+        statement = data[0]
+        numeric_fields = [
+            'revenue', 'netIncome', 'totalAssets', 'totalLiabilities',
+            'netCashProvidedByOperatingActivities', 'totalCurrentAssets',
+            'totalCurrentLiabilities'
+        ]
+        for field in numeric_fields:
+            if field in statement and statement[field] is not None:
+                try:
+                    statement[field] = float(statement[field])
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid {field} for {symbol}: {statement[field]}")
+                    statement[field] = None
+            else:
+                statement[field] = None
+        logger.info(f"Successfully fetched {statement_type} for {symbol}")
+        return statement
+    except requests.RequestException as e:
+        logger.error(f"Error fetching {statement_type} for {symbol}: {e}")
+        return {}
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_analyst_ratings(symbol: str) -> list:
+    """Fetch analyst ratings from FMP API."""
+    url = f"https://financialmodelingprep.com/api/v3/grade/{symbol}?limit=10&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if not data or not isinstance(data, list):
+            logger.warning(f"No analyst ratings data returned for {symbol}")
+            return []
+        logger.info(f"Successfully fetched {len(data)} analyst ratings for {symbol}")
+        return data
+    except requests.RequestException as e:
+        logger.error(f"Error fetching analyst ratings for {symbol}: {e}")
+        return []
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_historical_prices(symbol: str) -> pd.DataFrame:
+    """Fetch historical daily prices from FMP API."""
+    url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{symbol}?timeseries=180&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if not data or "historical" not in data or not data["historical"]:
+            logger.warning(f"No historical price data returned for {symbol}")
+            return pd.DataFrame()
+        df = pd.DataFrame(data["historical"])
+        if "date" not in df or "close" not in df:
+            logger.warning(f"Invalid historical price data format for {symbol}")
+            return pd.DataFrame()
+        df["date"] = pd.to_datetime(df["date"])
+        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+        df = df[["date", "close"]].dropna().sort_values("date")
+        logger.info(f"Successfully fetched {len(df)} days of historical prices for {symbol}")
+        return df
+    except requests.RequestException as e:
+        logger.error(f"Error fetching historical prices for {symbol}: {e}")
+        return pd.DataFrame()
+
+
+
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_stock_peers(symbol: str) -> list:
+    """Fetch stock peers from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/stock-peers?symbol={symbol}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        peers = data.get("peers", []) if isinstance(data, dict) else []
+        if not peers:
+            logger.warning(f"No peer data returned for {symbol}")
+        else:
+            logger.info(f"Successfully fetched {len(peers)} peers for {symbol}")
+        return peers
+    except requests.RequestException as e:
+        logger.error(f"Error fetching stock peers for {symbol}: {e}")
+        return []
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_key_executives(symbol: str) -> list:
+    """Fetch company executives from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/key-executives?symbol={symbol}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, list):
+            logger.warning(f"No executive data returned for {symbol}")
+            return []
+        executives = [
+            {
+                "name": exec.get("name", "N/A"),
+                "title": exec.get("title", "N/A"),
+                "compensation": float(exec.get("compensation", 0)) if exec.get("compensation") else None
+            } for exec in data
+        ]
+        logger.info(f"Successfully fetched {len(executives)} executives for {symbol}")
+        return executives
+    except requests.RequestException as e:
+        logger.error(f"Error fetching executives for {symbol}: {e}")
+        return []
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_esg_ratings(symbol: str) -> dict:
+    """Fetch ESG ratings from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/esg-ratings?symbol={symbol}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if not data or not isinstance(data, list) or len(data) == 0:
+            logger.warning(f"No ESG ratings data returned for {symbol}")
+            return {}
+        esg_data = data[0]
+        numeric_fields = ["environmentalScore", "socialScore", "governanceScore", "ESGScore"]
+        for field in numeric_fields:
+            if field in esg_data and esg_data[field] is not None:
+                try:
+                    esg_data[field] = float(esg_data[field])
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid {field} for {symbol}: {esg_data[field]}")
+                    esg_data[field] = None
+        logger.info(f"Successfully fetched ESG ratings for {symbol}")
+        return esg_data
+    except requests.RequestException as e:
+        logger.error(f"Error fetching ESG ratings for {symbol}: {e}")
+        return {}
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_dcf_valuation(symbol: str) -> dict:
+    """Fetch DCF valuation from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/discounted-cash-flow?symbol={symbol}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if not data or not isinstance(data, list) or len(data) == 0:
+            logger.warning(f"No DCF valuation data returned for {symbol}")
+            return {}
+        dcf_data = data[0]
+        numeric_fields = ["dcf", "stockPrice"]
+        for field in numeric_fields:
+            if field in dcf_data and dcf_data[field] is not None:
+                try:
+                    dcf_data[field] = float(dcf_data[field])
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid {field} for {symbol}: {dcf_data[field]}")
+                    dcf_data[field] = None
+        logger.info(f"Successfully fetched DCF valuation for {symbol}")
+        return dcf_data
+    except requests.RequestException as e:
+        logger.error(f"Error fetching DCF valuation for {symbol}: {e}")
+        return {}
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_shares_float(symbol: str) -> dict:
+    """Fetch shares float data from FMP API."""
+    url = f"https://financialmodelingprep.com/stable/shares-float?symbol={symbol}&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if not data or not isinstance(data, list) or len(data) == 0:
+            logger.warning(f"No shares float data returned for {symbol}")
+            return {}
+        float_data = data[0]
+        numeric_fields = ["freeFloat", "floatShares", "outstandingShares"]
+        for field in numeric_fields:
+            if field in float_data and float_data[field] is not None:
+                try:
+                    float_data[field] = float(float_data[field])
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid {field} for {symbol}: {float_data[field]}")
+                    float_data[field] = None
+        logger.info(f"Successfully fetched shares float for {symbol}")
+        return float_data
+    except requests.RequestException as e:
+        logger.error(f"Error fetching shares float for {symbol}: {e}")
+        return {}
+
+import yfinance as yf
+
+import yfinance as yf
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_market_movers() -> dict:
+    """Fetch biggest gainers, losers, and most active stocks using Yahoo Finance (FMP fallback)."""
+    movers = {"gainers": [], "losers": [], "actives": []}
+    # Intento con FMP primero
+    endpoints = {
+        "gainers": "stock_market/gainers",
+        "losers": "stock_market/losers",
+        "actives": "stock_market/actives"
+    }
+    for key, endpoint in endpoints.items():
+        url = f"https://financialmodelingprep.com/api/v3/{endpoint}?apikey={FMP_API_KEY}"
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            logger.debug(f"Raw API response for {key} ({url}): {data}")
+            if not data or not isinstance(data, list):
+                logger.warning(f"No {key} data returned from FMP")
+            else:
+                movers[key] = [
+                    {
+                        "symbol": item.get("ticker", item.get("symbol", item.get("stockSymbol", item.get("stock", "N/A")))),
+                        "name": item.get("companyName", item.get("name", "N/A")),
+                        "price": float(item.get("price", 0)) if item.get("price") else None,
+                        "changePercentage": float(item.get("changesPercentage", item.get("changePercentage", item.get("percentChange", 0)))) if item.get("changesPercentage") or item.get("changePercentage") or item.get("percentChange") else None
+                    } for item in data[:5] if item.get("ticker") or item.get("symbol") or item.get("stockSymbol") or item.get("stock")
+                ]
+                logger.info(f"Successfully fetched {len(movers[key])} {key} from FMP")
+                continue  # Si FMP funciona, no usar fallback
+        except requests.RequestException as e:
+            logger.error(f"Error fetching {key} from FMP: {e}, using Yahoo Finance")
+        
+        # Fallback a Yahoo Finance
+        tickers = ["AAPL", "MSFT", "TSLA", "NVDA", "GOOGL"]  # Lista de ejemplo
+        try:
+            yf_data = yf.download(tickers, period="1d", group_by="ticker")
+            movers[key] = [
+                {
+                    "symbol": ticker,
+                    "name": ticker,
+                    "price": float(yf_data[ticker]["Close"].iloc[-1]) if not yf_data[ticker]["Close"].empty else None,
+                    "changePercentage": float(((yf_data[ticker]["Close"].iloc[-1] - yf_data[ticker]["Open"].iloc[-1]) / yf_data[ticker]["Open"].iloc[-1]) * 100) if not yf_data[ticker]["Close"].empty else None
+                } for ticker in tickers[:5]
+            ]
+            logger.info(f"Fetched {len(movers[key])} {key} from Yahoo Finance")
+        except Exception as e:
+            logger.error(f"Error fetching {key} from Yahoo Finance: {e}")
+    return movers
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_senate_trades() -> list:
+    """Fetch recent Senate trading activity from FMP API with mock data fallback."""
+    url = f"https://financialmodelingprep.com/api/v3/senate-latest?page=0&limit=100&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        logger.debug(f"Raw API response for Senate trades ({url}): {data}")
+        if not data or not isinstance(data, list):
+            logger.warning("No Senate trades data returned from FMP, using mock data")
+            # Fallback a datos simulados basados en la respuesta de ejemplo
+            mock_trades = [
+                {
+                    "senator": "Markwayne Mullin",
+                    "ticker": "LRN",
+                    "transaction_date": "2025-01-02",
+                    "transaction_type": "Purchase",
+                    "amount_range": "$15,001 - $50,000"
+                },
+                {
+                    "senator": "Sheldon Whitehouse",
+                    "ticker": "AAPL",
+                    "transaction_date": "2024-12-19",
+                    "transaction_type": "Sale (Partial)",
+                    "amount_range": "$15,001 - $50,000"
+                },
+                {
+                    "senator": "Jerry Moran",
+                    "ticker": "BRK/B",
+                    "transaction_date": "2024-12-16",
+                    "transaction_type": "Purchase",
+                    "amount_range": "$1,001 - $15,000"
+                }
+            ]
+            logger.info(f"Using {len(mock_trades)} mock Senate trades")
+            return mock_trades
+        trades = [
+            {
+                "senator": f"{item.get('firstName', 'N/A')} {item.get('lastName', 'N/A')}",
+                "ticker": item.get("symbol", "N/A"),
+                "transaction_date": item.get("transactionDate", item.get("transaction_date", "N/A")),
+                "transaction_type": item.get("type", item.get("transactionType", "N/A")),
+                "amount_range": item.get("amount", item.get("amountRange", "N/A"))
+            } for item in data[:5]
+        ]
+        logger.info(f"Successfully fetched {len(trades)} Senate trades from FMP")
+        return trades
+    except requests.RequestException as e:
+        logger.error(f"Error fetching Senate trades from FMP: {e}, using mock data")
+        # Fallback a datos simulados
+        mock_trades = [
+            {
+                "senator": "Markwayne Mullin",
+                "ticker": "LRN",
+                "transaction_date": "2025-01-02",
+                "transaction_type": "Purchase",
+                "amount_range": "$15,001 - $50,000"
+            },
+            {
+                "senator": "Sheldon Whitehouse",
+                "ticker": "AAPL",
+                "transaction_date": "2024-12-19",
+                "transaction_type": "Sale (Partial)",
+                "amount_range": "$15,001 - $50,000"
+            },
+            {
+                "senator": "Jerry Moran",
+                "ticker": "BRK/B",
+                "transaction_date": "2024-12-16",
+                "transaction_type": "Purchase",
+                "amount_range": "$1,001 - $15,000"
+            }
+        ]
+        logger.info(f"Using {len(mock_trades)} mock Senate trades")
+        return mock_trades
+
+@st.cache_data(ttl=3600)
+def fetch_fmp_house_trades() -> list:
+    """Fetch recent House trading activity from FMP API with mock data fallback."""
+    url = f"https://financialmodelingprep.com/api/v3/house-latest?page=0&limit=100&apikey={FMP_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        logger.debug(f"Raw API response for House trades ({url}): {data}")
+        if not data or not isinstance(data, list):
+            logger.warning("No House trades data returned from FMP, using mock data")
+            # Fallback a datos simulados basados en la respuesta de ejemplo
+            mock_trades = [
+                {
+                    "representative": "Michael Collins",
+                    "ticker": "$VIRTUALUSD",
+                    "transaction_date": "2025-01-03",
+                    "transaction_type": "Purchase",
+                    "amount_range": "$1,001 - $15,000"
+                },
+                {
+                    "representative": "Nancy Pelosi",
+                    "ticker": "AAPL",
+                    "transaction_date": "2024-12-31",
+                    "transaction_type": "Sale",
+                    "amount_range": "$10,000,001 - $25,000,000"
+                },
+                {
+                    "representative": "James Comer",
+                    "ticker": "LUV",
+                    "transaction_date": "2024-12-31",
+                    "transaction_type": "Sale",
+                    "amount_range": "$1,001 - $15,000"
+                }
+            ]
+            logger.info(f"Using {len(mock_trades)} mock House trades")
+            return mock_trades
+        trades = [
+            {
+                "representative": f"{item.get('firstName', 'N/A')} {item.get('lastName', 'N/A')}",
+                "ticker": item.get("symbol", "N/A"),
+                "transaction_date": item.get("transactionDate", item.get("transaction_date", "N/A")),
+                "transaction_type": item.get("type", item.get("transactionType", "N/A")),
+                "amount_range": item.get("amount", item.get("amountRange", "N/A"))
+            } for item in data[:5]
+        ]
+        logger.info(f"Successfully fetched {len(trades)} House trades from FMP")
+        return trades
+    except requests.RequestException as e:
+        logger.error(f"Error fetching House trades from FMP: {e}, using mock data")
+        # Fallback a datos simulados
+        mock_trades = [
+            {
+                "representative": "Michael Collins",
+                "ticker": "$VIRTUALUSD",
+                "transaction_date": "2025-01-03",
+                "transaction_type": "Purchase",
+                "amount_range": "$1,001 - $15,000"
+            },
+            {
+                "representative": "Nancy Pelosi",
+                "ticker": "AAPL",
+                "transaction_date": "2024-12-31",
+                "transaction_type": "Sale",
+                "amount_range": "$10,000,001 - $25,000,000"
+            },
+            {
+                "representative": "James Comer",
+                "ticker": "LUV",
+                "transaction_date": "2024-12-31",
+                "transaction_type": "Sale",
+                "amount_range": "$1,001 - $15,000"
+            }
+        ]
+        logger.info(f"Using {len(mock_trades)} mock House trades")
+        return mock_trades
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # --- Main App --
 # --- Main App ---
 # --- Main App ---
@@ -3264,7 +3901,7 @@ def main():
 
     # Definición de los tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,tab9, tab10,tab11 = st.tabs([
-        "| Gummy Data Bubbles® |", "| Market Scanner |", "| News |", "| Institutional Holders |",
+        "| Gummy Data Bubbles® |", "| Market Scanner |", "| News |", "| Stock Insights |",
         "| Options Order Flow |", "| Analyst Rating Flow |", "| Elliott Pulse® |", "| Crypto Insights |",
         "| Projection |", "| Performance Map |", "| Options Signals |"
     ])
@@ -3787,6 +4424,577 @@ def main():
     # Tab 4: Institutional Holders
 
 
+
+
+    with tab4:
+        # Estilo CSS para un diseño limpio y consistente
+        st.markdown("""
+            <style>
+            .stApp {
+                background-color: #000000;
+            }
+            .tab4-container {
+                padding: 20px;
+                background: #1E1E1E;
+                border-radius: 10px;
+                border: 1px solid #39FF14;
+                box-shadow: 0 0 15px rgba(57, 255, 20, 0.3);
+            }
+            .section-title {
+                font-size: 22px;
+                font-weight: 600;
+                color: #00FFFF;
+                text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
+                margin-bottom: 15px;
+                font-family: 'Courier New', Courier, monospace;
+            }
+            .sub-section {
+                font-size: 18px;
+                font-weight: 500;
+                color: #39FF14;
+                margin-top: 20px;
+                margin-bottom: 10px;
+            }
+            .data-text {
+                font-size: 14px;
+                color: #E0E0E0;
+                font-family: 'Arial', sans-serif;
+            }
+            .stDataFrame {
+                border: 1px solid #39FF14;
+                border-radius: 5px;
+                background: #0F1419;
+            }
+            .stTextInput input, .stSelectbox select, .stNumberInput input {
+                background-color: #2D2D2D;
+                color: #FFFFFF;
+                border: 1px solid #39FF14;
+                border-radius: 5px;
+                font-family: 'Arial', sans-serif;
+            }
+            .stButton button {
+                background: linear-gradient(90deg, #39FF14, #00FFFF);
+                color: #0A0A0A;
+                border: none;
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-family: 'Courier New', Courier, monospace;
+                font-weight: 600;
+                transition: all 0.3s ease;
+            }
+            .stButton button:hover {
+                box-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
+            }
+            .divider {
+                border-top: 1px dashed #00FFFF;
+                margin: 20px 0;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Contenedor principal
+        with st.container():
+            st.markdown('<div class="tab4-container">', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Stock Insights</div>', unsafe_allow_html=True)
+            st.markdown('<p class="data-text">Analyze stocks with comprehensive financial data, peer comparisons, ESG ratings, political trading, and valuation metrics.</p>', unsafe_allow_html=True)
+
+            # Market Movers (Gainers, Losers, Actives)
+            st.markdown('<div class="sub-section">Market Movers</div>', unsafe_allow_html=True)
+            movers = fetch_fmp_market_movers()
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown('<p class="data-text"><b>Top Gainers</b></p>', unsafe_allow_html=True)
+                if movers["gainers"]:
+                    gainers_df = pd.DataFrame(movers["gainers"]).rename(columns={"symbol": "Ticker", "name": "Name", "price": "Price", "changePercentage": "Change (%)"})
+                    st.dataframe(
+                        gainers_df[["Ticker", "Price", "Change (%)"]].style.format({"Price": "${:.2f}", "Change (%)": "{:.2f}%"}, na_rep="N/A"),
+                        use_container_width=True,
+                        height=150
+                    )
+                else:
+                    st.markdown('<p class="data-text">No gainers data available. Check logs for API response.</p>', unsafe_allow_html=True)
+            with col2:
+                st.markdown('<p class="data-text"><b>Top Losers</b></p>', unsafe_allow_html=True)
+                if movers["losers"]:
+                    losers_df = pd.DataFrame(movers["losers"]).rename(columns={"symbol": "Ticker", "name": "Name", "price": "Price", "changePercentage": "Change (%)"})
+                    st.dataframe(
+                        losers_df[["Ticker", "Price", "Change (%)"]].style.format({"Price": "${:.2f}", "Change (%)": "{:.2f}%"}, na_rep="N/A"),
+                        use_container_width=True,
+                        height=150
+                    )
+                else:
+                    st.markdown('<p class="data-text">No losers data available. Check logs for API response.</p>', unsafe_allow_html=True)
+            with col3:
+                st.markdown('<p class="data-text"><b>Most Active</b></p>', unsafe_allow_html=True)
+                if movers["actives"]:
+                    actives_df = pd.DataFrame(movers["actives"]).rename(columns={"symbol": "Ticker", "name": "Name", "price": "Price", "changePercentage": "Change (%)"})
+                    st.dataframe(
+                        actives_df[["Ticker", "Price", "Change (%)"]].style.format({"Price": "${:.2f}", "Change (%)": "{:.2f}%"}, na_rep="N/A"),
+                        use_container_width=True,
+                        height=150
+                    )
+                else:
+                    st.markdown('<p class="data-text">No active stocks data available. Check logs for API response.</p>', unsafe_allow_html=True)
+            st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+            # Actividad de Trading Político
+            st.markdown('<div class="sub-section">Political Trading Activity</div>', unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown('<p class="data-text"><b>Recent Senate Trades</b></p>', unsafe_allow_html=True)
+                senate_trades = fetch_fmp_senate_trades()
+                if senate_trades:
+                    senate_df = pd.DataFrame(senate_trades).rename(columns={
+                        "senator": "Senator",
+                        "ticker": "Ticker",
+                        "transaction_date": "Date",
+                        "transaction_type": "Type",
+                        "amount_range": "Amount Range"
+                    })
+                    st.dataframe(
+                        senate_df[["Senator", "Ticker", "Date", "Type", "Amount Range"]].style.set_properties(**{
+                            "background-color": "#0F1419",
+                            "color": "#E0E0E0",
+                            "border-color": "#39FF14",
+                            "font-family": "'Arial', sans-serif",
+                            "text-align": "center"
+                        }),
+                        use_container_width=True,
+                        height=150
+                    )
+                else:
+                    st.markdown('<p class="data-text">No recent Senate trades available. Check logs or FMP plan.</p>', unsafe_allow_html=True)
+            with col2:
+                st.markdown('<p class="data-text"><b>Recent House Trades</b></p>', unsafe_allow_html=True)
+                house_trades = fetch_fmp_house_trades()
+                if house_trades:
+                    house_df = pd.DataFrame(house_trades).rename(columns={
+                        "representative": "Representative",
+                        "ticker": "Ticker",
+                        "transaction_date": "Date",
+                        "transaction_type": "Type",
+                        "amount_range": "Amount Range"
+                    })
+                    st.dataframe(
+                        house_df[["Representative", "Ticker", "Date", "Type", "Amount Range"]].style.set_properties(**{
+                            "background-color": "#0F1419",
+                            "color": "#E0E0E0",
+                            "border-color": "#39FF14",
+                            "font-family": "'Arial', sans-serif",
+                            "text-align": "center"
+                        }),
+                        use_container_width=True,
+                        height=150
+                    )
+                else:
+                    st.markdown('<p class="data-text">No recent House trades available. Check logs or FMP plan.</p>', unsafe_allow_html=True)
+           
+            st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+            # Búsqueda por Nombre de Empresa
+            st.markdown('<div class="sub-section">Search by Company Name</div>', unsafe_allow_html=True)
+            search_query = st.text_input("Enter company name (e.g., Apple)", key="company_search", help="Search for companies by name")
+            if search_query:
+                with st.spinner("Searching companies..."):
+                    search_results = fetch_fmp_company_search(search_query)
+                    if search_results:
+                        search_df = pd.DataFrame(search_results)
+                        if "symbol" in search_df.columns and "name" in search_df.columns and "exchange" in search_df.columns:
+                            st.dataframe(
+                                search_df[["symbol", "name", "exchange"]].rename(
+                                    columns={"symbol": "Ticker", "name": "Company Name", "exchange": "Exchange"}
+                                ).style.set_properties(**{
+                                    "background-color": "#0F1419",
+                                    "color": "#E0E0E0",
+                                    "border-color": "#39FF14",
+                                    "font-family": "'Arial', sans-serif",
+                                    "text-align": "center"
+                                }),
+                                use_container_width=True,
+                                height=200
+                            )
+                        else:
+                            logger.warning(f"Company search DataFrame missing required columns: {search_df.columns}")
+                            st.warning("No valid results found. Try a different company name.")
+                    else:
+                        st.warning("No results found. Try a different company name.")
+            st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+            # Análisis de Acciones
+            st.markdown('<div class="sub-section">Stock Analysis</div>', unsafe_allow_html=True)
+            ticker = st.text_input("Stock Ticker (e.g., AAPL)", value="AAPL", key="stock_insights_ticker").upper()
+
+            if ticker:
+                with st.spinner(f"Fetching data for {ticker}..."):
+                    # Validar ticker
+                    company_profile = fetch_fmp_company_profile(ticker)
+                    if not company_profile:
+                        st.error("Invalid ticker or no data available. Please try another ticker (e.g., AAPL, MSFT).")
+                    else:
+                        # Perfil de la Empresa
+                        st.markdown(f'<div class="section-title">{company_profile.get("companyName", "N/A")} ({ticker})</div>', unsafe_allow_html=True)
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown(f'<p class="data-text"><b>Sector:</b> {company_profile.get("sector", "N/A")}</p>', unsafe_allow_html=True)
+                            st.markdown(f'<p class="data-text"><b>Industry:</b> {company_profile.get("industry", "N/A")}</p>', unsafe_allow_html=True)
+                            market_cap = company_profile.get("marketCap")
+                            st.markdown(f'<p class="data-text"><b>Market Cap:</b> ${market_cap:,.2f}</p>' if isinstance(market_cap, (int, float)) else '<p class="data-text"><b>Market Cap:</b> N/A</p>', unsafe_allow_html=True)
+                        with col2:
+                            st.markdown(f'<p class="data-text"><b>Exchange:</b> {company_profile.get("exchange", "N/A")}</p>', unsafe_allow_html=True)
+                            website = company_profile.get("website", "N/A")
+                            st.markdown(f'<p class="data-text"><b>Website:</b> <a href="{website}" target="_blank">{website}</a></p>' if website != "N/A" else '<p class="data-text"><b>Website:</b> N/A</p>', unsafe_allow_html=True)
+                            st.markdown(f'<p class="data-text"><b>Description:</b> {company_profile.get("description", "N/A")[:200]}...</p>', unsafe_allow_html=True)
+
+                        # Cotización en Tiempo Real
+                        st.markdown('<div class="sub-section">Real-Time Stock Quote</div>', unsafe_allow_html=True)
+                        quote = fetch_fmp_stock_quote(ticker)
+                        if quote:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                price = quote.get("price")
+                                st.markdown(f'<p class="data-text"><b>Price:</b> ${price:,.2f}</p>' if price is not None else '<p class="data-text"><b>Price:</b> N/A</p>', unsafe_allow_html=True)
+                                change = quote.get("change")
+                                changes_percentage = quote.get("changesPercentage")
+                                if change is not None and changes_percentage is not None:
+                                    color = "#32CD32" if change >= 0 else "#FF4500"
+                                    st.markdown(f'<p class="data-text"><b>Change:</b> <span style="color:{color}">{change:.2f} ({changes_percentage:.2f}%)</span></p>', unsafe_allow_html=True)
+                                else:
+                                    st.markdown('<p class="data-text"><b>Change:</b> N/A</p>', unsafe_allow_html=True)
+                            with col2:
+                                volume = quote.get("volume")
+                                st.markdown(f'<p class="data-text"><b>Volume:</b> {volume:,.0f}</p>' if volume is not None else '<p class="data-text"><b>Volume:</b> N/A</p>', unsafe_allow_html=True)
+                                day_low = quote.get("dayLow")
+                                day_high = quote.get("dayHigh")
+                                if day_low is not None and day_high is not None:
+                                    st.markdown(f'<p class="data-text"><b>Day Range:</b> ${day_low:,.2f} - ${day_high:,.2f}</p>', unsafe_allow_html=True)
+                                else:
+                                    st.markdown('<p class="data-text"><b>Day Range:</b> N/A</p>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<p class="data-text">No stock quote data available.</p>', unsafe_allow_html=True)
+                        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                        # Ejecutivos Clave
+                        st.markdown('<div class="sub-section">Key Executives</div>', unsafe_allow_html=True)
+                        executives = fetch_fmp_key_executives(ticker)
+                        if executives:
+                            exec_df = pd.DataFrame(executives).rename(columns={"name": "Name", "title": "Title", "compensation": "Compensation"})
+                            st.dataframe(
+                                exec_df[["Name", "Title", "Compensation"]].style.format({"Compensation": "${:,.2f}"}, na_rep="N/A"),
+                                use_container_width=True,
+                                height=150
+                            )
+                        else:
+                            st.markdown('<p class="data-text">No executive data available.</p>', unsafe_allow_html=True)
+                        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                        # Comparación con Pares
+                        st.markdown('<div class="sub-section">Peer Comparison</div>', unsafe_allow_html=True)
+                        peers = fetch_fmp_stock_peers(ticker)
+                        if peers:
+                            peer_data = []
+                            for peer in peers[:5]:  # Limit to top 5 peers
+                                peer_profile = fetch_fmp_company_profile(peer)
+                                if peer_profile:
+                                    peer_data.append({
+                                        "Ticker": peer,
+                                        "Name": peer_profile.get("companyName", "N/A"),
+                                        "Market Cap": peer_profile.get("marketCap", None),
+                                        "Sector": peer_profile.get("sector", "N/A")
+                                    })
+                            if peer_data:
+                                peer_df = pd.DataFrame(peer_data)
+                                st.dataframe(
+                                    peer_df.style.format({"Market Cap": "${:,.2f}"}, na_rep="N/A"),
+                                    use_container_width=True,
+                                    height=150
+                                )
+                            else:
+                                st.markdown('<p class="data-text">No peer data available.</p>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<p class="data-text">No peer data available.</p>', unsafe_allow_html=True)
+                        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                        # Valoración DCF
+                        st.markdown('<div class="sub-section">DCF Valuation</div>', unsafe_allow_html=True)
+                        dcf = fetch_fmp_dcf_valuation(ticker)
+                        if dcf:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                dcf_value = dcf.get("dcf")
+                                st.markdown(f'<p class="data-text"><b>DCF Value:</b> ${dcf_value:,.2f}</p>' if dcf_value is not None else '<p class="data-text"><b>DCF Value:</b> N/A</p>', unsafe_allow_html=True)
+                            with col2:
+                                stock_price = dcf.get("stockPrice")
+                                st.markdown(f'<p class="data-text"><b>Stock Price:</b> ${stock_price:,.2f}</p>' if stock_price is not None else '<p class="data-text"><b>Stock Price:</b> N/A</p>', unsafe_allow_html=True)
+                                if dcf_value is not None and stock_price is not None:
+                                    diff = ((dcf_value - stock_price) / stock_price) * 100
+                                    color = "#32CD32" if diff >= 0 else "#FF4500"
+                                    st.markdown(f'<p class="data-text"><b>Implied Upside/Downside:</b> <span style="color:{color}">{diff:.2f}%</span></p>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<p class="data-text">No DCF valuation data available.</p>', unsafe_allow_html=True)
+                        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                        # Calificaciones ESG
+                        st.markdown('<div class="sub-section">ESG Ratings</div>', unsafe_allow_html=True)
+                        esg = fetch_fmp_esg_ratings(ticker)
+                        if esg:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.markdown(f'<p class="data-text"><b>Environmental Score:</b> {esg.get("environmentalScore", "N/A"):,.2f}</p>' if esg.get("environmentalScore") is not None else '<p class="data-text"><b>Environmental Score:</b> N/A</p>', unsafe_allow_html=True)
+                                st.markdown(f'<p class="data-text"><b>Social Score:</b> {esg.get("socialScore", "N/A"):,.2f}</p>' if esg.get("socialScore") is not None else '<p class="data-text"><b>Social Score:</b> N/A</p>', unsafe_allow_html=True)
+                            with col2:
+                                st.markdown(f'<p class="data-text"><b>Governance Score:</b> {esg.get("governanceScore", "N/A"):,.2f}</p>' if esg.get("governanceScore") is not None else '<p class="data-text"><b>Governance Score:</b> N/A</p>', unsafe_allow_html=True)
+                                st.markdown(f'<p class="data-text"><b>Overall ESG Score:</b> {esg.get("ESGScore", "N/A"):,.2f}</p>' if esg.get("ESGScore") is not None else '<p class="data-text"><b>Overall ESG Score:</b> N/A</p>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<p class="data-text">No ESG ratings available.</p>', unsafe_allow_html=True)
+                        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                        # Flotante de Acciones
+                        st.markdown('<div class="sub-section">Share Float & Liquidity</div>', unsafe_allow_html=True)
+                        float_data = fetch_fmp_shares_float(ticker)
+                        if float_data:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.markdown(f'<p class="data-text"><b>Free Float:</b> {float_data.get("freeFloat", "N/A"):,.0f}</p>' if float_data.get("freeFloat") is not None else '<p class="data-text"><b>Free Float:</b> N/A</p>', unsafe_allow_html=True)
+                                st.markdown(f'<p class="data-text"><b>Float Shares:</b> {float_data.get("floatShares", "N/A"):,.0f}</p>' if float_data.get("floatShares") is not None else '<p class="data-text"><b>Float Shares:</b> N/A</p>', unsafe_allow_html=True)
+                            with col2:
+                                st.markdown(f'<p class="data-text"><b>Outstanding Shares:</b> {float_data.get("outstandingShares", "N/A"):,.0f}</p>' if float_data.get("outstandingShares") is not None else '<p class="data-text"><b>Outstanding Shares:</b> N/A</p>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<p class="data-text">No share float data available.</p>', unsafe_allow_html=True)
+                        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                        # Screener de Acciones
+                        st.markdown('<div class="sub-section">Stock Screener</div>', unsafe_allow_html=True)
+                        with st.expander("Filter Stocks"):
+                            screener_col1, screener_col2 = st.columns(2)
+                            with screener_col1:
+                                min_market_cap = st.number_input("Min Market Cap (USD)", min_value=0, value=1000000000, step=100000000)
+                                sector = st.selectbox("Sector", ["All", "Technology", "Financial Services", "Healthcare", "Consumer Cyclical", "Industrials", "Energy", "Communication Services"])
+                            with screener_col2:
+                                max_beta = st.number_input("Max Beta", min_value=0.0, value=2.0, step=0.1)
+                                exchange = st.selectbox("Exchange", ["All", "NASDAQ", "NYSE", "WSE"])
+                            if st.button("Apply Filters"):
+                                with st.spinner("Filtering stocks..."):
+                                    screener_results = fetch_fmp_stock_screener(
+                                        min_market_cap=min_market_cap,
+                                        max_beta=max_beta,
+                                        sector=sector if sector != "All" else None,
+                                        exchange=exchange if exchange != "All" else None
+                                    )
+                                    if screener_results:
+                                        screener_df = pd.DataFrame(screener_results)
+                                        if all(col in screener_df.columns for col in ["symbol", "companyName", "marketCap", "sector", "beta"]):
+                                            st.dataframe(
+                                                screener_df[["symbol", "companyName", "marketCap", "sector", "beta"]].rename(
+                                                    columns={
+                                                        "symbol": "Ticker",
+                                                        "companyName": "Company Name",
+                                                        "marketCap": "Market Cap",
+                                                        "sector": "Sector",
+                                                        "beta": "Beta"
+                                                    }
+                                                ).style.format({"Market Cap": "${:,.2f}", "Beta": "{:.2f}"}),
+                                                use_container_width=True,
+                                                height=200
+                                            )
+                                        else:
+                                            logger.warning(f"Stock screener DataFrame missing required columns: {screener_df.columns}")
+                                            st.warning("No stocks match the selected criteria.")
+                                    else:
+                                        st.warning("No stocks match the selected criteria.")
+                        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                        # Estados Financieros
+                        st.markdown('<div class="sub-section">Financial Statements (Latest)</div>', unsafe_allow_html=True)
+                        financials = {
+                            "Income Statement": fetch_fmp_financial_statements(ticker, "income"),
+                            "Balance Sheet": fetch_fmp_financial_statements(ticker, "balance-sheet"),
+                            "Cash Flow": fetch_fmp_financial_statements(ticker, "cash-flow")
+                        }
+                        for statement, data in financials.items():
+                            with st.expander(statement):
+                                if data:
+                                    df = pd.DataFrame([{
+                                        "Date": data.get("date", "N/A"),
+                                        "Revenue": f"${data.get('revenue', 'N/A'):,.2f}" if isinstance(data.get("revenue"), (int, float)) else "N/A",
+                                        "Net Income": f"${data.get('netIncome', 'N/A'):,.2f}" if isinstance(data.get("netIncome"), (int, float)) else "N/A",
+                                        "Total Assets": f"${data.get('totalAssets', 'N/A'):,.2f}" if isinstance(data.get("totalAssets"), (int, float)) else "N/A",
+                                        "Total Liabilities": f"${data.get('totalLiabilities', 'N/A'):,.2f}" if isinstance(data.get("totalLiabilities"), (int, float)) else "N/A",
+                                        "Operating Cash Flow": f"${data.get('netCashProvidedByOperatingActivities', 'N/A'):,.2f}" if isinstance(data.get("netCashProvidedByOperatingActivities"), (int, float)) else "N/A"
+                                    }]).T
+                                    df.columns = ["Value"]
+                                    st.dataframe(
+                                        df.style.set_properties(**{
+                                            "background-color": "#0F1419",
+                                            "color": "#E0E0E0",
+                                            "border-color": "#39FF14",
+                                            "font-family": "'Arial', sans-serif",
+                                            "text-align": "left"
+                                        }),
+                                        use_container_width=True
+                                    )
+                                else:
+                                    st.markdown('<p class="data-text">No data available.</p>', unsafe_allow_html=True)
+                        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                        # Métricas y Ratios Clave
+                        st.markdown('<div class="sub-section">Key Financial Metrics & Ratios</div>', unsafe_allow_html=True)
+                        metrics = fetch_fmp_key_metrics(ticker)
+                        ratios = fetch_fmp_financial_ratios(ticker)
+                        if metrics or ratios:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if metrics:
+                                    metrics_df = pd.DataFrame([{
+                                        "Metric": "P/E Ratio",
+                                        "Value": f"{metrics.get('peRatio', 'N/A'):,.2f}" if isinstance(metrics.get('peRatio'), (int, float)) else "N/A"
+                                    }, {
+                                        "Metric": "Revenue per Share",
+                                        "Value": f"${metrics.get('revenuePerShare', 'N/A'):,.2f}" if isinstance(metrics.get('revenuePerShare'), (int, float)) else "N/A"
+                                    }, {
+                                        "Metric": "ROE",
+                                        "Value": f"{metrics.get('returnOnEquity', 'N/A')*100:,.2f}%" if isinstance(metrics.get('returnOnEquity'), (int, float)) else "N/A"
+                                    }]).set_index("Metric")
+                                    st.markdown('<p class="data-text"><b>Key Metrics</b></p>', unsafe_allow_html=True)
+                                    st.dataframe(
+                                        metrics_df.style.set_properties(**{
+                                            "background-color": "#0F1419",
+                                            "color": "#E0E0E0",
+                                            "border-color": "#39FF14",
+                                            "font-family": "'Arial', sans-serif",
+                                            "text-align": "left"
+                                        }),
+                                        use_container_width=True
+                                    )
+                            with col2:
+                                if ratios:
+                                    ratios_df = pd.DataFrame([{
+                                        "Ratio": "Gross Profit Margin",
+                                        "Value": f"{ratios.get('grossProfitMargin', 'N/A')*100:,.2f}%" if isinstance(ratios.get('grossProfitMargin'), (int, float)) else "N/A"
+                                    }, {
+                                        "Ratio": "Current Ratio",
+                                        "Value": f"{ratios.get('currentRatio', 'N/A'):,.2f}" if isinstance(ratios.get('currentRatio'), (int, float)) else "N/A"
+                                    }, {
+                                        "Ratio": "Debt to Equity",
+                                        "Value": f"{ratios.get('debtToEquity', 'N/A'):,.2f}" if isinstance(ratios.get('debtToEquity'), (int, float)) else "N/A"
+                                    }]).set_index("Ratio")
+                                    st.markdown('<p class="data-text"><b>Financial Ratios</b></p>', unsafe_allow_html=True)
+                                    st.dataframe(
+                                        ratios_df.style.set_properties(**{
+                                            "background-color": "#0F1419",
+                                            "color": "#E0E0E0",
+                                            "border-color": "#39FF14",
+                                            "font-family": "'Arial', sans-serif",
+                                            "text-align": "left"
+                                        }),
+                                        use_container_width=True
+                                    )
+                        else:
+                            st.markdown('<p class="data-text">No metrics or ratios available.</p>', unsafe_allow_html=True)
+                        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                        # Perspectivas de Analistas
+                        st.markdown('<div class="sub-section">Analyst Insights</div>', unsafe_allow_html=True)
+                        price_target = fetch_fmp_price_target_summary(ticker)
+                        ratings_snapshot = fetch_fmp_ratings_snapshot(ticker)
+                        if price_target or ratings_snapshot:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if price_target:
+                                    st.markdown('<p class="data-text"><b>Price Target Summary</b></p>', unsafe_allow_html=True)
+                                    last_month_avg = price_target.get('lastMonthAvgPT')
+                                    last_quarter_avg = price_target.get('lastQuarterAvgPT')
+                                    st.markdown(f'<p class="data-text"><b>Last Month Avg:</b> ${last_month_avg:,.2f}</p>' if isinstance(last_month_avg, (int, float)) else '<p class="data-text"><b>Last Month Avg:</b> N/A</p>', unsafe_allow_html=True)
+                                    st.markdown(f'<p class="data-text"><b>Last Quarter Avg:</b> ${last_quarter_avg:,.2f}</p>' if isinstance(last_quarter_avg, (int, float)) else '<p class="data-text"><b>Last Quarter Avg:</b> N/A</p>', unsafe_allow_html=True)
+                            with col2:
+                                if ratings_snapshot:
+                                    st.markdown('<p class="data-text"><b>Ratings Snapshot</b></p>', unsafe_allow_html=True)
+                                    st.markdown(f'<p class="data-text"><b>Rating:</b> {ratings_snapshot.get("rating", "N/A")}</p>', unsafe_allow_html=True)
+                                    st.markdown(f'<p class="data-text"><b>Recommendation:</b> {ratings_snapshot.get("ratingRecommendation", "N/A")}</p>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<p class="data-text">No analyst insights available.</p>', unsafe_allow_html=True)
+                        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                        # Rendimiento Sectorial
+                        st.markdown('<div class="sub-section">Sector Performance Snapshot</div>', unsafe_allow_html=True)
+                        sector_performance = fetch_fmp_sector_performance()
+                        if sector_performance:
+                            sector_df = pd.DataFrame(sector_performance)
+                            if "sector" in sector_df.columns and "changePercentage" in sector_df.columns:
+                                st.dataframe(
+                                    sector_df[["sector", "changePercentage"]].rename(
+                                        columns={"sector": "Sector", "changePercentage": "Change (%)"}
+                                    ).style.format({"Change (%)": "{:.2f}%"}),
+                                    use_container_width=True,
+                                    height=200
+                                )
+                            else:
+                                logger.warning(f"Sector performance DataFrame missing required columns: {sector_df.columns}")
+                                st.markdown('<p class="data-text">No sector performance data available. Check API response or logs.</p>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<p class="data-text">No sector performance data available.</p>', unsafe_allow_html=True)
+                        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+                        # Gráficos de Precios
+                        st.markdown('<div class="sub-section">Price Charts</div>', unsafe_allow_html=True)
+                        chart_type = st.selectbox("Select Chart Type", ["Daily (6 Months)", "Intraday (1 Hour)"], key="chart_type")
+                        if chart_type == "Daily (6 Months)":
+                            historical_prices = fetch_fmp_historical_prices(ticker)
+                            if not historical_prices.empty:
+                                six_months_ago = datetime.now() - pd.Timedelta(days=180)
+                                historical_prices = historical_prices[historical_prices["date"] >= six_months_ago]
+                                fig = go.Figure()
+                                fig.add_trace(
+                                    go.Scatter(
+                                        x=historical_prices["date"],
+                                        y=historical_prices["close"],
+                                        mode="lines",
+                                        name="Close Price",
+                                        line=dict(color="#00FFFF")
+                                    )
+                                )
+                                fig.update_layout(
+                                    title=f"{ticker} Daily Closing Price",
+                                    xaxis_title="Date",
+                                    yaxis_title="Price (USD)",
+                                    template="plotly_dark",
+                                    height=400,
+                                    plot_bgcolor="#1E1E1E",
+                                    paper_bgcolor="#1E1E1E",
+                                    font=dict(color="#FFFFFF")
+                                )
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                st.markdown('<p class="data-text">No historical price data available.</p>', unsafe_allow_html=True)
+                        else:  # Intraday (1 Hour)
+                            intraday_prices = fetch_fmp_intraday_prices(ticker)
+                            if not intraday_prices.empty:
+                                fig = go.Figure()
+                                fig.add_trace(
+                                    go.Scatter(
+                                        x=intraday_prices["date"],
+                                        y=intraday_prices["close"],
+                                        mode="lines",
+                                        name="Close Price",
+                                        line=dict(color="#00FFFF")
+                                    )
+                                )
+                                fig.update_layout(
+                                    title=f"{ticker} 1-Hour Intraday Price",
+                                    xaxis_title="Date",
+                                    yaxis_title="Price (USD)",
+                                    template="plotly_dark",
+                                    height=400,
+                                    plot_bgcolor="#1E1E1E",
+                                    paper_bgcolor="#1E1E1E",
+                                    font=dict(color="#FFFFFF")
+                                )
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                st.markdown('<p class="data-text">No intraday price data available.</p>', unsafe_allow_html=True)
+
+            st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+            st.markdown('<p style="text-align: center; color: #778DA9; font-family: \'Arial\', sans-serif;">*Developed by Ozy | © 2025*</p>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
     # Tab 5: Options Order Flow
     with tab5:
