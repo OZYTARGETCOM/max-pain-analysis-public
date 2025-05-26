@@ -37,6 +37,8 @@ from plotly.subplots import make_subplots
 import yfinance as yf
 
 
+
+
 db_lock = threading.Lock()
 AUTO_UPDATE_INTERVAL = 15
 db_lock = threading.Lock()
@@ -3925,6 +3927,9 @@ def main():
     ])
 
     # Tab 1: Gummy Data Bubbles®
+    # Tab 1: Gummy Data Bubbles®
+    # Tab 1: Gummy Data Bubbles®
+    # Tab 1: Gummy Data Bubbles®
     with tab1:
         ticker = st.text_input("Ticker", value="SPY", key="ticker_input").upper()
         
@@ -4067,10 +4072,305 @@ def main():
                 hovermode="closest"
             )
             st.plotly_chart(fig_options, use_container_width=True)
+
+            # Existing SEC Filings Section with Adjusted Tooltip and Dynamic Ticker Name
+            st.markdown(f'<div class="sub-section">SEC Filings for {ticker}</div>', unsafe_allow_html=True)
+            
+            # Adjusted Tooltip for SEC Filing Definitions
+            st.markdown("""
+                <style>
+                .tooltip-sec {
+                    position: relative;
+                    display: inline-block;
+                    cursor: help;
+                    color: #39FF14;
+                    font-size: 14px;
+                    font-family: 'Arial', sans-serif;
+                    margin-bottom: 10px;
+                    text-align: center;
+                    width: 100%;
+                }
+                .tooltip-sec .tooltiptext-sec {
+                    visibility: hidden;
+                    width: 90%;
+                    max-width: 500px;
+                    background-color: #2D2D2D;
+                    color: #E0E0E0;
+                    text-align: left;
+                    border-radius: 5px;
+                    padding: 10px;
+                    position: absolute;
+                    z-index: 1;
+                    bottom: 125%;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    font-size: 12px;
+                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+                    border: 1px solid #39FF14;
+                }
+                .tooltip-sec:hover .tooltiptext-sec {
+                    visibility: visible;
+                }
+                </style>
+                <div class="tooltip-sec">
+                    ℹ️ What are SEC Filings?
+                    <span class="tooltiptext-sec">
+                        <strong>SEC Filing Definitions:</strong><br>
+                        - <strong>Form 3:</strong> Filed by insiders to report initial ownership of securities when they become a director, officer, or beneficial owner of more than 10% of a company's stock.<br>
+                        - <strong>Form 4:</strong> Used by insiders to report changes in ownership, such as buying or selling company stock, typically within two business days of the transaction.<br>
+                        - <strong>Form 10-Q:</strong> A quarterly financial report providing unaudited financial statements, management discussion, and analysis of the company’s performance.<br>
+                        - <strong>Form 10-K:</strong> An annual report providing a comprehensive overview of the company’s financial performance, including audited financial statements and risk factors.<br>
+                        - <strong>DEF 14A:</strong> A proxy statement filed in connection with shareholder meetings, detailing proposals, executive compensation, and other governance matters.<br>
+                        - <strong>Form 8-K:</strong> Filed to report significant events like mergers, acquisitions, executive changes, or other material developments.<br>
+                        - <strong>Form S-1:</strong> A registration statement filed by companies planning to go public, detailing their business operations, financials, and risks.<br>
+                        - <strong>Form 13F:</strong> Filed by institutional investment managers to report their quarterly holdings of U.S. equity securities.
+                    </span>
+                </div>
+            """, unsafe_allow_html=True)
+
+            default_to = datetime.today().date()
+            default_from = default_to - timedelta(days=90)
+            date_range = st.date_input(
+                "Filing Date Range (max 90 days)",
+                value=(default_from, default_to),
+                min_value=default_to - timedelta(days=365),
+                max_value=default_to,
+                help="Select a date range up to 90 days for SEC filings."
+            )
+            if ticker and len(date_range) == 2:
+                from_date, to_date = date_range
+                if (to_date - from_date).days > 90:
+                    st.warning("Date range exceeds 90 days. Please select a range within 90 days.")
+                else:
+                    with st.spinner(f"Fetching SEC filings for {ticker}..."):
+                        filings = fetch_fmp_sec_filings_by_symbol(ticker, from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"))
+                        if filings:
+                            filings_df = pd.DataFrame(filings).rename(columns={
+                                "symbol": "Ticker",
+                                "cik": "CIK",
+                                "filingDate": "Filing Date",
+                                "formType": "Form Type",
+                                "link": "Link"
+                            })
+                            # Render custom HTML table
+                            st.markdown('<div class="custom-table"><table style="width: 100%; border-collapse: collapse;">', unsafe_allow_html=True)
+                            # Table header
+                            st.markdown("""
+                                <tr>
+                                    <th>Ticker</th>
+                                    <th>CIK</th>
+                                    <th>Filing Date</th>
+                                    <th>Form Type</th>
+                                    <th>Link</th>
+                                </tr>
+                            """, unsafe_allow_html=True)
+                            # Table rows
+                            for _, row in filings_df.iterrows():
+                                link_text = f"View Filing for {row['Ticker']} {row['Form Type']}" if pd.notnull(row["Link"]) else "N/A"
+                                link_html = f'<a href="{row["Link"]}" target="_blank" rel="noopener noreferrer">{link_text}</a>' if pd.notnull(row["Link"]) else "N/A"
+                                st.markdown(f"""
+                                    <tr>
+                                        <td>{row['Ticker']}</td>
+                                        <td>{row['CIK']}</td>
+                                        <td>{row['Filing Date']}</td>
+                                        <td>{row['Form Type']}</td>
+                                        <td>{link_html}</td>
+                                    </tr>
+                                """, unsafe_allow_html=True)
+                            st.markdown('</table></div>', unsafe_allow_html=True)
+                        else:
+                            st.warning(f"No SEC filings found for {ticker} in the selected date range.")
+
+            # Section: Potential IPOs (Form S-1 Filings Across All Companies)
+            st.markdown('<div class="sub-section">Potential IPOs (Recent Form S-1 Filings)</div>', unsafe_allow_html=True)
+            
+            # Function to fetch all S-1 filings (not limited to a specific ticker)
+            @st.cache_data(ttl=3600)
+            def fetch_all_s1_filings(from_date, to_date, extended=False):
+                # If extended is True, fetch data from a broader range (180 days)
+                if extended:
+                    extended_from_date = (datetime.strptime(to_date, "%Y-%m-%d") - timedelta(days=180)).strftime("%Y-%m-%d")
+                else:
+                    extended_from_date = from_date
+                
+                all_filings = []
+                page = 0
+                url = f"https://financialmodelingprep.com/api/v4/sec_filings"
+                
+                while True:
+                    params = {
+                        "type": "S-1",
+                        "from": extended_from_date,
+                        "to": to_date,
+                        "page": page,
+                        "limit": 100,
+                        "apikey": FMP_API_KEY
+                    }
+                    try:
+                        logger.info(f"Fetching S-1 filings: page {page}, from {extended_from_date} to {to_date}")
+                        response = requests.get(url, params=params, timeout=10)
+                        response.raise_for_status()
+                        data = response.json()
+                        if not data:
+                            logger.info(f"No more S-1 filings found on page {page}")
+                            break
+                        all_filings.extend(data)
+                        page += 1
+                    except requests.RequestException as e:
+                        logger.error(f"Error fetching S-1 filings on page {page}: {e}")
+                        break
+                
+                if not all_filings:
+                    # Fallback to SEC EDGAR if FMP API returns no data
+                    logger.info("No S-1 filings found via FMP API. Falling back to SEC EDGAR.")
+                    all_filings = fetch_s1_filings_from_edgar(extended_from_date, to_date)
+                
+                # Process filings
+                for item in all_filings:
+                    if "filingDate" in item and item["filingDate"]:
+                        try:
+                            item["filingDate"] = pd.to_datetime(item["filingDate"]).strftime("%Y-%m-%d")
+                        except (ValueError, TypeError):
+                            logger.warning(f"Invalid filingDate for S-1 filing: {item['filingDate']}")
+                            item["filingDate"] = None
+                return all_filings
+
+            # Function to fetch S-1 filings from SEC EDGAR as a fallback
+            def fetch_s1_filings_from_edgar(from_date, to_date):
+                try:
+                    # Use sec-api.io or directly query EDGAR (simplified example)
+                    # Note: This requires an API key for sec-api.io or direct EDGAR scraping
+                    # For this example, I'll simulate a basic EDGAR query
+                    # In production, you'd use a library like sec-edgar-downloader or sec-api
+                    url = "https://www.sec.gov/cgi-bin/browse-edgar"
+                    params = {
+                        "action": "getcurrent",
+                        "type": "S-1",
+                        "datea": from_date,
+                        "dateb": to_date,
+                        "output": "atom"
+                    }
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                    }
+                    response = requests.get(url, params=params, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    
+                    # Parse the XML response (simplified)
+                    from xml.etree import ElementTree as ET
+                    root = ET.fromstring(response.content)
+                    filings = []
+                    for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
+                        company_name = entry.find("{http://www.w3.org/2005/Atom}title").text
+                        filing_date = entry.find("{http://www.w3.org/2005/Atom}updated").text.split("T")[0]
+                        link = entry.find("{http://www.w3.org/2005/Atom}link").get("href")
+                        cik = entry.find("{http://www.w3.org/2005/Atom}id").text.split("cik=")[-1]
+                        filings.append({
+                            "name": company_name,
+                            "cik": cik,
+                            "filingDate": filing_date,
+                            "formType": "S-1",
+                            "link": link,
+                            "symbol": "N/A"  # EDGAR doesn't provide ticker; set to N/A
+                        })
+                    logger.info(f"Fetched {len(filings)} S-1 filings from SEC EDGAR")
+                    return filings
+                except Exception as e:
+                    logger.error(f"Error fetching S-1 filings from SEC EDGAR: {e}")
+                    return []
+
+            # Fetch and display S-1 filings
+            default_to = datetime.today().date()
+            default_from = default_to - timedelta(days=90)
+            s1_date_range = st.date_input(
+                "S-1 Filing Date Range (max 90 days)",
+                value=(default_from, default_to),
+                min_value=default_to - timedelta(days=365),
+                max_value=default_to,
+                help="Select a date range up to 90 days to view recent Form S-1 filings indicating potential IPOs."
+            )
+            if len(s1_date_range) == 2:
+                s1_from_date, s1_to_date = s1_date_range
+                if (s1_to_date - s1_from_date).days > 90:
+                    st.warning("Date range exceeds 90 days. Please select a range within 90 days.")
+                else:
+                    with st.spinner("Fetching recent Form S-1 filings (potential IPOs)..."):
+                        # First attempt with the selected date range
+                        s1_filings = fetch_all_s1_filings(
+                            s1_from_date.strftime("%Y-%m-%d"),
+                            s1_to_date.strftime("%Y-%m-%d"),
+                            extended=False
+                        )
+                        # If no filings are found, try an extended range
+                        if not s1_filings:
+                            logger.info(f"No S-1 filings found in selected range. Attempting extended range.")
+                            s1_filings = fetch_all_s1_filings(
+                                s1_from_date.strftime("%Y-%m-%d"),
+                                s1_to_date.strftime("%Y-%m-%d"),
+                                extended=True
+                            )
+                        
+                        if s1_filings:
+                            s1_filings_df = pd.DataFrame(s1_filings).rename(columns={
+                                "symbol": "Ticker",
+                                "cik": "CIK",
+                                "filingDate": "Filing Date",
+                                "formType": "Form Type",
+                                "link": "Link",
+                                "name": "Company Name"
+                            })
+                            # Ensure required columns are present
+                            required_columns = ["Company Name", "Ticker", "CIK", "Filing Date", "Form Type", "Link"]
+                            for col in required_columns:
+                                if col not in s1_filings_df.columns:
+                                    s1_filings_df[col] = "N/A"
+                            # Filter to only Form S-1 filings
+                            s1_filings_df = s1_filings_df[s1_filings_df["Form Type"].str.contains("S-1", na=False)]
+                            # Filter to the user-selected date range
+                            s1_filings_df["Filing Date"] = pd.to_datetime(s1_filings_df["Filing Date"])
+                            s1_filings_df = s1_filings_df[
+                                (s1_filings_df["Filing Date"] >= pd.to_datetime(s1_from_date)) &
+                                (s1_filings_df["Filing Date"] <= pd.to_datetime(s1_to_date))
+                            ]
+                            if not s1_filings_df.empty:
+                                st.markdown("**Note:** Form S-1 filings indicate a company may be planning an Initial Public Offering (IPO). However, not all S-1 filings result in an immediate IPO.", unsafe_allow_html=True)
+                                # Render custom HTML table for S-1 filings
+                                st.markdown('<div class="custom-table"><table style="width: 100%; border-collapse: collapse;">', unsafe_allow_html=True)
+                                # Table header
+                                st.markdown("""
+                                    <tr>
+                                        <th>Company Name</th>
+                                        <th>Ticker</th>
+                                        <th>CIK</th>
+                                        <th>Filing Date</th>
+                                        <th>Form Type</th>
+                                        <th>Link</th>
+                                    </tr>
+                                """, unsafe_allow_html=True)
+                                # Table rows
+                                for _, row in s1_filings_df.iterrows():
+                                    link_text = f"View S-1 Filing for {row['Company Name']}" if pd.notnull(row["Link"]) else "N/A"
+                                    link_html = f'<a href="{row["Link"]}" target="_blank" rel="noopener noreferrer">{link_text}</a>' if pd.notnull(row["Link"]) else "N/A"
+                                    filing_date_str = row['Filing Date'].strftime("%Y-%m-%d") if pd.notnull(row['Filing Date']) else "N/A"
+                                    st.markdown(f"""
+                                        <tr>
+                                            <td>{row['Company Name']}</td>
+                                            <td>{row['Ticker']}</td>
+                                            <td>{row['CIK']}</td>
+                                            <td>{filing_date_str}</td>
+                                            <td>{row['Form Type']}</td>
+                                            <td>{link_html}</td>
+                                        </tr>
+                                    """, unsafe_allow_html=True)
+                                st.markdown('</table></div>', unsafe_allow_html=True)
+                            else:
+                                st.warning(f"No Form S-1 filings found in the selected date range.")
+                        else:
+                            st.warning(f"No IPOs from {s1_from_date} to {s1_to_date}.")
+                           
             
             st.markdown("---")
             st.markdown("*Developed by Ozy | © 2025*")
-
 
     with tab2:
         st.subheader("Market Scanner Pro")
@@ -4506,32 +4806,6 @@ def main():
                 border-top: 1px dashed #00FFFF;
                 margin: 20px 0;
             }
-            .custom-table {
-                border: 1px solid #39FF14;
-                border-radius: 5px;
-                background: #0F1419;
-                padding: 10px;
-                width: 100%;
-                font-family: 'Arial', sans-serif;
-                color: #E0E0E0;
-            }
-            .custom-table th, .custom-table td {
-                border: 1px solid #39FF14;
-                padding: 8px;
-                text-align: center;
-            }
-            .custom-table th {
-                background: #2D2D2D;
-                color: #00FFFF;
-                font-weight: 600;
-            }
-            .custom-table a {
-                color: #39FF14;
-                text-decoration: none;
-            }
-            .custom-table a:hover {
-                text-decoration: underline;
-            }
             </style>
         """, unsafe_allow_html=True)
 
@@ -4700,68 +4974,6 @@ def main():
                             st.warning("No stocks match the selected criteria.")
             st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-            st.markdown('<div class="sub-section">SEC Filings</div>', unsafe_allow_html=True)
-            st.markdown('<p class="data-text"></p>', unsafe_allow_html=True)
-            col1, col2 = st.columns(2)
-            with col1:
-                ticker = st.text_input("Stock Ticker (e.g., AAPL)", value="", key="sec_filings_ticker").upper()
-            with col2:
-                default_to = datetime.today().date()
-                default_from = default_to - timedelta(days=90)
-                date_range = st.date_input(
-                    "Filing Date Range (max 90 days)",
-                    value=(default_from, default_to),
-                    min_value=default_to - timedelta(days=365),
-                    max_value=default_to,
-                    help="Select a date range up to 90 days for SEC filings."
-                )
-            if ticker and len(date_range) == 2:
-                from_date, to_date = date_range
-                if (to_date - from_date).days > 90:
-                    st.warning("Date range exceeds 90 days. Please select a range within 90 days.")
-                else:
-                    with st.spinner(f"Fetching SEC filings for {ticker}..."):
-                        filings = fetch_fmp_sec_filings_by_symbol(ticker, from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"))
-                        if filings:
-                            filings_df = pd.DataFrame(filings).rename(columns={
-                                "symbol": "Ticker",
-                                "cik": "CIK",
-                                "filingDate": "Filing Date",
-                                "formType": "Form Type",
-                                "link": "Link"
-                            })
-                            # Render custom HTML table
-                            st.markdown('<div class="custom-table"><table style="width: 100%; border-collapse: collapse;">', unsafe_allow_html=True)
-                            # Table header
-                            st.markdown("""
-                                <tr>
-                                    <th>Ticker</th>
-                                    <th>CIK</th>
-                                    <th>Filing Date</th>
-                                    <th>Form Type</th>
-                                    <th>Link</th>
-                                </tr>
-                            """, unsafe_allow_html=True)
-                            # Table rows
-                            for _, row in filings_df.iterrows():
-                                link_text = f"View Filing for {row['Ticker']} {row['Form Type']}" if pd.notnull(row["Link"]) else "N/A"
-                                link_html = f'<a href="{row["Link"]}" target="_blank" rel="noopener noreferrer">{link_text}</a>' if pd.notnull(row["Link"]) else "N/A"
-                                st.markdown(f"""
-                                    <tr>
-                                        <td>{row['Ticker']}</td>
-                                        <td>{row['CIK']}</td>
-                                        <td>{row['Filing Date']}</td>
-                                        <td>{row['Form Type']}</td>
-                                        <td>{link_html}</td>
-                                    </tr>
-                                """, unsafe_allow_html=True)
-                            st.markdown('</table></div>', unsafe_allow_html=True)
-                        else:
-                            st.warning(f"No SEC filings found for {ticker} in the selected date range.")
-            
-            st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-
-            st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
             st.markdown('<p style="text-align: center; color: #778DA9; font-family: \'Arial\', sans-serif;">*Developed by Ozy | © 2025*</p>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -5667,7 +5879,7 @@ def main():
                         oi_by_strike = {strike: sum(int(opt.get("open_interest", 0)) for opt in options_data if float(opt["strike"]) == strike) 
                                         for strike in set(strikes)}
                     else:
-                        st.warning("No valid options data returned from Tradier.")
+                        st.warning("No valid options data returned from OZY.")
                 else:
                     st.warning("No expiration dates available for options data.")
 
