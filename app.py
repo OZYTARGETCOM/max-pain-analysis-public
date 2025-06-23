@@ -75,7 +75,7 @@ kraken = krakenex.API(key=API_KEY, secret=PRIVATE_KEY)
 
 FMP_API_KEY = "bQ025fPNVrYcBN4KaExd1N3Xczyk44wM"
 FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
-TRADIER_API_KEY = "d0H5QGsma6Bh41VBw6P6lItCBl7D"
+TRADIER_API_KEY = "Mys3Hsfg4oG5G6qi9PF7ZfInDDVf"
 TRADIER_BASE_URL = "https://api.tradier.com/v1"
 HEADERS_FMP = {"Accept": "application/json"}
 HEADERS_TRADIER = {"Authorization": f"Bearer {TRADIER_API_KEY}", "Accept": "application/json"}
